@@ -1709,7 +1709,7 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
                     val bgHistory = persistenceLayer.getBgReadingsDataFromTime(dkaNow - 6L * 60 * 60 * 1000, ascending = false)
                         .map { gv -> BgPoint(gv.timestamp, gv.value) }
                     val delivered3h = tddCalculator.calculateDaily(-3, 0)?.totalAmount ?: 0.0
-                    val tdd7 = tddCalculator.averageTDD(tddCalculator.calculate(7, allowMissingDays = false))?.totalAmount
+                    val tdd7 = tddCalculator.averageTDD(tddCalculator.calculate(7, allowMissingDays = false))?.data?.totalAmount
                         ?: preferences.get(DoubleKey.OApsAIMITDD7)
                     val lastSiteChange = persistenceLayer
                         .getTherapyEventDataFromTime(dkaNow - TimeUnit.DAYS.toMillis(7), TE.Type.CANNULA_CHANGE, true)
