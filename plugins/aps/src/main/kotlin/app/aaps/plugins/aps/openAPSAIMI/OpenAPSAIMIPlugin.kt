@@ -151,6 +151,11 @@ import app.aaps.plugins.aps.openAPSAIMI.llm.claude.ClaudeModelResolver
 import app.aaps.plugins.aps.openAPSAIMI.hormonitor.viewer.HormonitorViewerScreen
 import app.aaps.plugins.aps.openAPSAIMI.utils.AimiBackupManager
 import app.aaps.plugins.aps.openAPSAIMI.utils.AimiStorageHelper
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaBooleanKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaCoordinator
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntentKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.BgPoint
 import app.aaps.core.objects.extensions.put
 import app.aaps.core.objects.extensions.store
 import kotlinx.coroutines.withContext
@@ -253,6 +258,9 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
         ClaudeModelResolver.bind(preferences)
         preferences.registerPreferences(app.aaps.plugins.aps.openAPSAIMI.keys.AimiLongKey::class.java)
         preferences.registerPreferences(app.aaps.plugins.aps.openAPSAIMI.keys.AimiStringKey::class.java)
+        preferences.registerPreferences(AimiDkaBooleanKey::class.java)
+        preferences.registerPreferences(AimiDkaIntKey::class.java)
+        preferences.registerPreferences(AimiDkaIntentKey::class.java)
 
         // Diagnostic (2026-07-22): trace the simplified PK/PD "tail power" slider key to pin the
         // reported startup reset. The startup snapshot answers "did the value survive the restart?";
@@ -1693,6 +1701,39 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
                         diaGovernor = kineticsView.diaGovernor,
                     )
                 }
+                // --- AIMI DKA protection: risk notification, optional SMB pause, semaglutide basal floor.
+                // Runs on the RT before it becomes the APS result; a failure here must never stop the loop.
+                val rtForDka = it
+                runCatching {
+                    val dkaNow = dateUtil.now()
+                    val bgHistory = persistenceLayer.getBgReadingsDataFromTime(dkaNow - 6L * 60 * 60 * 1000, ascending = false)
+                        .map { gv -> BgPoint(gv.timestamp, gv.value) }
+                    val delivered3h = tddCalculator.calculateDaily(-3, 0)?.totalAmount ?: 0.0
+                    val tdd7 = tddCalculator.averageTDD(tddCalculator.calculate(7, allowMissingDays = false))?.totalAmount
+                        ?: preferences.get(DoubleKey.OApsAIMITDD7)
+                    val lastSiteChange = persistenceLayer
+                        .getTherapyEventDataFromTime(dkaNow - TimeUnit.DAYS.toMillis(7), TE.Type.CANNULA_CHANGE, true)
+                        .lastOrNull()?.timestamp
+                    val scheduledBasal = profile.getBasal()
+                    dkaCoordinator.process(
+                        rtForDka,
+                        AimiDkaCoordinator.Inputs(
+                            nowMs = dkaNow,
+                            bgMgdl = glucoseStatus.glucose,
+                            bgHistory = bgHistory,
+                            insulinDelivered3h = delivered3h,
+                            iob = iobArray.firstOrNull()?.iob ?: 0.0,
+                            cobGrams = mealData.mealCOB,
+                            tdd = tdd7,
+                            lastSiteChangeMs = lastSiteChange,
+                            scheduledBasalUph = scheduledBasal,
+                            maxBasalUph = maxOf(preferences.get(DoubleKey.ApsMaxBasal), scheduledBasal),
+                            runningTempRateUph = currentTemp.rate,
+                            runningTempMinutes = currentTemp.duration
+                        )
+                    )
+                }.onFailure { e -> aapsLogger.error(LTag.APS, "AIMI DKA protection failed", e) }
+
                 val determineBasalResult = apsResultProvider.get().with(it)
                 
                 // ?? FCL 11.0: Force Copy Predictions via JSON (Manual Construction)
@@ -2061,8 +2102,33 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
                 },
             )
         )
+        add(aimiComposeDkaSubScreen())
         add(aimiComposeLabSubScreen())
     }
+
+    /** Ketoacidosis (DKA) protection: alerts, ketone entry, risk factors, semaglutide minimum insulin. */
+    private fun aimiComposeDkaSubScreen(): PreferenceSubScreenDef =
+        PreferenceSubScreenDef(
+            key = "aimi_compose_dka",
+            titleResId = R.string.aimi_dka_screen_title,
+            summaryResId = R.string.aimi_dka_screen_summary,
+            items = buildList {
+                add(AimiDkaBooleanKey.DkaEnabled)
+                add(AimiDkaBooleanKey.DkaNotifyWatch)
+                add(AimiDkaBooleanKey.DkaRestrictSmb)
+                add(AimiDkaIntKey.HighBg)
+                add(AimiDkaIntKey.VeryHighBg)
+                add(AimiDkaBooleanKey.DkaSickDay)
+                add(AimiDkaBooleanKey.DkaSglt2)
+                add(AimiDkaBooleanKey.DkaGlp1)
+                add(AimiDkaIntentKey.EnterKetone)
+                add(AimiDkaBooleanKey.DkaFloorEnabled)
+                add(AimiDkaIntKey.FloorPercent)
+                add(AimiDkaIntKey.FloorMinBg)
+            },
+        )
+
+    private val dkaCoordinator by lazy { AimiDkaCoordinator(context, preferences, aapsLogger) }
 
     private fun aimiComposeHormonitorViewerItem(): PreferenceItem =
         ApsIntentKey.HormonitorViewer.withCompose(

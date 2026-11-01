@@ -55,6 +55,16 @@
             android:exported="false"
             android:theme="@style/AppTheme"
             android:label="AIMI Emergency SOS" />
+
+        <!-- AIMI DKA protection: ketone entry dialog + notification snooze -->
+        <activity
+            android:name=".openAPSAIMI.dka.KetoneEntryActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:label="@string/dka_ketone_title" />
+        <receiver
+            android:name=".openAPSAIMI.dka.DkaSnoozeReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>
