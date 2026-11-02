@@ -35,12 +35,15 @@
     <string name="dka_action_enter_ketone">Enter ketones</string>
     <string name="dka_action_snooze">Snooze 1 h</string>
     <string name="dka_ketone_title">Blood ketones</string>
-    <string name="dka_ketone_message">Enter your blood ketone measurement in mmol/L.</string>
-    <string name="dka_ketone_hint">e.g. 0.8</string>
+    <string name="dka_ketone_message">Enter your blood ketone measurement (BHB). Choose the unit of your meter.</string>
+    <string name="dka_ketone_unit_mmol">mmol/L</string>
+    <string name="dka_ketone_unit_mgdl">mg/dL</string>
+    <string name="dka_ketone_hint_mmol">e.g. 0.8</string>
+    <string name="dka_ketone_hint_mgdl">e.g. 8</string>
     <string name="dka_ketone_save">Save</string>
     <string name="dka_ketone_clear">Clear</string>
-    <string name="dka_ketone_invalid">Please enter a value between 0 and 8 mmol/L.</string>
-    <string name="dka_ketone_result_title">Ketones: %1$.1f mmol/L</string>
+    <string name="dka_ketone_invalid">Please enter a value between 0 and 8 mmol/L (0 and 83 mg/dL).</string>
+    <string name="dka_ketone_result_title" comment="%1$.1f=ketones in mmol/L, %2$.0f=ketones in mg/dL. Example: Ketones: 1.5 mmol/L (16 mg/dL)">Ketones: %1$.1f mmol/L (%2$.0f mg/dL)</string>
     <string name="dka_ketone_result_ok">Normal (below 0.6). Keep monitoring if BG stays high or you feel unwell.</string>
     <string name="dka_ketone_result_watch">Mildly elevated (0.6-1.4). Drink water, check the infusion set, recheck in 1-2 hours.</string>
     <string name="dka_ketone_result_warning">High (1.5-2.9). Change the infusion set, inject a correction by pen/syringe according to your plan, hydrate and contact your diabetes team.</string>

@@ -12,7 +12,11 @@ import android.media.RingtoneManager
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.view.View
 import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -169,6 +173,10 @@ class DkaSnoozeReceiver : BroadcastReceiver() {
  */
 class KetoneEntryActivity : AppCompatActivity() {
 
+    private companion object {
+        const val MAX_KETONE_MMOL = 8.0
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         showEntryDialog()
@@ -177,22 +185,48 @@ class KetoneEntryActivity : AppCompatActivity() {
     private fun showEntryDialog() {
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            hint = getString(R.string.dka_ketone_hint)
+        }
+        val mmolButton = RadioButton(this).apply {
+            id = View.generateViewId()
+            setText(R.string.dka_ketone_unit_mmol)
+        }
+        val mgdlButton = RadioButton(this).apply {
+            id = View.generateViewId()
+            setText(R.string.dka_ketone_unit_mgdl)
+        }
+        val unitGroup = RadioGroup(this).apply {
+            orientation = RadioGroup.HORIZONTAL
+            addView(mmolButton)
+            addView(mgdlButton)
+        }
+        fun selectedUnit() = if (unitGroup.checkedRadioButtonId == mgdlButton.id) KetoneUnit.MGDL else KetoneUnit.MMOL
+        unitGroup.setOnCheckedChangeListener { _, _ ->
+            input.hint = getString(if (selectedUnit() == KetoneUnit.MGDL) R.string.dka_ketone_hint_mgdl else R.string.dka_ketone_hint_mmol)
+        }
+        unitGroup.check(if (DkaKetoneStore.readUnit(this) == KetoneUnit.MGDL) mgdlButton.id else mmolButton.id)
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(48, 32, 48, 32)
+            addView(unitGroup)
+            addView(input)
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.dka_ketone_title)
             .setMessage(R.string.dka_ketone_message)
-            .setView(input)
+            .setView(content)
             .setPositiveButton(R.string.dka_ketone_save) { _, _ ->
+                val unit = selectedUnit()
                 // Accept "1,2" as well as "1.2" (German keyboard)
-                val v = input.text.toString().trim().replace(',', '.').toDoubleOrNull()
-                if (v == null || v < 0.0 || v > 8.0) {
+                val entered = input.text.toString().trim().replace(',', '.').toDoubleOrNull()
+                val mmol = entered?.let { unit.toMmol(it) }
+                if (mmol == null || mmol < 0.0 || mmol > MAX_KETONE_MMOL) {
                     Toast.makeText(this, R.string.dka_ketone_invalid, Toast.LENGTH_LONG).show()
                     finish()
                 } else {
-                    DkaKetoneStore.save(this, v)
-                    showResult(v)
+                    DkaKetoneStore.saveUnit(this, unit)
+                    DkaKetoneStore.save(this, mmol)
+                    showResult(mmol)
                 }
             }
             .setNeutralButton(R.string.dka_ketone_clear) { _, _ ->
@@ -213,7 +247,7 @@ class KetoneEntryActivity : AppCompatActivity() {
             else -> R.string.dka_ketone_result_ok
         }
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.dka_ketone_result_title, mmol))
+            .setTitle(getString(R.string.dka_ketone_result_title, mmol, KetoneUnit.MGDL.fromMmol(mmol)))
             .setMessage(msg)
             .setPositiveButton(android.R.string.ok) { _, _ -> setResult(Activity.RESULT_OK); finish() }
             .setOnCancelListener { finish() }

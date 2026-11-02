@@ -70,7 +70,7 @@ enum class AimiDkaIntKey(
 ) : IntPreferenceKey {
 
     HighBg("aimi_dka_high_bg", 250, 180, 350, R.string.aimi_dka_high_bg_title, R.string.aimi_dka_high_bg_summary, dependency = AimiDkaBooleanKey.DkaEnabled),
-    VeryHighBg("aimi_dka_very_high_bg", 300, 200, 450, R.string.aimi_dka_very_high_bg_title, R.string.aimi_dka_very_high_bg_summary, dependency = AimiDkaBooleanKey.DkaEnabled),
+    VeryHighBg("aimi_dka_very_high_bg", 300, 200, 400, R.string.aimi_dka_very_high_bg_title, R.string.aimi_dka_very_high_bg_summary, dependency = AimiDkaBooleanKey.DkaEnabled),
 
     /** Minimum temp basal as % of the current basal rate. */
     FloorPercent("aimi_dka_floor_percent", 50, 10, 100, R.string.aimi_dka_floor_percent_title, R.string.aimi_dka_floor_percent_summary, dependency = AimiDkaBooleanKey.DkaFloorEnabled),

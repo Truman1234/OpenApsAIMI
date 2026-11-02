@@ -5,6 +5,15 @@ import app.aaps.core.keys.interfaces.Preferences
 
 data class KetoneReading(val mmol: Double, val timestampMs: Long)
 
+/** Unit for entering blood ketones (BHB). The loop always works in mmol/L. */
+enum class KetoneUnit(val mgdlPerMmol: Double) {
+    MMOL(1.0),
+    MGDL(10.41);
+
+    fun toMmol(value: Double): Double = value / mgdlPerMmol
+    fun fromMmol(mmol: Double): Double = mmol * mgdlPerMmol
+}
+
 /** Manually entered ketone value + notification state. Transient state, not a user preference. */
 object DkaKetoneStore {
     private const val FILE = "aimi_dka_state"
@@ -19,6 +28,11 @@ object DkaKetoneStore {
         val ts = sp(c).getLong("ketone_ts", 0L)
         return if (ts == 0L) null else KetoneReading(sp(c).getFloat("ketone_mmol", 0f).toDouble(), ts)
     }
+
+    fun readUnit(c: Context): KetoneUnit =
+        if (sp(c).getString("ketone_unit", null) == KetoneUnit.MGDL.name) KetoneUnit.MGDL else KetoneUnit.MMOL
+
+    fun saveUnit(c: Context, unit: KetoneUnit) = sp(c).edit().putString("ketone_unit", unit.name).apply()
 
     internal fun state(c: Context) = sp(c)
 }
