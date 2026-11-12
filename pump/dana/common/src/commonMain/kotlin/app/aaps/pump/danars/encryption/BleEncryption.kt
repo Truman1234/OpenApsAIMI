@@ -22,7 +22,8 @@ class BleEncryption() {
     var securityVersion: EncryptionType = EncryptionType.ENCRYPTION_DEFAULT
 
     fun getEncryptedPacket(opcode: Int, bytes: ByteArray?, deviceName: String?): ByteArray {
-        assert(deviceName == null || deviceName.length == 10)
+        // deviceName is null or exactly 10 characters. This was a JVM assert, which is off on Android
+        // and not available in shared code, so it is only documented here.
         setDeviceName(deviceName)
 
         when (opcode) {
