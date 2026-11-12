@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="aimi_dka_screen_title">Ketoacidosis (DKA) protection</string>
+    <string name="aimi_dka_screen_summary">Alerts for ineffective insulin delivery, prolonged highs and ketones; minimum insulin for semaglutide</string>
+    <string name="aimi_dka_enabled_title">Enable DKA protection</string>
+    <string name="aimi_dka_enabled_summary">Experimental safety aid. It does not replace ketone testing or medical advice.</string>
+    <string name="aimi_dka_notify_watch_title">Notify at WATCH level</string>
+    <string name="aimi_dka_notify_watch_summary">Early low-priority notification (ketones 0.6-1.4 mmol/L, or 2 h above the high threshold)</string>
+    <string name="aimi_dka_restrict_smb_title">Pause SMB if insulin seems ineffective</string>
+    <string name="aimi_dka_restrict_smb_summary">If BG stays high despite delivered insulin, stop SMBs to avoid hidden insulin stacking. Change the infusion set and correct by pen/syringe.</string>
+    <string name="aimi_dka_high_bg_title">High BG threshold (mg/dL)</string>
+    <string name="aimi_dka_high_bg_summary">Watch level when BG stays above this for 2 hours. 250 mg/dL = 13.9 mmol/L</string>
+    <string name="aimi_dka_very_high_bg_title">Very high BG threshold (mg/dL)</string>
+    <string name="aimi_dka_very_high_bg_summary">Warning after 2 hours above this, critical after 4 hours. 300 mg/dL = 16.7 mmol/L</string>
+    <string name="aimi_dka_sick_day_title">Sick day</string>
+    <string name="aimi_dka_sick_day_summary">Illness, fever, vomiting: asks for a ketone check. Switch off when recovered.</string>
+    <string name="aimi_dka_sglt2_title">I take an SGLT2 inhibitor</string>
+    <string name="aimi_dka_sglt2_summary">Ketoacidosis can occur with normal glucose (euglycemic DKA)</string>
+    <string name="aimi_dka_glp1_title">I take semaglutide / a GLP-1 agonist</string>
+    <string name="aimi_dka_glp1_summary">Reduced appetite and insulin need can lead to ketosis; nausea and vomiting can mask DKA symptoms</string>
+    <string name="aimi_dka_ketone_entry_title">Enter blood ketone value</string>
+    <string name="aimi_dka_ketone_entry_summary">Type the value of your meter and confirm. It is used for 4 hours and is taken over at the next loop run. Choose the unit above first.</string>
+    <string name="aimi_dka_ketone_unit_title">Ketone unit</string>
+    <string name="aimi_dka_ketone_unit_summary">Unit of your ketone meter. Valid range: 0 to 8 mmol/L (0 to 83 mg/dL)</string>
+    <string name="aimi_dka_ketone_unit_mmol">mmol/L</string>
+    <string name="aimi_dka_ketone_unit_mgdl">mg/dL</string>
+    <string name="aimi_dka_ketone_invalid">DKA protection: ketone value ignored. Please enter a number between 0 and 8 mmol/L (0 and 83 mg/dL).</string>
+    <string name="aimi_dka_floor_enabled_title">Semaglutide: minimum insulin (basal floor)</string>
+    <string name="aimi_dka_floor_enabled_summary">Never let the loop deliver less than a percentage of your scheduled basal rate, unless glucose is low. Agree the value with your diabetes team.</string>
+    <string name="aimi_dka_floor_percent_title">Minimum basal (% of scheduled basal)</string>
+    <string name="aimi_dka_floor_percent_summary">Follows your basal profile at each time of day, including a profile percentage</string>
+    <string name="aimi_dka_floor_min_bg_title">Floor inactive at or below (mg/dL)</string>
+    <string name="aimi_dka_floor_min_bg_summary">At or below this BG, or when the predicted eventual BG is below it, the floor is not applied</string>
+    <string name="dka_notif_title_watch">DKA risk: watch</string>
+    <string name="dka_notif_title_warning">DKA risk: WARNING - check ketones</string>
+    <string name="dka_notif_title_critical">DKA risk: CRITICAL - act now</string>
+</resources>

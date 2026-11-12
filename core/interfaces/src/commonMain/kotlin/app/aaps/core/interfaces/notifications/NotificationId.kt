@@ -306,7 +306,13 @@ enum class NotificationId(
     BG_RAPID_FALL(URGENT, CGM),
 
     /** A bolus asked for by the Garmin watch was refused or limited; the watch cannot show why. Appended last on purpose. */
-    GARMIN_BOLUS(IMPORTANT, SYNC);
+    GARMIN_BOLUS(IMPORTANT, SYNC),
+
+    // AIMI ketoacidosis (DKA) protection. Three levels, each its own id so a lower level never hides a higher one.
+    // Appended last on purpose: the system id is the ordinal.
+    DKA_WATCH(LOW, LOOP),
+    DKA_WARNING(IMPORTANT, LOOP),
+    DKA_CRITICAL(URGENT, LOOP);
 
     companion object {
 

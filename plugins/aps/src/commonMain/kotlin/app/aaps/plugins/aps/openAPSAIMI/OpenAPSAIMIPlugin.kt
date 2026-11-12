@@ -12,6 +12,14 @@ import app.aaps.plugins.aps.ApsStrings
 import app.aaps.core.interfaces.resources.TextResolver
 import app.aaps.core.keys.KeysStrings
 import app.aaps.plugins.aps.compose.OpenAPSComposeContent
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaBooleanKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaCoordinator
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaDoubleStateKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntStateKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaLongStateKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaStringKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.BgPoint
 import app.aaps.plugins.aps.openAPSAIMI.keys.AimiLongKey
 import app.aaps.plugins.aps.openAPSAIMI.ports.AimiPlatformPreferenceItems
 import app.aaps.plugins.aps.openAPSAIMI.ports.AimiPlatformPreferenceSlot
@@ -363,6 +371,12 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
         ClaudeModelResolver.bind(preferences)
         preferences.registerPreferences(AimiLongKey.entries)
         preferences.registerPreferences(AimiStringKey.entries)
+        preferences.registerPreferences(AimiDkaBooleanKey.entries)
+        preferences.registerPreferences(AimiDkaIntKey.entries)
+        preferences.registerPreferences(AimiDkaStringKey.entries)
+        preferences.registerPreferences(AimiDkaDoubleStateKey.entries)
+        preferences.registerPreferences(AimiDkaLongStateKey.entries)
+        preferences.registerPreferences(AimiDkaIntStateKey.entries)
 
         // Diagnostic (2026-07-22): trace the simplified PK/PD "tail power" slider key to pin the
         // reported startup reset. The startup snapshot answers "did the value survive the restart?";
@@ -1109,6 +1123,8 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
     }
 
 
+    private val dkaCoordinator by lazy { AimiDkaCoordinator(preferences, rh, notificationManager, aapsLogger) }
+
     override suspend fun invoke(initiator: String, tempBasalFallback: Boolean): Unit = withContext(Dispatchers.Default) {
         aapsLogger.debug(LTag.APS, "invoke from $initiator tempBasalFallback: $tempBasalFallback")
         lastAPSResult = null
@@ -1812,6 +1828,39 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
                     )
                 }
                 holdSmbInsideLoopInterval(it, now)
+                // --- AIMI DKA protection: risk notification, optional SMB pause, semaglutide basal floor.
+                // Runs on the RT before it becomes the APS result; a failure here must never stop the loop.
+                val rtForDka = it
+                runCatching {
+                    val dkaNow = dateUtil.now()
+                    val bgHistory = persistenceLayer.getBgReadingsDataFromTime(dkaNow - 6L * 60 * 60 * 1000, ascending = false)
+                        .map { gv -> BgPoint(gv.timestamp, gv.value) }
+                    val delivered3h = tddCalculator.calculateDaily(-3, 0)?.totalAmount ?: 0.0
+                    val tdd7 = tddCalculator.averageTDD(tddCalculator.calculate(7, allowMissingDays = false))?.data?.totalAmount
+                        ?: preferences.get(DoubleKey.OApsAIMITDD7)
+                    val lastSiteChange = persistenceLayer
+                        .getTherapyEventDataFromTime(dkaNow - 7L * 24 * 60 * 60 * 1000, TE.Type.CANNULA_CHANGE, true)
+                        .lastOrNull()?.timestamp
+                    val scheduledBasal = profile.getBasal()
+                    dkaCoordinator.process(
+                        rtForDka,
+                        AimiDkaCoordinator.Inputs(
+                            nowMs = dkaNow,
+                            bgMgdl = glucoseStatus.glucose,
+                            bgHistory = bgHistory,
+                            insulinDelivered3h = delivered3h,
+                            iob = iobArray.firstOrNull()?.iob ?: 0.0,
+                            cobGrams = mealData.mealCOB,
+                            tdd = tdd7,
+                            lastSiteChangeMs = lastSiteChange,
+                            scheduledBasalUph = scheduledBasal,
+                            maxBasalUph = maxOf(preferences.get(DoubleKey.ApsMaxBasal), scheduledBasal),
+                            runningTempRateUph = currentTemp.rate,
+                            runningTempMinutes = currentTemp.duration
+                        )
+                    )
+                }.onFailure { e -> aapsLogger.error(LTag.APS, "AIMI DKA protection failed", e) }
+
                 val determineBasalResult = apsResultProvider().with(it)
                 
                 if (it.predBGs != null) {
@@ -2154,8 +2203,31 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
                 },
             )
         )
+        add(aimiComposeDkaSubScreen())
         add(aimiComposeLabSubScreen())
     }
+
+    private fun aimiComposeDkaSubScreen(): PreferenceSubScreenDef =
+        PreferenceSubScreenDef(
+            key = "aimi_compose_dka",
+            title = ApsStrings.aimi_dka_screen_title,
+            summary = ApsStrings.aimi_dka_screen_summary,
+            items = buildList {
+                add(AimiDkaBooleanKey.DkaEnabled)
+                add(AimiDkaBooleanKey.DkaNotifyWatch)
+                add(AimiDkaBooleanKey.DkaRestrictSmb)
+                add(AimiDkaIntKey.HighBg)
+                add(AimiDkaIntKey.VeryHighBg)
+                add(AimiDkaBooleanKey.DkaSickDay)
+                add(AimiDkaBooleanKey.DkaSglt2)
+                add(AimiDkaBooleanKey.DkaGlp1)
+                add(AimiDkaStringKey.KetoneUnitChoice)
+                add(AimiDkaStringKey.KetoneEntry)
+                add(AimiDkaBooleanKey.DkaFloorEnabled)
+                add(AimiDkaIntKey.FloorPercent)
+                add(AimiDkaIntKey.FloorMinBg)
+            },
+        )
 
     private fun aimiComposeTpoSubScreen(): PreferenceSubScreenDef =
         PreferenceSubScreenDef(
