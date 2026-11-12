@@ -16,7 +16,6 @@ import kotlinx.coroutines.runBlocking
 import org.joda.time.DateTime
 import org.joda.time.DateTimeZone
 import org.joda.time.LocalDate
-import org.joda.time.LocalDateTime
 import java.util.Calendar
 import java.util.GregorianCalendar
 
@@ -104,7 +103,7 @@ abstract class DanaRSPacketHistory internal constructor(
      */
     private fun historyTime(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int = 0): DateTime =
         if (danaPump.usingUTC) DateTime(2000 + year, month, day, hour, minute, second, DateTimeZone.UTC)
-        else DateTime(localTimeToMillis(LocalDateTime(2000 + year, month, day, hour, minute, second)))
+        else DateTime(localTimeToMillis(2000 + year, month, day, hour, minute, second))
 
     /** One history record of [RECORD_SIZE] bytes, starting at [start] */
     private fun processRecord(data: ByteArray, start: Int) {

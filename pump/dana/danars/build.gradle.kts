@@ -26,6 +26,7 @@ kotlin {
                 implementation(project(":core:ui"))
                 implementation(project(":pump:dana:common"))
 
+                implementation(libs.kotlinx.datetime)
                 implementation(libs.jetbrains.compose.runtime)
                 implementation(libs.jetbrains.compose.foundation)
                 implementation(libs.jetbrains.compose.ui)

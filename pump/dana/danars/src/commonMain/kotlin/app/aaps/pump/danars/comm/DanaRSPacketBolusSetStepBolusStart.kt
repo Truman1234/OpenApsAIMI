@@ -53,7 +53,7 @@ class DanaRSPacketBolusSetStepBolusStart(
             failed = false
             aapsLogger.debug(LTag.PUMPCOMM, "Result OK")
         } else {
-            aapsLogger.error("Result Error: 0x%04X".format(danaPump.bolusStartErrorCode))
+            aapsLogger.error("Result Error: 0x" + danaPump.bolusStartErrorCode.toString(16).uppercase().padStart(4, '0'))
             failed = true
         }
     }

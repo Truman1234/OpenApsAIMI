@@ -1,10 +1,11 @@
 package app.aaps.pump.danars.comm
 
 import app.aaps.pump.danars.encryption.BleEncryption
-import org.joda.time.DateTimeZone
-import org.joda.time.LocalDate
-import org.joda.time.LocalDateTime
-import java.nio.charset.StandardCharsets
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.toInstant
 
 open class DanaRSPacket {
 
@@ -41,9 +42,7 @@ open class DanaRSPacket {
     open val friendlyName: String = "UNKNOWN_PACKET"
 
     protected fun getBytes(data: ByteArray, srcStart: Int, srcLength: Int): ByteArray {
-        val ret = ByteArray(srcLength)
-        System.arraycopy(data, srcStart, ret, 0, srcLength)
-        return ret
+        return data.copyOfRange(srcStart, srcStart + srcLength)
     }
 
     /** Start of a local date from the pump. Where the clock changes at midnight, the day starts at the first time that exists. */
@@ -52,7 +51,7 @@ open class DanaRSPacket {
             2000 + byteArrayToInt(getBytes(buff, offset, 1)),
             byteArrayToInt(getBytes(buff, offset + 1, 1)),
             byteArrayToInt(getBytes(buff, offset + 2, 1))
-        ).toDateTimeAtStartOfDay().millis
+        ).atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
 
     protected fun byteArrayToInt(b: ByteArray): Int =
         when (b.size) {
@@ -68,7 +67,6 @@ open class DanaRSPacket {
      * The pump sends such records, for example all zero (#5169) or corrupted BLE data (hour 190).
      * The callers skip a record with time 0.
      */
-    @Synchronized
     fun dateTimeSecFromBuff(buff: ByteArray, offset: Int): Long {
         val year = 2000 + intFromBuff(buff, offset, 1)
         val month = intFromBuff(buff, offset + 1, 1)
@@ -77,7 +75,7 @@ open class DanaRSPacket {
         val minute = intFromBuff(buff, offset + 4, 1)
         val second = intFromBuff(buff, offset + 5, 1)
         if (!isValidDateTime(year, month, day, hour, minute, second)) return 0L
-        return localTimeToMillis(LocalDateTime(year, month, day, hour, minute, second))
+        return localTimeToMillis(year, month, day, hour, minute, second)
     }
 
     protected fun intFromBuff(b: ByteArray, srcStart: Int, srcLength: Int): Int =
@@ -99,9 +97,7 @@ open class DanaRSPacket {
         }
 
     fun stringFromBuff(buff: ByteArray, offset: Int, length: Int): String {
-        val stringBuff = ByteArray(length)
-        System.arraycopy(buff, offset, stringBuff, 0, length)
-        return String(stringBuff, StandardCharsets.UTF_8)
+        return buff.copyOfRange(offset, offset + length).decodeToString()
     }
 
     companion object {
@@ -115,31 +111,35 @@ open class DanaRSPacket {
             hour in 0..23 && minute in 0..59 && second in 0..59
 
         fun isValidDateTime(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int): Boolean =
-            month in 1..12 && day in 1..LocalDate(year, month, 1).dayOfMonth().maximumValue && isValidTime(hour, minute, second)
+            month in 1..12 && day in 1..daysInMonth(year, month) && isValidTime(hour, minute, second)
+
+        private fun daysInMonth(year: Int, month: Int): Int = when (month) {
+            2                -> if (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) 29 else 28
+            4, 6, 9, 11      -> 30
+            else             -> 31
+        }
 
         /**
          * A local time from a pump that keeps local time, in the time zone of the phone.
          *
-         * When the clock goes forward, the hour in the daylight saving gap does not exist on the phone and Joda
-         * throws. The pump clock has not moved yet and is behind by the gap, so the next hour is used. The same
-         * rule for the pump clock and the history keeps them in step until AAPS sets the pump clock.
+         * When the clock goes forward, the hour in the daylight saving gap does not exist on the phone.
+         * The pump clock has not moved yet and is behind by the gap, so the time is moved forward by the gap
+         * (02:30 becomes 03:30 when the gap is one hour). The same rule for the pump clock and the history keeps
+         * them in step until AAPS sets the pump clock. When the clock goes back, the first of the two times is used.
          */
-        fun localTimeToMillis(local: LocalDateTime): Long {
-            val existing = if (DateTimeZone.getDefault().isLocalDateTimeGap(local)) local.plusHours(1) else local
-            return existing.toDateTime().millis
-        }
+        fun localTimeToMillis(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int): Long =
+            LocalDateTime(year, month, day, hour, minute, second)
+                .toInstant(TimeZone.currentSystemDefault())
+                .toEpochMilliseconds()
 
-        fun asciiStringFromBuff(buff: ByteArray, offset: Int, length: Int): String {
-            val stringBuff = ByteArray(length)
-            System.arraycopy(buff, offset, stringBuff, 0, length)
-            return String(stringBuff, StandardCharsets.UTF_8)
-        }
+        fun asciiStringFromBuff(buff: ByteArray, offset: Int, length: Int): String =
+            buff.copyOfRange(offset, offset + length).decodeToString()
 
         fun toHexString(buff: ByteArray?): String {
             if (buff == null) return "null"
             val sb = StringBuilder()
             for ((count, element) in buff.withIndex()) {
-                sb.append(String.format("%02X ", element))
+                sb.append(bytesToHex(byteArrayOf(element))).append(' ')
                 if ((count + 1) % 4 == 0) sb.append(" ")
             }
             return sb.toString()
@@ -153,7 +153,7 @@ open class DanaRSPacket {
                 hexChars[j * 2] = hexArray[v ushr 4]
                 hexChars[j * 2 + 1] = hexArray[v and 0x0F]
             }
-            return String(hexChars)
+            return hexChars.concatToString()
         }
 
         fun hexToBytes(s: String): ByteArray {
@@ -161,11 +161,13 @@ open class DanaRSPacket {
             val data = ByteArray(len / 2)
             var i = 0
             while (i < len) {
-                data[i / 2] = ((Character.digit(s[i], 16) shl 4)
-                    + Character.digit(s[i + 1], 16)).toByte()
+                data[i / 2] = ((hexDigit(s[i]) shl 4)
+                    + hexDigit(s[i + 1])).toByte()
                 i += 2
             }
             return data
         }
+
+        private fun hexDigit(c: Char): Int = c.digitToIntOrNull(16) ?: -1
     }
 }
