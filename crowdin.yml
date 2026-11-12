@@ -43,8 +43,8 @@ files:
     translation: /pump/carelevo/src/main/res/values-%android_code%/strings.xml
   - source: /pump/combov2/src/main/res/values/strings.xml
     translation: /pump/combov2/src/main/res/values-%android_code%/strings.xml
-  - source: /pump/dana/common/src/main/res/values/strings.xml
-    translation: /pump/dana/common/src/main/res/values-%android_code%/strings.xml
+  - source: /pump/dana/common/src/androidMain/res/values/strings.xml
+    translation: /pump/dana/common/src/androidMain/res/values-%android_code%/strings.xml
   - source: /pump/dana/danar/src/main/res/values/strings.xml
     translation: /pump/dana/danar/src/main/res/values-%android_code%/strings.xml
   - source: /pump/diaconn/src/main/res/values/strings.xml
