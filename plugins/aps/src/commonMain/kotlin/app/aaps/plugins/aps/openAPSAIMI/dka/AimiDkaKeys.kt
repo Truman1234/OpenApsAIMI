@@ -71,6 +71,8 @@ enum class AimiDkaStringKey(
     override val preferenceType: PreferenceType = PreferenceType.TEXT_FIELD,
     override val entries: Map<String, TextRef> = emptyMap(),
     override val exportable: Boolean = true,
+    override val isPassword: Boolean = false,
+    override val isPin: Boolean = false,
     override val showInNsClientMode: Boolean = false,
     override val showInPumpControlMode: Boolean = false
 ) : StringPreferenceKey {
