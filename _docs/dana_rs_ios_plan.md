@@ -80,3 +80,17 @@ Not used: `DanaKitUI`, `DanaKitPlugin`, Loop types (`PumpManager`, `DoseEntry`, 
 
 - Which model(s) can be tested: Dana RS v1, RS v3, Dana-i.
 - A Mac with Xcode for the iOS target, and a pump for step 5.
+
+## Reservoir refill and priming (finding)
+
+- AAPS Android (Dana RS): no guided refill or prime flow. The user fills and primes on the pump;
+  AAPS only logs cannula/insulin change events. `danars` has no prime code.
+- DanaKit (iAPS/Loop): guided flow in three steps:
+  1. Reservoir amount: sent with `PacketGeneralSetUserOption` (field `refillAmount`), no insulin moves.
+  2. Prime tube: a normal bolus with the "priming" flag, so the loop does not count it as dosing.
+  3. Prime cannula: same, with the cannula volume.
+- Consequence: step 1 is safe and needs only the existing user-option packet
+  (`DanaRSPacketOptionSetUserOption`). Steps 2 and 3 deliver insulin through the bolus command,
+  so they follow the iOS dosing switch (off until tested on a real pump) and need a confirm dialog.
+- Proposal: shared (commonMain) refill wizard in this order, same screens on Android and iOS;
+  on Android it stays optional and does not change the current behaviour.
