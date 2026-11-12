@@ -5,6 +5,7 @@ import app.aaps.core.interfaces.logging.LTag
 import app.aaps.pump.dana.DanaPump
 import app.aaps.pump.danars.encryption.BleEncryption
 import dev.zacsweers.metro.Inject
+import kotlin.time.Clock
 
 @Inject
 class DanaRSPacketOptionSetUserOption(
@@ -20,7 +21,7 @@ class DanaRSPacketOptionSetUserOption(
     override fun getRequestParams(): ByteArray {
         aapsLogger.debug(
             LTag.PUMPCOMM,
-            "UserOptions:" + (System.currentTimeMillis() - danaPump.lastConnection) / 1000 + " s ago"
+            "UserOptions:" + (Clock.System.now().toEpochMilliseconds() - danaPump.lastConnection) / 1000 + " s ago"
                 + "\ntimeDisplayType24:" + danaPump.timeDisplayType24
                 + "\nbuttonScroll:" + danaPump.buttonScrollOnOff
                 + "\nbeepAndAlarm:" + danaPump.beepAndAlarm

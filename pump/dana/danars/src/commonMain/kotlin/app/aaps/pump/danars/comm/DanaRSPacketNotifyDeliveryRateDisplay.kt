@@ -8,6 +8,7 @@ import app.aaps.core.interfaces.pump.PumpInsulin
 import app.aaps.pump.dana.DanaPump
 import app.aaps.pump.danars.encryption.BleEncryption
 import dev.zacsweers.metro.Inject
+import kotlin.time.Clock
 
 @Inject
 class DanaRSPacketNotifyDeliveryRateDisplay(
@@ -24,7 +25,7 @@ class DanaRSPacketNotifyDeliveryRateDisplay(
 
     override fun handleMessage(data: ByteArray) {
         val deliveredInsulin = byteArrayToInt(getBytes(data, DATA_START, 2)) / 100.0
-        danaPump.bolusProgressLastTimeStamp = System.currentTimeMillis()
+        danaPump.bolusProgressLastTimeStamp = Clock.System.now().toEpochMilliseconds()
         failed = deliveredInsulin < danaPump.bolusingDetailedBolusInfo!!.insulin
         bolusProgressData.updateProgress(PumpInsulin(deliveredInsulin))
         aapsLogger.debug(LTag.PUMPCOMM, "Delivered insulin so far: $deliveredInsulin")
