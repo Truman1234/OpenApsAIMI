@@ -59,29 +59,37 @@ class DanaRsPacketInvalidDateTest : DanaRSTestBase() {
         assertThat(packet.dateTimeSecFromBuff(date(26, 10, 2, 8, 60, 0), 0)).isEqualTo(0L)  // minute 60
     }
 
+    /** The packet code reads the zone of the JVM, the expected values use the Joda zone. Both are set to the same zone. */
+    private fun withZone(id: String, block: () -> Unit) {
+        val jodaZone = DateTimeZone.getDefault()
+        val jvmZone = java.util.TimeZone.getDefault()
+        try {
+            DateTimeZone.setDefault(DateTimeZone.forID(id))
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(id))
+            block()
+        } finally {
+            DateTimeZone.setDefault(jodaZone)
+            java.util.TimeZone.setDefault(jvmZone)
+        }
+    }
+
     @Test
     fun timeInTheDaylightSavingGapMovesToTheNextHour() {
-        val defaultZone = DateTimeZone.getDefault()
-        try {
+        withZone("Europe/Prague") {
             val prague = DateTimeZone.forID("Europe/Prague")
-            DateTimeZone.setDefault(prague)
 
             // 29 March 2026 02:30 does not exist in Prague, the clock jumps from 02:00 to 03:00
             val time = apsHistory().dateTimeSecFromBuff(date(26, 3, 29, 2, 30, 0), 0)
 
             assertThat(time).isEqualTo(DateTime(2026, 3, 29, 3, 30, 0, prague).millis)
-        } finally {
-            DateTimeZone.setDefault(defaultZone)
         }
     }
 
     /** The shipping date is read on every connection. Where the clock goes forward at midnight, that midnight does not exist */
     @Test
     fun dateOnTheDayTheClockChangesAtMidnightIsRead() {
-        val defaultZone = DateTimeZone.getDefault()
-        try {
+        withZone("America/Havana") {
             val havana = DateTimeZone.forID("America/Havana")
-            DateTimeZone.setDefault(havana)
             // Cuba moved the clock from 00:00 to 01:00 on 2026-03-08. A past date on purpose: the rules for
             // future years change with the time zone data (joda-time 2.15.1 dropped the change of March 2027).
             assertThat(havana.isLocalDateTimeGap(LocalDateTime(2026, 3, 8, 0, 0))).isTrue()
@@ -90,8 +98,6 @@ class DanaRsPacketInvalidDateTest : DanaRSTestBase() {
             val time = apsHistory().dateFromBuff(header + byteArrayOf(26, 3, 8), 2)
 
             assertThat(time).isEqualTo(DateTime(2026, 3, 8, 1, 0, 0, havana).millis)
-        } finally {
-            DateTimeZone.setDefault(defaultZone)
         }
     }
 
