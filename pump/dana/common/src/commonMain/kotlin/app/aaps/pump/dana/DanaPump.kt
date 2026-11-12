@@ -23,12 +23,10 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import org.json.JSONArray
-import org.json.JSONException
-import org.json.JSONObject
-import java.security.InvalidParameterException
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlin.concurrent.Volatile
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -345,100 +343,86 @@ class DanaPump(
 
     // val lastKnownHistoryId: Int = 0 // hw ver 7+, 1-2000
 
+    /** One profile point: time as text, time in seconds and the value. */
+    private fun point(time: String, seconds: Int, value: Number): JsonObject =
+        JsonObject(
+            mapOf(
+                "time" to JsonPrimitive(time),
+                "timeAsSeconds" to JsonPrimitive(seconds),
+                "value" to JsonPrimitive(value)
+            )
+        )
+
+    /** Two digits, like "07". */
+    private fun twoDigits(value: Int): String = value.toString().padStart(2, '0')
+
     fun createConvertedProfile(): ProfileStore? {
         pumpProfiles?.let {
-            val json = JSONObject()
-            val store = JSONObject()
-            val profile = JSONObject()
             //        Morning / 6:00–10:59
             //        Afternoon / 11:00–16:59
             //        Evening / 17:00–21:59
             //        Night / 22:00–5:59
+            val json: JsonObject
             try {
-                json.put("defaultProfile", PROFILE_PREFIX + (activeProfile + 1))
-                json.put("store", store)
-                profile.put("dia", Constants.DEFAULT_DIA)
-                val carbRatios = JSONArray()
+                val carbRatios = mutableListOf<JsonObject>()
                 if (!profile24) {
-                    carbRatios.put(JSONObject().put("time", "00:00").put("timeAsSeconds", 0).put("value", nightCIR))
-                    carbRatios.put(JSONObject().put("time", "06:00").put("timeAsSeconds", 6 * 3600).put("value", morningCIR))
-                    carbRatios.put(JSONObject().put("time", "11:00").put("timeAsSeconds", 11 * 3600).put("value", afternoonCIR))
-                    carbRatios.put(JSONObject().put("time", "14:00").put("timeAsSeconds", 17 * 3600).put("value", eveningCIR))
-                    carbRatios.put(JSONObject().put("time", "22:00").put("timeAsSeconds", 22 * 3600).put("value", nightCIR))
+                    carbRatios.add(point("00:00", 0, nightCIR))
+                    carbRatios.add(point("06:00", 6 * 3600, morningCIR))
+                    carbRatios.add(point("11:00", 11 * 3600, afternoonCIR))
+                    carbRatios.add(point("14:00", 17 * 3600, eveningCIR))
+                    carbRatios.add(point("22:00", 22 * 3600, nightCIR))
                 } else { // 24 values
                     for (i in 0..23) {
-                        carbRatios.put(
-                            JSONObject()
-                                .put("time", String.format("%02d", i) + ":00")
-                                .put("timeAsSeconds", i * 3600)
-                                .put("value", cir24[i])
-                        )
+                        carbRatios.add(point(twoDigits(i) + ":00", i * 3600, cir24[i]))
                     }
                 }
-                profile.put("carbratio", carbRatios)
-                val sens = JSONArray()
+                val sens = mutableListOf<JsonObject>()
                 if (!profile24) {
-                    sens.put(JSONObject().put("time", "00:00").put("timeAsSeconds", 0).put("value", nightCF))
-                    sens.put(JSONObject().put("time", "06:00").put("timeAsSeconds", 6 * 3600).put("value", morningCF))
-                    sens.put(JSONObject().put("time", "11:00").put("timeAsSeconds", 11 * 3600).put("value", afternoonCF))
-                    sens.put(JSONObject().put("time", "17:00").put("timeAsSeconds", 17 * 3600).put("value", eveningCF))
-                    sens.put(JSONObject().put("time", "22:00").put("timeAsSeconds", 22 * 3600).put("value", nightCF))
+                    sens.add(point("00:00", 0, nightCF))
+                    sens.add(point("06:00", 6 * 3600, morningCF))
+                    sens.add(point("11:00", 11 * 3600, afternoonCF))
+                    sens.add(point("17:00", 17 * 3600, eveningCF))
+                    sens.add(point("22:00", 22 * 3600, nightCF))
                 } else { // 24 values
                     for (i in 0..23) {
-                        sens.put(
-                            JSONObject()
-                                .put("time", String.format("%02d", i) + ":00")
-                                .put("timeAsSeconds", i * 3600)
-                                .put("value", cf24[i])
-                        )
+                        sens.add(point(twoDigits(i) + ":00", i * 3600, cf24[i]))
                     }
                 }
-                profile.put("sens", sens)
-                val basals = JSONArray()
+                val basals = mutableListOf<JsonObject>()
                 val basalValues = if (basal48Enable) 48 else 24
                 val basalIncrement = if (basal48Enable) 30 * 60 else 60 * 60
                 for (h in 0 until basalValues) {
-                    var time: String
                     val df = NumberFormat.INTEGER_2_DIGITS
-                    time = if (basal48Enable) {
+                    val time = if (basal48Enable) {
                         df.format(h.toLong() / 2) + ":" + df.format(30 * (h % 2).toLong())
                     } else {
                         df.format(h.toLong()) + ":00"
                     }
-                    basals.put(
-                        JSONObject()
-                            .put("time", time)
-                            .put("timeAsSeconds", h * basalIncrement)
-                            .put("value", it[activeProfile][h])
-                    )
+                    basals.add(point(time, h * basalIncrement, it[activeProfile][h]))
                 }
-                profile.put("basal", basals)
-                profile.put(
-                    "target_low",
-                    JSONArray().put(
-                        JSONObject()
-                            .put("time", "00:00")
-                            .put("timeAsSeconds", 0)
-                            .put("value", currentTarget)
+                val profile = JsonObject(
+                    mapOf(
+                        "dia" to JsonPrimitive(Constants.DEFAULT_DIA),
+                        "carbratio" to JsonArray(carbRatios),
+                        "sens" to JsonArray(sens),
+                        "basal" to JsonArray(basals),
+                        "target_low" to JsonArray(listOf(point("00:00", 0, currentTarget))),
+                        "target_high" to JsonArray(listOf(point("00:00", 0, currentTarget))),
+                        "units" to JsonPrimitive(if (units == UNITS_MGDL) GlucoseUnit.MGDL.asText else GlucoseUnit.MMOL.asText)
                     )
                 )
-                profile.put(
-                    "target_high",
-                    JSONArray().put(
-                        JSONObject()
-                            .put("time", "00:00")
-                            .put("timeAsSeconds", 0)
-                            .put("value", currentTarget)
+                val name = PROFILE_PREFIX + (activeProfile + 1)
+                json = JsonObject(
+                    mapOf(
+                        "defaultProfile" to JsonPrimitive(name),
+                        "store" to JsonObject(mapOf(name to profile))
                     )
                 )
-                profile.put("units", if (units == UNITS_MGDL) GlucoseUnit.MGDL.asText else GlucoseUnit.MMOL.asText)
-                store.put(PROFILE_PREFIX + (activeProfile + 1), profile)
-            } catch (e: JSONException) {
-                aapsLogger.error("Unhandled exception", e)
             } catch (e: Exception) {
+                aapsLogger.error("Unhandled exception", e)
                 return null
             }
-            return profileStoreProvider().with(Json.parseToJsonElement(json.toString()).jsonObject)
+            return profileStoreProvider().with(json)
         }
         return null
     }
@@ -577,7 +561,7 @@ class DanaPump(
 
         companion object {
 
-            fun fromInt(value: Int) = entries.firstOrNull { it.value == value } ?: throw InvalidParameterException()
+            fun fromInt(value: Int) = entries.firstOrNull { it.value == value } ?: throw IllegalArgumentException("Unknown history entry: $value")
         }
 
     }
