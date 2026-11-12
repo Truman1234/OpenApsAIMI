@@ -95,7 +95,8 @@ class DanaPumpTest : TestBaseWithProfile() {
         val captor = argumentCaptor<JsonObject>()
         whenever(store.with(captor.capture())).thenReturn(store)
         val pump = DanaPump(aapsLogger, preferences, dateUtil, decimalFormatter) { store }
-        pump.pumpProfiles = Array(4) { Array(24) { 0.5 } }
+        // 48 values per profile, because the half hour variant reads that many
+        pump.pumpProfiles = Array(4) { Array(48) { 0.5 } }
         pump.configure()
         pump.createConvertedProfile()
         return captor.firstValue
