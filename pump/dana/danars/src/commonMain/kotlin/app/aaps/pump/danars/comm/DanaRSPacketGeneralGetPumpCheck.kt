@@ -36,9 +36,9 @@ class DanaRSPacketGeneralGetPumpCheck(
         dataIndex += dataSize
         dataSize = 1
         danaPump.productCode = byteArrayToInt(getBytes(data, dataIndex, dataSize))
-        aapsLogger.debug(LTag.PUMPCOMM, "Model: " + String.format("%02X ", danaPump.hwModel))
-        aapsLogger.debug(LTag.PUMPCOMM, "Protocol: " + String.format("%02X ", danaPump.protocol))
-        aapsLogger.debug(LTag.PUMPCOMM, "Product Code: " + String.format("%02X ", danaPump.productCode))
+        aapsLogger.debug(LTag.PUMPCOMM, "Model: " + (danaPump.hwModel.toString(16).uppercase().padStart(2, '0') + " "))
+        aapsLogger.debug(LTag.PUMPCOMM, "Protocol: " + (danaPump.protocol.toString(16).uppercase().padStart(2, '0') + " "))
+        aapsLogger.debug(LTag.PUMPCOMM, "Product Code: " + (danaPump.productCode.toString(16).uppercase().padStart(2, '0') + " "))
         if (danaPump.productCode < 2) {
             notificationManager.post(NotificationId.UNSUPPORTED_FIRMWARE, DanaStrings.unsupportedfirmware)
         }
