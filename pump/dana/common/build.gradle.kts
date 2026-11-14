@@ -6,6 +6,10 @@ plugins {
     alias(libs.plugins.metro)
 }
 
+// DanaStrings (commonMain) and DanaStringIds (androidMain) from src/androidMain/res. The strings stay where
+// they are and Android keeps using R.string; common code gets the same texts through TextRef.
+registerKeyStrings("dana")
+
 ksp {
     arg("room.incremental", "true")
     // Room only runs for the Android target here, so the schema folder stays where it was.

@@ -75,6 +75,8 @@ object StringOwnerModules {
         StringOwnerModule("configuration", "app.aaps.plugins.configuration"),
         StringOwnerModule("constraints", "app.aaps.plugins.constraints"),
         StringOwnerModule("main", "app.aaps.plugins.main"),
+        // Dana RS / Dana-i. The texts live in :pump:dana:common; :pump:dana:danars uses them through DanaStrings.
+        StringOwnerModule("dana", "app.aaps.pump.dana", pumpDriver = true),
         StringOwnerModule("medtrum", "app.aaps.pump.medtrum", pumpDriver = true),
         StringOwnerModule("sensitivity", "app.aaps.plugins.sensitivity"),
         StringOwnerModule("smoothing", "app.aaps.plugins.smoothing"),

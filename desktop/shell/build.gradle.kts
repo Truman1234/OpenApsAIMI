@@ -233,6 +233,8 @@ dependencies {
     // Owns strings, so the generated string-owner registry names it and the desktop has to see it.
     // Nothing of the driver reaches here: the plugin and the service are androidMain.
     implementation(project(":pump:medtrum"))
+    // Owns strings (DanaStrings), so the generated string-owner registry names it. No driver code reaches here.
+    implementation(project(":pump:dana:common"))
     implementation(project(":pump:virtual"))
     implementation(project(":workflow"))
     implementation(project(":ui"))
