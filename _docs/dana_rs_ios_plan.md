@@ -94,3 +94,20 @@ Not used: `DanaKitUI`, `DanaKitPlugin`, Loop types (`PumpManager`, `DoseEntry`, 
   so they follow the iOS dosing switch (off until tested on a real pump) and need a confirm dialog.
 - Proposal: shared (commonMain) refill wizard in this order, same screens on Android and iOS;
   on Android it stays optional and does not change the current behaviour.
+
+## Progress (state of the branch)
+
+Done and checked by the maintainer (Android tests green, iOS compile green):
+- 3b: `pump/dana/danars` is a KMP module (androidMain/commonMain/androidHostTest).
+- 3c/3d-a: `DanaRSPacket` and 21 packets in commonMain (Joda replaced by kotlinx.datetime).
+- 1a: `DanaRsReadBuffer` (frame reassembly) + `splitForWrite`; Dana pairing keys in commonMain.
+- 1b: `DanaRsSession` (handshake v1/RSv3/BLE5, packet exchange, coroutines) + `DanaRsHost`; `BLEComm` unchanged and still used on Android.
+- 3: `DanaRsBleProfile` (FFF0/FFF1/FFF2, write without response) + `createIosDanaRsBleTransport()`; `requiresBond=false` for iOS.
+
+Still to do before an iOS driver can exist:
+- 4a: packets that need `R.string` texts, the history packets (Room DAO) and `DanaRSMessageHashTable` into commonMain.
+  Texts need a Dana string owner in `buildSrc/StringOwnerModules.kt` (`pumpDriver = true`) plus
+  `registerKeyStrings` in `pump/dana/common/build.gradle.kts`, and the shells (desktop, iOS) must depend on the Dana module.
+- 4b: `IosDanaRsHost` (texts, notices; pairing keys already go through `Preferences`).
+- 4c: `IosDanaRsPump` + plugin, read only. Dosing stays off until the maintainer enables it after a real pump test.
+- 4d: pairing wizard (PIN for RSv3), overview, refill/prime wizard (priming behind its own switch).
