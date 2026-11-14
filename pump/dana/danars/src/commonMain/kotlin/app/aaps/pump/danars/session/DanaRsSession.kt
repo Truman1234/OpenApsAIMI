@@ -52,7 +52,14 @@ class DanaRsSession(
     private val bleTransport: BleTransport,
     private val host: DanaRsHost,
     private val findMessage: (command: Int) -> DanaRSPacket?,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    /**
+     * Android needs a system bond with the pump before the first connect. iOS has no such bond: the
+     * pump pairs inside its own protocol (the keys in the handshake), and CoreBluetooth sets up the
+     * link security by itself. The iOS transport reports "not bonded" and refuses to create a bond, so
+     * the session must not ask for one there.
+     */
+    private val requiresBond: Boolean = true
 ) : BleTransportListener {
 
     private sealed interface Event {
@@ -168,7 +175,7 @@ class DanaRsSession(
             aapsLogger.error(LTag.PUMPBTCOMM, "Device not found.  Unable to connect from: $from")
             return@withLock false
         }
-        if (!bleTransport.adapter.isDeviceBonded(address)) {
+        if (requiresBond && !bleTransport.adapter.isDeviceBonded(address)) {
             bleTransport.adapter.createBond(address)
             aapsLogger.debug(LTag.PUMPBTCOMM, "Bond requested, will retry after bonding completes from: $from")
             return@withLock false

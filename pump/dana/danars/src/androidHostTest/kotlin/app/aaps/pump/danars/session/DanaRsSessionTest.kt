@@ -163,6 +163,45 @@ class DanaRsSessionTest : TestBase() {
         assertThat(danaPump.activeProfile).isEqualTo(2)
     }
 
+    /** Like iOS: the transport says "not bonded" and cannot create a bond */
+    private fun withoutBonds(inner: EmulatorBleTransport): app.aaps.core.interfaces.pump.ble.BleTransport =
+        object : app.aaps.core.interfaces.pump.ble.BleTransport by inner {
+            override val adapter = object : app.aaps.core.interfaces.pump.ble.BleAdapter by inner.adapter {
+                override fun isDeviceBonded(address: String) = false
+                override fun createBond(address: String) = false
+            }
+        }
+
+    private fun createSessionWithoutBonds(requiresBond: Boolean) {
+        transport = EmulatorBleTransport(deviceName = deviceName, encryptionType = EncryptionType.ENCRYPTION_DEFAULT).apply {
+            pairingDelayMs = 0
+            emulator.historyEventDelayMs = 0
+        }
+        session = DanaRsSession(
+            aapsLogger = aapsLogger, rxBus = rxBus, danaPump = danaPump, bleEncryption = BleEncryption(),
+            dateUtil = dateUtil, preferences = preferences, bleTransport = withoutBonds(transport), host = host,
+            findMessage = { null }, scope = scope, requiresBond = requiresBond
+        ).apply { messageTimeoutMs = 5000 }
+    }
+
+    @Test
+    fun `without a system bond the session connects when it does not require one (iOS)`() = runBlocking {
+        whenever(preferences.get(DanaStringComposedKey.ParingKey, deviceName)).thenReturn("ABCD")
+        createSessionWithoutBonds(requiresBond = false)
+
+        connectAndWait()
+
+        assertThat(danaPump.rsPassword).isEqualTo("0000")
+    }
+
+    @Test
+    fun `without a system bond the session does not connect when it requires one (Android)`() = runBlocking {
+        createSessionWithoutBonds(requiresBond = true)
+
+        assertThat(session.connect("test", deviceAddress)).isFalse()
+        assertThat(session.isConnected).isFalse()
+    }
+
     @Test
     fun `a packet is ignored when there is no connection`() = runBlocking {
         createSession(EncryptionType.ENCRYPTION_DEFAULT)
@@ -171,5 +210,18 @@ class DanaRsSessionTest : TestBase() {
         session.sendMessage(packet)
 
         assertThat(packet.isReceived).isFalse()
+    }
+}
+
+/** Checks the layout values against the numbers the Android driver and DanaKit use. */
+class DanaRsBleProfileTest {
+
+    @Test
+    fun `uses the Dana service and characteristics`() {
+        val profile = DanaRsBleProfile.profile
+        assertThat(profile.serviceUuid).isEqualTo("FFF0")
+        assertThat(profile.notifyCharacteristicUuid).isEqualTo("FFF1")
+        assertThat(profile.writeCharacteristicUuid).isEqualTo("FFF2")
+        assertThat(profile.writeMode).isEqualTo(app.aaps.core.interfaces.pump.ble.session.WriteMode.NoResponse)
     }
 }
