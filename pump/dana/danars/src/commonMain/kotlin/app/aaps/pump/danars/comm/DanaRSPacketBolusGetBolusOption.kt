@@ -4,7 +4,7 @@ import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
 import app.aaps.core.interfaces.notifications.NotificationId
 import app.aaps.core.interfaces.notifications.NotificationManager
-import app.aaps.core.keys.interfaces.TextRef
+import app.aaps.pump.dana.DanaStrings
 import app.aaps.pump.dana.DanaPump
 import app.aaps.pump.danars.encryption.BleEncryption
 import dev.zacsweers.metro.Inject
@@ -80,7 +80,7 @@ class DanaRSPacketBolusGetBolusOption(
         dataSize = 1
         val missedBolus04EndMin = byteArrayToInt(getBytes(data, dataIndex, dataSize))
         if (!danaPump.isExtendedBolusEnabled) {
-            notificationManager.post(NotificationId.EXTENDED_BOLUS_DISABLED, TextRef.AndroidRes(app.aaps.pump.dana.R.string.danar_enableextendedbolus))
+            notificationManager.post(NotificationId.EXTENDED_BOLUS_DISABLED, DanaStrings.danar_enableextendedbolus)
             failed = true
         } else {
             notificationManager.dismiss(NotificationId.EXTENDED_BOLUS_DISABLED)
