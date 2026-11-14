@@ -60,6 +60,10 @@ val migratedModules = listOf(
     // `.claude` walk above drowned them among ~47 phantom modules, so the real message was never
     // read. Not listing a module that builds for iOS means its code is simply absent from the
     // framework Swift sees - which for `:pump:medtrum:proto` is the whole iOS Medtrum driver.
+    // Dana RS / Dana-i: the shared protocol, packets and connection code. Nothing of it is wired into the
+    // app yet; it is listed because the guard below requires every module that builds for iOS.
+    ":pump:dana:common",
+    ":pump:dana:danars",
     ":pump:medtrum",
     ":pump:omnipod:dashctl",
     ":pump:ui",
