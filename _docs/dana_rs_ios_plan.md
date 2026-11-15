@@ -111,9 +111,12 @@ Done and checked by the maintainer (Android tests green, iOS compile green):
   `DanaHistoryRecordStore` interface (commonMain) + `DanaHistoryRecordData` (plain, no Room), with
   `DanaHistoryRecordStoreImpl` converting to the Room entity on Android. The Room entity, DAO and
   `DanaHistoryViewModel` are unchanged.
+- `DanaRSMessageHashTable` into commonMain (no code change beyond dropping `@JvmSuppressWildcards`,
+  a JVM-only Java interop hint that does not exist on iOS).
+
+4a is done: every Dana RS packet and helper is now in commonMain.
 
 Still to do before an iOS driver can exist:
-- `DanaRSMessageHashTable` into commonMain.
 - 4b: `IosDanaRsHost` (texts, notices; pairing keys already go through `Preferences`).
 - 4c: `IosDanaRsPump` + plugin, read only. Dosing stays off until the maintainer enables it after a real pump test.
 - 4d: pairing wizard (PIN for RSv3), overview, refill/prime wizard (priming behind its own switch).
