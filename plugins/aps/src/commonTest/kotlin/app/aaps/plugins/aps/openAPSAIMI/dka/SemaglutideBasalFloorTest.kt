@@ -34,7 +34,7 @@ class SemaglutideBasalFloorTest {
         val r = apply(bg = 95.0)
         assertFalse(r.applied)
         assertEquals(0.0, r.rateUph)
-        assertTrue((r.note).contains("skipped"))
+        assertTrue(r.note?.contains("skipped") == true)
     }
 
     @Test fun glucoseExactlyAtTheLimitIsTreatedAsLow() {
@@ -45,7 +45,7 @@ class SemaglutideBasalFloorTest {
     @Test fun predictedLowGlucoseSkipsTheFloor() {
         val r = apply(eventual = 80.0)
         assertFalse(r.applied)
-        assertTrue((r.note).contains("eventual"))
+        assertTrue(r.note?.contains("eventual") == true)
     }
 
     @Test fun missingGlucoseSkipsTheFloor() {
