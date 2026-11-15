@@ -13,7 +13,7 @@ class DanaRSMessageHashTable(
     /**
      * Only packets which are not respond to sent packet are listed
      */
-    private val packets: Set<@JvmSuppressWildcards DanaRSPacket>
+    private val packets: Set<DanaRSPacket>
 ) {
 
     /**
