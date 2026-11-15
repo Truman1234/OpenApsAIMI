@@ -19,6 +19,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import kotlin.concurrent.Volatile
 import kotlin.time.Instant
 
 abstract class DanaRSPacketHistory internal constructor(
