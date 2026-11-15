@@ -123,6 +123,22 @@ Done and checked by the maintainer (Android tests green, iOS compile green):
   `restartApp(reason)` are simplified for now (no iOS pump driver yet to reconnect or restart);
   filled in properly with 4c.
 
-Still to do before an iOS driver can exist:
-- 4c: `IosDanaRsPump` + plugin, read only. Dosing stays off until the maintainer enables it after a real pump test.
+- 4c: `IosDanaRsPump` + `IosDanaRsDriverHost` + `IosDanaRsPlugin` are done and checked by the
+  maintainer (iOS compile green, full test suite green). Read-only driver: status fields come
+  from the shared `DanaPump`, `getPumpStatus()` sends 5 packets (keep connection, shipping info,
+  pump check, basal rate, initial screen info) to read serial/firmware/basal/reservoir/battery.
+  Every dosing method fails closed until the maintainer enables it after a real pump test.
+  `@MetroIntKey(1040)`, same as Android's `DanaRSPlugin`. No preference screen yet (comes with 4d),
+  so `isConfigured()` stays false for everyone until then.
+  `DanaRsSession` (and the `IosBleTransport` under it, which opens CoreBluetooth in its own
+  constructor) is built lazily inside `IosDanaRsDriverHost`, only on the first real `connect()`
+  attempt - not eagerly in the `@Inject` host, which would have asked every iOS user for the
+  Bluetooth permission just by starting the app.
+  Along the way, found and fixed a real compile bug: the `Set<DanaRSPacket>` binding (used by
+  `DanaRSMessageHashTable` to find unsolicited packets) lived in `DanaRSBindings`, androidMain
+  only. Moved the packet-set part to a new commonMain `DanaRSCommonBindings` (the 4 packets in it
+  have no Android-specific part); `DanaRSBindings` keeps only the Bluetooth adapter provider,
+  which is genuinely Android-specific. No behavior change on Android.
+
+Still to do before an iOS driver can be used:
 - 4d: pairing wizard (PIN for RSv3), overview, refill/prime wizard (priming behind its own switch).
