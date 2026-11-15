@@ -26,7 +26,7 @@ import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.interfaces.StringComposedNonPreferenceKey
 import app.aaps.pump.dana.DanaPump
 import app.aaps.pump.dana.comm.RecordTypes
-import app.aaps.pump.dana.database.DanaHistoryRecordDao
+import app.aaps.pump.dana.database.DanaHistoryRecordStore
 import app.aaps.pump.dana.keys.DanaStringComposedKey
 import app.aaps.pump.dana.keys.DanaStringNonKey
 import app.aaps.pump.danars.DanaRSPlugin
@@ -119,7 +119,7 @@ class DanaRSServiceIntegrationTest : TestBase() {
     @Mock lateinit var activePlugin: ActivePlugin
     @Mock lateinit var uiInteraction: UiInteraction
     @Mock lateinit var fabricPrivacy: FabricPrivacy
-    @Mock lateinit var danaHistoryRecordDao: DanaHistoryRecordDao
+    @Mock lateinit var danaHistoryRecordStore: DanaHistoryRecordStore
     @Mock lateinit var pumpEnactResult: PumpEnactResult
     @Mock lateinit var profileUtil: ProfileUtil
     @Mock lateinit var pumpWithConcentration: PumpWithConcentration
@@ -259,15 +259,15 @@ class DanaRSServiceIntegrationTest : TestBase() {
         danaRSService.danaRSPacketBasalSetProfileNumber = { DanaRSPacketBasalSetProfileNumber(aapsLogger) }
         danaRSService.danaRSPacketGeneralSetHistoryUploadMode = { DanaRSPacketGeneralSetHistoryUploadMode(aapsLogger) }
         danaRSService.danaRSPacketBolusSet24CIRCFArray = { DanaRSPacketBolusSet24CIRCFArray(aapsLogger, danaPump, profileUtil) }
-        danaRSService.danaRSPacketHistoryAlarm = { DanaRSPacketHistoryAlarm(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump) }
-        danaRSService.danaRSPacketHistoryBasal = { DanaRSPacketHistoryBasal(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump) }
-        danaRSService.danaRSPacketHistoryBloodGlucose = { DanaRSPacketHistoryBloodGlucose(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump) }
-        danaRSService.danaRSPacketHistoryBolus = { DanaRSPacketHistoryBolus(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump) }
-        danaRSService.danaRSPacketHistoryCarbohydrate = { DanaRSPacketHistoryCarbohydrate(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump) }
-        danaRSService.danaRSPacketHistoryDaily = { DanaRSPacketHistoryDaily(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump) }
-        danaRSService.danaRSPacketHistoryPrime = { DanaRSPacketHistoryPrime(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump) }
-        danaRSService.danaRSPacketHistoryRefill = { DanaRSPacketHistoryRefill(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump) }
-        danaRSService.danaRSPacketHistorySuspend = { DanaRSPacketHistorySuspend(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump) }
+        danaRSService.danaRSPacketHistoryAlarm = { DanaRSPacketHistoryAlarm(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump) }
+        danaRSService.danaRSPacketHistoryBasal = { DanaRSPacketHistoryBasal(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump) }
+        danaRSService.danaRSPacketHistoryBloodGlucose = { DanaRSPacketHistoryBloodGlucose(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump) }
+        danaRSService.danaRSPacketHistoryBolus = { DanaRSPacketHistoryBolus(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump) }
+        danaRSService.danaRSPacketHistoryCarbohydrate = { DanaRSPacketHistoryCarbohydrate(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump) }
+        danaRSService.danaRSPacketHistoryDaily = { DanaRSPacketHistoryDaily(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump) }
+        danaRSService.danaRSPacketHistoryPrime = { DanaRSPacketHistoryPrime(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump) }
+        danaRSService.danaRSPacketHistoryRefill = { DanaRSPacketHistoryRefill(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump) }
+        danaRSService.danaRSPacketHistorySuspend = { DanaRSPacketHistorySuspend(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump) }
     }
 
     private fun connectAndHandshake() {

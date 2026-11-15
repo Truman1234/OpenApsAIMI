@@ -1,7 +1,7 @@
 package app.aaps.pump.danars.comm
 
 import app.aaps.core.interfaces.pump.PumpSync
-import app.aaps.pump.dana.database.DanaHistoryRecordDao
+import app.aaps.pump.dana.database.DanaHistoryRecordStore
 import app.aaps.pump.danars.DanaRSTestBase
 import com.google.common.truth.Truth.assertThat
 import org.joda.time.DateTime
@@ -15,15 +15,15 @@ import org.mockito.kotlin.verify
 
 class DanaRsPacketHistoryBolusTest : DanaRSTestBase() {
 
-    @Mock lateinit var danaHistoryRecordDao: DanaHistoryRecordDao
+    @Mock lateinit var danaHistoryRecordStore: DanaHistoryRecordStore
     @Mock lateinit var pumpSync: PumpSync
 
     @Test fun runTest() {
-        val packet = DanaRSPacketHistoryBolus(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump).with(System.currentTimeMillis())
+        val packet = DanaRSPacketHistoryBolus(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump).with(System.currentTimeMillis())
         Assertions.assertEquals("REVIEW__BOLUS", packet.friendlyName)
     }
 
-    private fun packet() = DanaRSPacketHistoryBolus(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump).with(0)
+    private fun packet() = DanaRSPacketHistoryBolus(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump).with(0)
 
     /** One step bolus record: code 2, 2026-10-01 (or [month]-[day] of 20[year]) HH:mm:00, step bolus, [centiUnits] / 100 U */
     private fun bolusRecord(hour: Int, minute: Int, centiUnits: Int, year: Int = 26, month: Int = 10, day: Int = 1) =
@@ -34,7 +34,7 @@ class DanaRsPacketHistoryBolusTest : DanaRSTestBase() {
     @Test fun olderPumpSendsOneRecordPerPacket() {
         packet().handleMessage(header + bolusRecord(8, 0, 50))
 
-        verify(danaHistoryRecordDao, times(1)).createOrUpdate(any())
+        verify(danaHistoryRecordStore, times(1)).createOrUpdate(any())
     }
 
     @Test fun danaI2BulkPacketStoresEveryRecord() {
@@ -44,7 +44,7 @@ class DanaRsPacketHistoryBolusTest : DanaRSTestBase() {
 
         packet.handleMessage(header + records)
 
-        verify(danaHistoryRecordDao, times(20)).createOrUpdate(any())
+        verify(danaHistoryRecordStore, times(20)).createOrUpdate(any())
         assertThat(packet.done).isFalse()
     }
 
@@ -69,18 +69,28 @@ class DanaRsPacketHistoryBolusTest : DanaRSTestBase() {
 
     /** #449: a bolus given while the pump clock was still in the hour that does not exist after the clock went forward */
     @Test fun olderPumpRecordInTheDaylightSavingGapIsRead() {
-        val defaultZone = DateTimeZone.getDefault()
-        try {
+        withZone("Europe/Prague") {
             val prague = DateTimeZone.forID("Europe/Prague")
-            DateTimeZone.setDefault(prague)
             danaPump.hwModel = 0x05 // Dana RS
             val packet = packet()
 
             packet.handleMessage(header + bolusRecord(2, 30, 50, year = 27, month = 3, day = 28))
 
             assertThat(packet.danaRHistoryRecord.timestamp).isEqualTo(DateTime(2027, 3, 28, 3, 30, prague).millis)
+        }
+    }
+
+    /** The packet code reads the zone of the JVM, the expected values use the Joda zone. Both are set to the same zone. */
+    private fun withZone(id: String, block: () -> Unit) {
+        val jodaZone = DateTimeZone.getDefault()
+        val jvmZone = java.util.TimeZone.getDefault()
+        try {
+            DateTimeZone.setDefault(DateTimeZone.forID(id))
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(id))
+            block()
         } finally {
-            DateTimeZone.setDefault(defaultZone)
+            DateTimeZone.setDefault(jodaZone)
+            java.util.TimeZone.setDefault(jvmZone)
         }
     }
 

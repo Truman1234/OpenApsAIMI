@@ -2,7 +2,7 @@ package app.aaps.pump.danars.comm
 
 import app.aaps.core.interfaces.pump.PumpSync
 import app.aaps.pump.dana.comm.RecordTypes
-import app.aaps.pump.dana.database.DanaHistoryRecordDao
+import app.aaps.pump.dana.database.DanaHistoryRecordStore
 import app.aaps.pump.danars.DanaRSTestBase
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
@@ -11,12 +11,12 @@ import java.util.GregorianCalendar
 
 class DanaRSPacketHistoryAlarmTest : DanaRSTestBase() {
 
-    @Mock lateinit var danaHistoryRecordDao: DanaHistoryRecordDao
+    @Mock lateinit var danaHistoryRecordStore: DanaHistoryRecordStore
     @Mock lateinit var pumpSync: PumpSync
 
     @Test
     fun runTest() {
-        val packet = DanaRSPacketHistoryAlarm(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump).with(0)
+        val packet = DanaRSPacketHistoryAlarm(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump).with(0)
 
         val array = createArray(12, 0.toByte()) // 10 + 2
         putByteToArray(array, 0, 0x0A) // record code alarm

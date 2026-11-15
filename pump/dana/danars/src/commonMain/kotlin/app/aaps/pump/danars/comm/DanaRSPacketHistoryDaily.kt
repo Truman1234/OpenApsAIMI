@@ -6,24 +6,24 @@ import app.aaps.core.interfaces.pump.PumpSync
 import app.aaps.core.interfaces.rx.bus.RxBus
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.pump.dana.DanaPump
-import app.aaps.pump.dana.database.DanaHistoryRecordDao
+import app.aaps.pump.dana.database.DanaHistoryRecordStore
 import app.aaps.pump.danars.encryption.BleEncryption
 import dev.zacsweers.metro.Inject
 
 @Inject
-class DanaRSPacketHistoryPrime(
+class DanaRSPacketHistoryDaily(
     aapsLogger: AAPSLogger,
     dateUtil: DateUtil,
     rxBus: RxBus,
-    danaHistoryRecordDao: DanaHistoryRecordDao,
+    danaHistoryRecordStore: DanaHistoryRecordStore,
     pumpSync: PumpSync,
     danaPump: DanaPump
-) : DanaRSPacketHistory(aapsLogger, dateUtil, rxBus, danaHistoryRecordDao, pumpSync, danaPump) {
+) : DanaRSPacketHistory(aapsLogger, dateUtil, rxBus, danaHistoryRecordStore, pumpSync, danaPump) {
 
     init {
-        opCode = BleEncryption.DANAR_PACKET__OPCODE_REVIEW__PRIME
+        opCode = BleEncryption.DANAR_PACKET__OPCODE_REVIEW__DAILY
         aapsLogger.debug(LTag.PUMPCOMM, "New message")
     }
 
-    override val friendlyName: String = "REVIEW__PRIME"
+    override val friendlyName: String = "REVIEW__DAILY"
 }

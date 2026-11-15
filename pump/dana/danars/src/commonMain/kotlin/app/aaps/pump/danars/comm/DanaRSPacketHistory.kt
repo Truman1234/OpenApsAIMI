@@ -8,22 +8,24 @@ import app.aaps.core.interfaces.rx.bus.RxBus
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.pump.dana.DanaPump
 import app.aaps.pump.dana.comm.RecordTypes
-import app.aaps.pump.dana.database.DanaHistoryRecord
-import app.aaps.pump.dana.database.DanaHistoryRecordDao
+import app.aaps.pump.dana.database.DanaHistoryRecordData
+import app.aaps.pump.dana.database.DanaHistoryRecordStore
 import app.aaps.pump.dana.events.EventDanaRSyncStatus
 import app.aaps.pump.danars.comm.DanaRSPacketHistory.Companion.RECORD_SIZE
 import kotlinx.coroutines.runBlocking
-import org.joda.time.DateTime
-import org.joda.time.DateTimeZone
-import org.joda.time.LocalDate
-import java.util.Calendar
-import java.util.GregorianCalendar
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 abstract class DanaRSPacketHistory internal constructor(
     private val aapsLogger: AAPSLogger,
     private val dateUtil: DateUtil,
     private val rxBus: RxBus,
-    private val danaHistoryRecordDao: DanaHistoryRecordDao,
+    private val danaHistoryRecordStore: DanaHistoryRecordStore,
     private val pumpSync: PumpSync,
     private val danaPump: DanaPump
 ) : DanaRSPacket() {
@@ -39,7 +41,7 @@ abstract class DanaRSPacketHistory internal constructor(
 
     @Volatile var done = false
     var totalCount = 0
-    val danaRHistoryRecord = DanaHistoryRecord(0)
+    val danaRHistoryRecord = DanaHistoryRecordData(0)
 
     companion object {
 
@@ -49,16 +51,17 @@ abstract class DanaRSPacketHistory internal constructor(
 
     fun with(from: Long) = this.also {
         it.from = from
-        val cal = GregorianCalendar()
-        if (it.from != 0L) cal.timeInMillis = it.from
-        else cal[2000, 0, 1, 0, 0] = 0
-        year = cal[Calendar.YEAR] - 1900 - 100
-        month = cal[Calendar.MONTH] + 1
-        day = cal[Calendar.DAY_OF_MONTH]
-        hour = cal[Calendar.HOUR_OF_DAY]
-        min = cal[Calendar.MINUTE]
-        sec = cal[Calendar.SECOND]
-        aapsLogger.debug(LTag.PUMPCOMM, "Loading event history from: " + dateUtil.dateAndTimeString(cal.timeInMillis))
+        // Local time, like the old GregorianCalendar did. from == 0 means "from the start", 2000-01-01 00:00:00.
+        val local = if (from != 0L) Instant.fromEpochMilliseconds(from).toLocalDateTime(TimeZone.currentSystemDefault())
+        else LocalDateTime(2000, 1, 1, 0, 0, 0)
+        year = local.year - 2000
+        month = local.monthNumber
+        day = local.dayOfMonth
+        hour = local.hour
+        min = local.minute
+        sec = local.second
+        val logMillis = if (from != 0L) from else local.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+        aapsLogger.debug(LTag.PUMPCOMM, "Loading event history from: " + dateUtil.dateAndTimeString(logMillis))
     }
 
     override fun getRequestParams(): ByteArray {
@@ -101,9 +104,9 @@ abstract class DanaRSPacketHistory internal constructor(
      * Time of a history record. Pumps with UTC inside (Dana-i, Dana-i2) store it in UTC, older pumps in local time.
      * The daily total does not use this: it has only a date, and UTC midnight would be the previous day west of UTC.
      */
-    private fun historyTime(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int = 0): DateTime =
-        if (danaPump.usingUTC) DateTime(2000 + year, month, day, hour, minute, second, DateTimeZone.UTC)
-        else DateTime(localTimeToMillis(2000 + year, month, day, hour, minute, second))
+    private fun historyTime(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int = 0): Long =
+        if (danaPump.usingUTC) LocalDateTime(2000 + year, month, day, hour, minute, second).toInstant(TimeZone.UTC).toEpochMilliseconds()
+        else localTimeToMillis(2000 + year, month, day, hour, minute, second)
 
     /** One history record of [RECORD_SIZE] bytes, starting at [start] */
     private fun processRecord(data: ByteArray, start: Int) {
@@ -127,7 +130,7 @@ abstract class DanaRSPacketHistory internal constructor(
             0x02 -> {
                 danaRHistoryRecord.code = RecordTypes.RECORD_TYPE_BOLUS
                 val datetime = historyTime(historyYear, historyMonth, historyDay, historyHour, historyMinute)
-                danaRHistoryRecord.timestamp = datetime.millis
+                danaRHistoryRecord.timestamp = datetime
                 when (0xF0 and paramByte8.toInt()) {
                     0xA0 -> {
                         danaRHistoryRecord.bolusType = "DS"
@@ -153,78 +156,78 @@ abstract class DanaRSPacketHistory internal constructor(
                 }
                 danaRHistoryRecord.duration = T.mins((paramByte8.toInt() and 0x0F) * 60 + paramByte7.toLong()).msecs()
                 danaRHistoryRecord.value = value * 0.01
-                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetime.millis) + " Code: " + historyCode + " Value: " + value)
+                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetime) + " Code: " + historyCode + " Value: " + value)
             }
 
             0x03 -> {
                 danaRHistoryRecord.code = RecordTypes.RECORD_TYPE_DAILY
                 messageType += "dailyinsulin"
-                val date = LocalDate(2000 + historyYear, historyMonth, historyDay).toDateTimeAtStartOfDay()
-                danaRHistoryRecord.timestamp = date.millis
+                val date = LocalDate(2000 + historyYear, historyMonth, historyDay).atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+                danaRHistoryRecord.timestamp = date
                 danaRHistoryRecord.dailyBasal = dailyBasal
                 danaRHistoryRecord.dailyBolus = dailyBolus
-                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(date.millis) + " Code: " + historyCode + " Value: " + value)
+                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(date) + " Code: " + historyCode + " Value: " + value)
             }
 
             0x04 -> {
                 danaRHistoryRecord.code = RecordTypes.RECORD_TYPE_PRIME
                 messageType += "prime"
                 val datetimewihtsec = historyTime(historyYear, historyMonth, historyDay, historyHour, historyMinute, historySecond)
-                danaRHistoryRecord.timestamp = datetimewihtsec.millis
+                danaRHistoryRecord.timestamp = datetimewihtsec
                 danaRHistoryRecord.value = value * 0.01
-                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec.millis) + " Code: " + historyCode + " Value: " + value)
+                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec) + " Code: " + historyCode + " Value: " + value)
             }
 
             0x05 -> {
                 danaRHistoryRecord.code = RecordTypes.RECORD_TYPE_REFILL
                 messageType += "refill"
                 val datetimewihtsec = historyTime(historyYear, historyMonth, historyDay, historyHour, historyMinute, historySecond)
-                danaRHistoryRecord.timestamp = datetimewihtsec.millis
+                danaRHistoryRecord.timestamp = datetimewihtsec
                 danaRHistoryRecord.value = value * 0.01
-                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec.millis) + " Code: " + historyCode + " Value: " + value)
+                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec) + " Code: " + historyCode + " Value: " + value)
             }
 
             0x0b -> {
                 danaRHistoryRecord.code = RecordTypes.RECORD_TYPE_BASALHOUR
                 messageType += "basal hour"
                 val datetimewihtsec = historyTime(historyYear, historyMonth, historyDay, historyHour, historyMinute, historySecond)
-                danaRHistoryRecord.timestamp = datetimewihtsec.millis
+                danaRHistoryRecord.timestamp = datetimewihtsec
                 danaRHistoryRecord.value = value * 0.01
-                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec.millis) + " Code: " + historyCode + " Value: " + value)
+                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec) + " Code: " + historyCode + " Value: " + value)
             }
 
             0x99 -> {
                 danaRHistoryRecord.code = RecordTypes.RECORD_TYPE_TEMP_BASAL
                 messageType += "tb"
                 val datetimewihtsec = historyTime(historyYear, historyMonth, historyDay, historyHour, historyMinute, historySecond)
-                danaRHistoryRecord.timestamp = datetimewihtsec.millis
+                danaRHistoryRecord.timestamp = datetimewihtsec
                 danaRHistoryRecord.value = value * 0.01
-                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec.millis) + " Code: " + historyCode + " Value: " + value)
+                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec) + " Code: " + historyCode + " Value: " + value)
             }
 
             0x06 -> {
                 danaRHistoryRecord.code = RecordTypes.RECORD_TYPE_GLUCOSE
                 messageType += "glucose"
                 val datetimewihtsec = historyTime(historyYear, historyMonth, historyDay, historyHour, historyMinute, historySecond)
-                danaRHistoryRecord.timestamp = datetimewihtsec.millis
+                danaRHistoryRecord.timestamp = datetimewihtsec
                 danaRHistoryRecord.value = value.toDouble()
-                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec.millis) + " Code: " + historyCode + " Value: " + value)
+                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec) + " Code: " + historyCode + " Value: " + value)
             }
 
             0x07 -> {
                 danaRHistoryRecord.code = RecordTypes.RECORD_TYPE_CARBO
                 messageType += "carbo"
                 val datetimewihtsec = historyTime(historyYear, historyMonth, historyDay, historyHour, historyMinute, historySecond)
-                danaRHistoryRecord.timestamp = datetimewihtsec.millis
+                danaRHistoryRecord.timestamp = datetimewihtsec
                 danaRHistoryRecord.value = value.toDouble()
-                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec.millis) + " Code: " + historyCode + " Value: " + value)
+                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec) + " Code: " + historyCode + " Value: " + value)
             }
 
             0x0a -> {
                 danaRHistoryRecord.code = RecordTypes.RECORD_TYPE_ALARM
                 messageType += "alarm"
                 val datetimewihtsec = historyTime(historyYear, historyMonth, historyDay, historyHour, historyMinute, historySecond)
-                danaRHistoryRecord.timestamp = datetimewihtsec.millis
+                danaRHistoryRecord.timestamp = datetimewihtsec
                 var strAlarm = "None"
                 when (paramByte8) {
                     'P'.code.toByte() -> strAlarm = "Basal Compare"
@@ -238,21 +241,21 @@ abstract class DanaRSPacketHistory internal constructor(
                 }
                 danaRHistoryRecord.alarm = strAlarm
                 danaRHistoryRecord.value = value * 0.01
-                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec.millis) + " Code: " + historyCode + " Value: " + value)
+                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec) + " Code: " + historyCode + " Value: " + value)
             }
 
             0x09 -> {
                 danaRHistoryRecord.code = RecordTypes.RECORD_TYPE_SUSPEND
                 messageType += "suspend"
                 val datetimewihtsec = historyTime(historyYear, historyMonth, historyDay, historyHour, historyMinute, historySecond)
-                danaRHistoryRecord.timestamp = datetimewihtsec.millis
+                danaRHistoryRecord.timestamp = datetimewihtsec
                 var strRecordValue = "Off"
                 if (paramByte8.toInt() == 79) strRecordValue = "On"
                 danaRHistoryRecord.stringValue = strRecordValue
-                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec.millis) + " Code: " + historyCode + " Value: " + value)
+                aapsLogger.debug(LTag.PUMPCOMM, "History packet: " + recordCode + " Date: " + dateUtil.dateAndTimeString(datetimewihtsec) + " Code: " + historyCode + " Value: " + value)
             }
         }
-        danaHistoryRecordDao.createOrUpdate(danaRHistoryRecord)
+        danaHistoryRecordStore.createOrUpdate(danaRHistoryRecord)
         //If it is a TDD, store it for stats also.
         if (danaRHistoryRecord.code == RecordTypes.RECORD_TYPE_DAILY) {
             runBlocking {
