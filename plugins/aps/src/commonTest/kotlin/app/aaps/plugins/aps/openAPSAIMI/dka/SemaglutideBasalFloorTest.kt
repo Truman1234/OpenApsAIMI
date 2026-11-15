@@ -20,7 +20,7 @@ class SemaglutideBasalFloorTest {
         val r = apply()
         assertTrue(r.applied)
         assertEquals(0.5, r.rateUph, 1e-9)
-        assertTrue((r.note).contains("50%"))
+        assertTrue(r.note?.contains("50%") == true)
     }
 
     @Test fun rateAboveTheFloorIsUntouched() {
