@@ -3,7 +3,7 @@ package app.aaps.pump.danars.comm
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
 import app.aaps.core.interfaces.pump.BolusProgressData
-import app.aaps.core.interfaces.resources.ResourceHelper
+import app.aaps.core.interfaces.resources.TextResolver
 import app.aaps.pump.dana.DanaStrings
 import app.aaps.pump.dana.DanaPump
 import app.aaps.pump.danars.encryption.BleEncryption
@@ -13,7 +13,7 @@ import dev.zacsweers.metro.Inject
 open class DanaRSPacketBolusSetStepBolusStop(
     private val aapsLogger: AAPSLogger,
     private val bolusProgressData: BolusProgressData,
-    private val rh: ResourceHelper,
+    private val rh: TextResolver,
     private val danaPump: DanaPump
 ) : DanaRSPacket() {
 

@@ -14,7 +14,7 @@ import app.aaps.core.interfaces.resources.ResourceHelper
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.pump.dana.DanaPump
-import app.aaps.pump.dana.R
+import app.aaps.pump.dana.DanaStrings
 import app.aaps.pump.dana.keys.DanaStringComposedKey
 import app.aaps.pump.danars.DanaRSPlugin
 import app.aaps.pump.danars.comm.DanaRSMessageHashTable
@@ -316,7 +316,7 @@ class BLECommTest : TestBase() {
      */
     @Test
     fun danaI2PumpErrorShowsTheErrorAndKeepsThePairing() {
-        whenever(rh.gs(R.string.occlusion)).thenReturn("Occlusion")
+        whenever(rh.gs(DanaStrings.occlusion)).thenReturn("Occlusion")
         whenever(bleEncryption.getDecryptedPacket(any())).thenReturn(pumpReply(0x02))
 
         bleComm.onCharacteristicChanged(framedPacket())
@@ -327,7 +327,7 @@ class BLECommTest : TestBase() {
 
     @Test
     fun olderPumpErrorWithoutErrorByteStillShowsPumpError() {
-        whenever(rh.gs(R.string.pumperror)).thenReturn("Pump Error")
+        whenever(rh.gs(DanaStrings.pumperror)).thenReturn("Pump Error")
         whenever(bleEncryption.getDecryptedPacket(any())).thenReturn(pumpReply())
 
         bleComm.onCharacteristicChanged(framedPacket())

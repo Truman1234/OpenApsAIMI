@@ -5,7 +5,7 @@ import app.aaps.core.interfaces.notifications.NotificationManager
 import app.aaps.core.interfaces.pump.PumpSync
 import app.aaps.core.interfaces.resources.ResourceHelper
 import app.aaps.pump.dana.DanaPump
-import app.aaps.pump.dana.R
+import app.aaps.pump.dana.DanaStrings
 import app.aaps.shared.tests.TestBase
 import com.google.common.truth.Truth.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -31,11 +31,11 @@ class DanaRSAlarmReporterTest : TestBase() {
 
     @BeforeEach
     fun setup() {
-        whenever(rh.gs(R.string.pumperror)).thenReturn("Pump Error")
-        whenever(rh.gs(R.string.lowbattery)).thenReturn("Low Battery")
-        whenever(rh.gs(R.string.occlusion)).thenReturn("Occlusion")
-        whenever(rh.gs(R.string.danai2_pump_check_error)).thenReturn("Pump check error")
-        whenever(rh.gs(R.string.pumpshutdown)).thenReturn("Pump Shutdown")
+        whenever(rh.gs(DanaStrings.pumperror)).thenReturn("Pump Error")
+        whenever(rh.gs(DanaStrings.lowbattery)).thenReturn("Low Battery")
+        whenever(rh.gs(DanaStrings.occlusion)).thenReturn("Occlusion")
+        whenever(rh.gs(DanaStrings.danai2_pump_check_error)).thenReturn("Pump check error")
+        whenever(rh.gs(DanaStrings.pumpshutdown)).thenReturn("Pump Shutdown")
         whenever(danaPump.serialNumber).thenReturn("CFL00001TJ")
         sut = DanaRSAlarmReporter(rh, notificationManager, pumpSync, danaPump)
     }

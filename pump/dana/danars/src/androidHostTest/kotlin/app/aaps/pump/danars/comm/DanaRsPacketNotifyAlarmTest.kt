@@ -2,7 +2,7 @@ package app.aaps.pump.danars.comm
 
 import app.aaps.core.interfaces.notifications.NotificationId
 import app.aaps.core.interfaces.pump.PumpSync
-import app.aaps.pump.dana.R
+import app.aaps.pump.dana.DanaStrings
 import app.aaps.pump.danars.DanaRSTestBase
 import app.aaps.pump.danars.services.DanaRSAlarmReporter
 import org.junit.jupiter.api.Assertions
@@ -38,10 +38,10 @@ class DanaRsPacketNotifyAlarmTest : DanaRSTestBase() {
     @ParameterizedTest
     @CsvSource("2, Pump Error", "3, Occlusion", "4, Low Battery", "5, Pump Shutdown")
     fun alarmCodeShowsTheTextFromTheSpec(code: Int, text: String) {
-        whenever(rh.gs(R.string.pumperror)).thenReturn("Pump Error")
-        whenever(rh.gs(R.string.occlusion)).thenReturn("Occlusion")
-        whenever(rh.gs(R.string.lowbattery)).thenReturn("Low Battery")
-        whenever(rh.gs(R.string.pumpshutdown)).thenReturn("Pump Shutdown")
+        whenever(rh.gs(DanaStrings.pumperror)).thenReturn("Pump Error")
+        whenever(rh.gs(DanaStrings.occlusion)).thenReturn("Occlusion")
+        whenever(rh.gs(DanaStrings.lowbattery)).thenReturn("Low Battery")
+        whenever(rh.gs(DanaStrings.pumpshutdown)).thenReturn("Pump Shutdown")
         val packet = DanaRSPacketNotifyAlarm(aapsLogger, rh, DanaRSAlarmReporter(rh, notificationManager, pumpSync, danaPump))
 
         packet.handleMessage(byteArrayOf(0xC3.toByte(), 0x03, code.toByte()))
