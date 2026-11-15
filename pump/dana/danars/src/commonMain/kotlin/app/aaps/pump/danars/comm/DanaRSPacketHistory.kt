@@ -56,8 +56,8 @@ abstract class DanaRSPacketHistory internal constructor(
         val local = if (from != 0L) Instant.fromEpochMilliseconds(from).toLocalDateTime(TimeZone.currentSystemDefault())
         else LocalDateTime(2000, 1, 1, 0, 0, 0)
         year = local.year - 2000
-        month = local.monthNumber
-        day = local.dayOfMonth
+        month = local.month.number
+        day = local.day
         hour = local.hour
         min = local.minute
         sec = local.second
