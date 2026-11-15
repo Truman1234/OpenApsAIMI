@@ -116,7 +116,13 @@ Done and checked by the maintainer (Android tests green, iOS compile green):
 
 4a is done: every Dana RS packet and helper is now in commonMain.
 
+- 4b: `IosDanaRsHost` (iOS implementation of `DanaRsHost`) is done and checked by the maintainer
+  (iOS compile green, full test suite green). Same texts (`CoreUiStrings`/`DanaStrings`) and
+  notices (`NotificationManager`) as Android's `BLEComm`/`DanaRSPlugin`. `pumpCheckErrorText`/
+  `reportAlarm` delegate to the existing commonMain `DanaRSAlarmReporter`. `changePump()` and
+  `restartApp(reason)` are simplified for now (no iOS pump driver yet to reconnect or restart);
+  filled in properly with 4c.
+
 Still to do before an iOS driver can exist:
-- 4b: `IosDanaRsHost` (texts, notices; pairing keys already go through `Preferences`).
 - 4c: `IosDanaRsPump` + plugin, read only. Dosing stays off until the maintainer enables it after a real pump test.
 - 4d: pairing wizard (PIN for RSv3), overview, refill/prime wizard (priming behind its own switch).
