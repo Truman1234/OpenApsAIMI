@@ -103,11 +103,17 @@ Done and checked by the maintainer (Android tests green, iOS compile green):
 - 1a: `DanaRsReadBuffer` (frame reassembly) + `splitForWrite`; Dana pairing keys in commonMain.
 - 1b: `DanaRsSession` (handshake v1/RSv3/BLE5, packet exchange, coroutines) + `DanaRsHost`; `BLEComm` unchanged and still used on Android.
 - 3: `DanaRsBleProfile` (FFF0/FFF1/FFF2, write without response) + `createIosDanaRsBleTransport()`; `requiresBond=false` for iOS.
+- 4a: all packets that needed `R.string` texts (NotifyAlarm, DanaRSAlarmReporter, BasalGetBasalRate,
+  BolusGetBolusOption, BolusSetStepBolusStop, GeneralGetPumpCheck, GeneralInitialScreenInformation) and
+  the 9 history packets (`DanaRSPacketHistory` + Alarm/Basal/BloodGlucose/Bolus/Carbohydrate/Daily/Prime/
+  Refill/Suspend) are in commonMain. Texts go through `DanaStrings` (new Dana string owner in
+  `buildSrc/StringOwnerModules.kt`, `pumpDriver = true`); history records go through a new
+  `DanaHistoryRecordStore` interface (commonMain) + `DanaHistoryRecordData` (plain, no Room), with
+  `DanaHistoryRecordStoreImpl` converting to the Room entity on Android. The Room entity, DAO and
+  `DanaHistoryViewModel` are unchanged.
 
 Still to do before an iOS driver can exist:
-- 4a: packets that need `R.string` texts, the history packets (Room DAO) and `DanaRSMessageHashTable` into commonMain.
-  Texts need a Dana string owner in `buildSrc/StringOwnerModules.kt` (`pumpDriver = true`) plus
-  `registerKeyStrings` in `pump/dana/common/build.gradle.kts`, and the shells (desktop, iOS) must depend on the Dana module.
+- `DanaRSMessageHashTable` into commonMain.
 - 4b: `IosDanaRsHost` (texts, notices; pairing keys already go through `Preferences`).
 - 4c: `IosDanaRsPump` + plugin, read only. Dosing stays off until the maintainer enables it after a real pump test.
 - 4d: pairing wizard (PIN for RSv3), overview, refill/prime wizard (priming behind its own switch).
