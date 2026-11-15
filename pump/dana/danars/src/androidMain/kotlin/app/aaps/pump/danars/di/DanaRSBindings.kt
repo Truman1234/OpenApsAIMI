@@ -3,32 +3,20 @@ package app.aaps.pump.danars.di
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Context
-import app.aaps.pump.danars.comm.DanaRSPacket
-import app.aaps.pump.danars.comm.DanaRSPacketNotifyAlarm
-import app.aaps.pump.danars.comm.DanaRSPacketNotifyDeliveryComplete
-import app.aaps.pump.danars.comm.DanaRSPacketNotifyDeliveryRateDisplay
-import app.aaps.pump.danars.comm.DanaRSPacketNotifyMissedBolusAlarm
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.BindingContainer
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Provides
 
 /**
- * The DanaRS command set and the Bluetooth adapter, on Metro. Was `DanaRSModule` + `DanaRSCommModule`.
- * Only packets which are not a response to a sent packet belong here.
+ * The Bluetooth adapter, on Metro. Was part of `DanaRSModule` + `DanaRSCommModule`.
+ *
+ * The DanaRS command set (`Set<DanaRSPacket>`) moved to commonMain's [DanaRSCommonBindings]: it
+ * has no Android-specific part, and iOS needs it too (see that file's doc).
  */
 @ContributesTo(AppScope::class)
 @BindingContainer
 object DanaRSBindings {
-
-    @Provides
-    fun providesCommands(
-        notifyAlarm: DanaRSPacketNotifyAlarm,
-        notifyDeliveryComplete: DanaRSPacketNotifyDeliveryComplete,
-        notifyDeliveryRateDisplay: DanaRSPacketNotifyDeliveryRateDisplay,
-        notifyMissedBolusAlarm: DanaRSPacketNotifyMissedBolusAlarm
-    ): Set<@JvmSuppressWildcards DanaRSPacket> =
-        setOf(notifyAlarm, notifyDeliveryComplete, notifyDeliveryRateDisplay, notifyMissedBolusAlarm)
 
     @Provides
     fun providesBluetoothAdapter(context: Context): BluetoothAdapter? =
