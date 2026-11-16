@@ -140,5 +140,20 @@ Done and checked by the maintainer (Android tests green, iOS compile green):
   have no Android-specific part); `DanaRSBindings` keeps only the Bluetooth adapter provider,
   which is genuinely Android-specific. No behavior change on Android.
 
+- 4d: done and checked by the maintainer (iOS compile green, Android/JVM tests green, iOS
+  simulator tests green).
+  - Pairing wizard (`DanaRsPairWizardModel`/`DanaRsPairWizardScreen`, commonMain): BLE scan, PIN
+    entry for RSv3, password entry, shared with Android once wired there too. Reached from the
+    iOS settings screen (`DanaRsIosIntentKey.PairPump`) and from the overview's "Pair" action.
+  - Overview/pump-status screen (`DanaRsOverviewContent`, iosMain): the same info rows Android's
+    overview shows, built on the shared `buildDanaOverviewUiState()`.
+  - Refill/prime wizard (`DanaRsRefillWizardModel`/`DanaRsRefillWizardScreen`, commonMain): new
+    behavior, not a port - Android has no guided refill/prime flow either. Reservoir amount via
+    `DanaRSPacketOptionSetUserOption` (no insulin moves); prime tube/cannula via
+    `commandQueue.bolus(bolusType = BS.Type.PRIMING)`, the same generic path Omnipod/ComboV2 use.
+    No separate priming switch: priming reuses the existing iOS dosing guard in `IosDanaRsPump`,
+    so it fails closed the same way a real bolus would until the maintainer lifts that guard.
+    Reached only from the iOS settings screen (`DanaRsIosIntentKey.RefillPrime`) for now.
+
 Still to do before an iOS driver can be used:
-- 4d: pairing wizard (PIN for RSv3), overview, refill/prime wizard (priming behind its own switch).
+- The maintainer lifting the iOS dosing guard in `IosDanaRsPump` after real-pump testing.
