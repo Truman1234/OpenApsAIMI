@@ -21,10 +21,12 @@ import app.aaps.core.interfaces.rx.events.EventPumpStatusChanged
 import app.aaps.core.interfaces.rx.events.EventQueueChanged
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.core.keys.interfaces.Preferences
+import app.aaps.core.keys.interfaces.TextRef
+import app.aaps.core.ui.CoreUiStrings
 import app.aaps.core.ui.compose.StatusLevel
 import app.aaps.core.ui.compose.pump.PumpInfoRow
 import app.aaps.pump.dana.DanaPump
-import app.aaps.pump.dana.R
+import app.aaps.pump.dana.DanaStrings
 import app.aaps.pump.dana.events.EventDanaRNewStatus
 import app.aaps.pump.dana.keys.DanaStringNonKey
 import app.aaps.pump.danars.DanaRSPlugin
@@ -104,19 +106,24 @@ internal class DanaRSOverviewViewModelTest {
         whenever(activePlugin.activePump).thenReturn(activePump)
         whenever(activePump.baseBasalRate).thenReturn(PumpRate(0.0))
 
-        whenever(rh.gs(CoreUiR.string.refresh)).thenReturn("Refresh")
-        whenever(rh.gs(CoreUiR.string.pump_history)).thenReturn("History")
+        // management-action labels: still Int-resource rh.gs() calls, unchanged in
+        // DanaRSOverviewViewModel.buildManagementActions() (not moved to buildDanaOverviewUiState)
         whenever(rh.gs(CoreUiR.string.pairing)).thenReturn("Pair")
         whenever(rh.gs(CoreUiR.string.pump_unpair)).thenReturn("Unpair")
-        whenever(rh.gs(CoreUiR.string.battery_label)).thenReturn("Battery")
-        whenever(rh.gs(CoreUiR.string.daily_units)).thenReturn("Daily units")
-        whenever(rh.gs(CoreUiR.string.max_daily_units)).thenReturn("Max daily units")
-        whenever(rh.gs(CoreUiR.string.base_basal_rate_label)).thenReturn("Base basal")
-        whenever(rh.gs(CoreUiR.string.tempbasal_label)).thenReturn("Temp basal")
-        whenever(rh.gs(CoreUiR.string.extended_bolus_label)).thenReturn("Extended bolus")
-        whenever(rh.gs(R.string.basal_bolus_step)).thenReturn("Basal/bolus step")
+        // info-row labels: moved into the shared buildDanaOverviewUiState(), which resolves them as
+        // TextRef, not as an Android resource Int - so these are stubbed on the TextRef overload now
+        // (unstubbed -> null label -> NPE)
+        whenever(rh.gs(CoreUiStrings.refresh)).thenReturn("Refresh")
+        whenever(rh.gs(CoreUiStrings.pump_history)).thenReturn("History")
+        whenever(rh.gs(CoreUiStrings.battery_label)).thenReturn("Battery")
+        whenever(rh.gs(CoreUiStrings.daily_units)).thenReturn("Daily units")
+        whenever(rh.gs(CoreUiStrings.max_daily_units)).thenReturn("Max daily units")
+        whenever(rh.gs(CoreUiStrings.base_basal_rate_label)).thenReturn("Base basal")
+        whenever(rh.gs(CoreUiStrings.tempbasal_label)).thenReturn("Temp basal")
+        whenever(rh.gs(CoreUiStrings.extended_bolus_label)).thenReturn("Extended bolus")
+        whenever(rh.gs(DanaStrings.basal_bolus_step)).thenReturn("Basal/bolus step")
         // texts with values: base basal with profile number, battery, steps, last connection
-        whenever(rh.gs(any<Int>(), anyVararg())).thenReturn("formatted")
+        whenever(rh.gs(any<TextRef>(), anyVararg())).thenReturn("formatted")
     }
 
     @AfterEach

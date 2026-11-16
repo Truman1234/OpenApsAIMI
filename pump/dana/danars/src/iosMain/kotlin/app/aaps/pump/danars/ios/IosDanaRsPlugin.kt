@@ -5,7 +5,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import app.aaps.core.data.plugin.PluginType
+import app.aaps.core.interfaces.db.PersistenceLayer
+import app.aaps.core.interfaces.insulin.ConcentrationHelper
 import app.aaps.core.interfaces.logging.AAPSLogger
+import app.aaps.core.interfaces.logging.UserEntryLogger
 import app.aaps.core.interfaces.notifications.NotificationManager
 import app.aaps.core.interfaces.plugin.PluginBase
 import app.aaps.core.interfaces.plugin.PluginDescription
@@ -14,12 +17,15 @@ import app.aaps.core.interfaces.pump.PumpPluginBase
 import app.aaps.core.interfaces.pump.PumpSync
 import app.aaps.core.interfaces.queue.CommandQueue
 import app.aaps.core.interfaces.resources.TextResolver
+import app.aaps.core.interfaces.rx.bus.RxBus
+import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.interfaces.PreferenceItem
 import app.aaps.core.keys.interfaces.withCompose
 import app.aaps.core.ui.compose.ComposeScreenContent
 import app.aaps.core.ui.compose.icons.IcPluginDanaI
 import app.aaps.core.ui.compose.preference.PreferenceSubScreenDef
+import app.aaps.pump.dana.DanaPump
 import app.aaps.pump.dana.DanaStrings
 import app.aaps.pump.danars.compose.DanaRsPairWizardModel
 import app.aaps.pump.danars.compose.DanaRsPairWizardScreen
@@ -39,9 +45,9 @@ import dev.zacsweers.metro.IntKey as MetroIntKey
  * qualifier is Android-only, `IosAppGraph` keeps the iOS drivers in the unqualified bucket.
  *
  * The preference screen has one entry, [DanaRsIosIntentKey.PairPump]: the shared pairing wizard
- * (step 4d, first slice) over [DanaRsPairWizardModel]. On Android the wizard is reached from the
- * overview screen instead; the Dana overview does not exist yet on iOS, so this settings entry is
- * the interim way in, same reasoning as `IosMedtrumPlugin`'s `PickPump`/`ChangePatch` entries.
+ * over [DanaRsPairWizardModel]. The overview screen ([DanaRsOverviewContent], wired through
+ * `composeContent{}` below) opens the very same wizard through its own "Pair" action, so this
+ * settings entry is a second, independent way to reach it.
  *
  * [danaRsHost] is the same [app.aaps.pump.danars.session.DanaRsHost] the driver uses (through
  * [host]): the wizard must drive the one session the driver will later use to talk to the pump,
@@ -61,13 +67,22 @@ class IosDanaRsPlugin(
     notificationManager: NotificationManager,
     private val host: IosDanaRsDriverHost,
     private val danaRsHost: IosDanaRsHost,
-    private val pumpSync: () -> PumpSync
+    private val danaPump: DanaPump,
+    private val pumpSync: () -> PumpSync,
+    // Providers: only the overview screen needs these, and only when it is opened.
+    private val rxBus: () -> RxBus,
+    private val persistenceLayer: () -> PersistenceLayer,
+    private val ch: () -> ConcentrationHelper,
+    private val uel: () -> UserEntryLogger,
+    private val dateUtil: () -> DateUtil
 ) : PumpPluginBase(
+    // The pump screen of the overview. Built when it is opened, so building the plugin builds no UI.
     pluginDescription = PluginDescription()
         .mainType(PluginType.PUMP)
         .icon(IcPluginDanaI)
         .pluginName(DanaStrings.danarspump)
-        .description(DanaStrings.description_pump_dana_rs),
+        .description(DanaStrings.description_pump_dana_rs)
+        .composeContent { plugin -> (plugin as IosDanaRsPlugin).overviewContent() },
     ownPreferences = DanaRsIosIntentKey.entries,
     aapsLogger = aapsLogger,
     rh = rh,
@@ -124,6 +139,22 @@ class IosDanaRsPlugin(
             }
         )
     }
+
+    /** The pump screen: the 11 shared info rows, refresh, and pair/unpair. */
+    private fun overviewContent() = DanaRsOverviewContent(
+        host = host,
+        danaRsHost = danaRsHost,
+        danaPump = danaPump,
+        rh = rh,
+        commandQueue = commandQueue,
+        rxBus = rxBus(),
+        persistenceLayer = persistenceLayer(),
+        ch = ch(),
+        uel = uel(),
+        dateUtil = dateUtil(),
+        preferences = preferences,
+        pairWizard = { onClose -> PairWizard(onBack = onClose) }
+    )
 
     private fun pairWizardModel(scope: CoroutineScope) = DanaRsPairWizardModel(
         aapsLogger = aapsLogger,
