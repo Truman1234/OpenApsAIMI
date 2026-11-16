@@ -154,6 +154,13 @@ object BleRestoreIdentifier {
 
     /** The central the Dexcom ONE+ driver owns. */
     const val DEXCOM_ONE_PLUS = "app.aaps.ble.cgm.dexcom.oneplus"
+
+    /**
+     * The central the xDrip4iOS heartbeat listener owns. Connects read-only to whatever
+     * transmitter xDrip4iOS itself is already talking to, only to be woken by its BLE traffic -
+     * see `XdripHeartbeatListener`.
+     */
+    const val XDRIP_HEARTBEAT = "app.aaps.ble.cgm.xdrip.heartbeat"
 }
 
 /**

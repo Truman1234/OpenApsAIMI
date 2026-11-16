@@ -3,6 +3,9 @@
     <!-- Source -->
     <string name="ns_client_bg">NSClient BG</string>
     <string name="description_source_ns_client">Downloads BG data from Nightscout</string>
+    <string name="xdrip_ios_bg_source">xDrip4iOS</string>
+    <string name="description_source_xdrip_ios">Reads glucose from xDrip4iOS over a shared App Group, with a BLE heartbeat to wake the app for new readings. iOS only - needs the App Group set up in Xcode first.</string>
+    <string name="xdrip_ios_app_group_missing">xDrip4iOS source: no App Group ID found. Add the \"AppGroupID\" key to the app\'s Info.plist and the matching App Group capability in Xcode, matching your xDrip4iOS build.</string>
     <string name="source_xdrip">xDrip+ BG</string>
     <string name="description_source_xdrip">Receive BG values from xDrip+ and compatible apps (Juggluco etc.).</string>
     <string name="dexcom_app_patched">BYODA</string>

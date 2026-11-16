@@ -312,7 +312,10 @@ enum class NotificationId(
     // Appended last on purpose: the system id is the ordinal.
     DKA_WATCH(LOW, LOOP),
     DKA_WARNING(IMPORTANT, LOOP),
-    DKA_CRITICAL(URGENT, LOOP);
+    DKA_CRITICAL(URGENT, LOOP),
+
+    /** xDrip4iOS source on iPhone: the App Group is not set up, so no readings can ever arrive. Appended last on purpose. */
+    XDRIP_IOS_APP_GROUP_MISSING(IMPORTANT, CGM);
 
     companion object {
 
