@@ -49,7 +49,12 @@ class DanaRsSession(
     private val bleEncryption: BleEncryption,
     private val dateUtil: DateUtil,
     private val preferences: Preferences,
-    private val bleTransport: BleTransport,
+    /**
+     * Not private: a pairing wizard needs the scanner and the pairing-state flow directly, to
+     * show scan results and react to the handshake's progress. Everything else about the session
+     * still goes through [connect]/[disconnect]/[stopConnecting]/[finishV3Pairing].
+     */
+    val bleTransport: BleTransport,
     private val host: DanaRsHost,
     private val findMessage: (command: Int) -> DanaRSPacket?,
     scope: CoroutineScope,

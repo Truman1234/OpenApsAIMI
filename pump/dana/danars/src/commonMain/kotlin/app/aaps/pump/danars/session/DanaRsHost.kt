@@ -26,8 +26,14 @@ enum class DanaRsNotice {
  */
 interface DanaRsHost {
 
-    /** Bluetooth name of the pump, for example `UHH00002TI`. The pairing keys are stored per name. */
-    val deviceName: String
+    /**
+     * Bluetooth name of the pump, for example `UHH00002TI`. The pairing keys are stored per name.
+     *
+     * Settable so a pairing wizard can hold the name of a device the user just picked before the
+     * pump is actually paired - at that point there is nothing to read the name back from yet,
+     * since the MAC address and name are only written to preferences once pairing succeeds.
+     */
+    var deviceName: String
 
     fun hasBluetoothPermission(): Boolean
 

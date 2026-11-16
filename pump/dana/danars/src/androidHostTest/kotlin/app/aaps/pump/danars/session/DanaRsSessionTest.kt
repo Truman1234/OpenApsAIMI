@@ -39,7 +39,7 @@ class DanaRsSessionTest : TestBase() {
     @Mock lateinit var decimalFormatter: DecimalFormatter
     @Mock lateinit var profileStoreProvider: dev.zacsweers.metro.Provider<ProfileStore>
 
-    private class FakeHost(override val deviceName: String) : DanaRsHost {
+    private class FakeHost(override var deviceName: String) : DanaRsHost {
 
         val notices = mutableListOf<DanaRsNotice>()
         var alarm: String? = null

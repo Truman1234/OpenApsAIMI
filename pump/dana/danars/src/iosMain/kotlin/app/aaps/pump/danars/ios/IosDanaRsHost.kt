@@ -1,9 +1,11 @@
 package app.aaps.pump.danars.ios
 
+import app.aaps.core.interfaces.di.ApplicationScope
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
 import app.aaps.core.interfaces.notifications.NotificationId
 import app.aaps.core.interfaces.notifications.NotificationManager
+import app.aaps.core.interfaces.queue.CommandQueue
 import app.aaps.core.interfaces.resources.TextResolver
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.interfaces.TextRef.Companion.withArgs
@@ -19,15 +21,17 @@ import app.aaps.pump.danars.session.DanaRsText
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * The iOS side of [DanaRsHost]. Same texts and notices as the Android `BLEComm`/`DanaRSPlugin`,
  * through the same [TextResolver]/[NotificationManager] that Android uses, so the wording cannot
  * drift between platforms.
  *
- * `changePump()` and `restartApp(reason)` are simpler here than on Android: there is no iOS pump
- * driver/plugin yet (step 4c), so there is nothing to reconnect or restart. Both are filled in
- * properly once that driver exists.
+ * `restartApp(reason)` stays simpler than Android's: there is no "restart the whole app" concept
+ * to offer here, and Dana RS v3's encryption failing twice is rare enough that logging it and
+ * leaving reconnects to the normal retry path is an acceptable gap for now.
  */
 @SingleIn(AppScope::class)
 @Inject
@@ -37,11 +41,21 @@ class IosDanaRsHost(
     private val preferences: Preferences,
     private val danaRsAlarmReporter: DanaRSAlarmReporter,
     private val danaPump: DanaPump,
-    private val aapsLogger: AAPSLogger
+    private val aapsLogger: AAPSLogger,
+    private val commandQueue: CommandQueue,
+    @ApplicationScope private val appScope: CoroutineScope
 ) : DanaRsHost {
 
-    override val deviceName: String
-        get() = preferences.get(DanaStringNonKey.RsName)
+    /**
+     * Holds the name a pairing wizard set in memory, before the pump is actually paired and the
+     * name is written to preferences (see [DanaRsHost.deviceName]'s doc). `null` once nothing is
+     * pending, which is when this falls back to the stored name, same as before this was settable.
+     */
+    private var pendingDeviceName: String? = null
+
+    override var deviceName: String
+        get() = pendingDeviceName ?: preferences.get(DanaStringNonKey.RsName)
+        set(value) { pendingDeviceName = value }
 
     /**
      * CoreBluetooth asks for the Bluetooth permission itself, the first time the app scans. There
@@ -75,10 +89,13 @@ class IosDanaRsHost(
     override fun reportAlarm(text: String) = danaRsAlarmReporter.report(text)
 
     override fun changePump() {
+        pendingDeviceName = null
         danaPump.serialNumber = preferences.get(DanaStringNonKey.RsName)
         danaPump.reset()
-        // No iOS driver to tell "readStatus" yet (step 4c). Android's commandQueue.readStatus(...)
-        // has no iOS counterpart until then.
+        // Same as Android's DanaRSPlugin.changePump(): ask the active pump (IosDanaRsPump, since
+        // 4c) to read its status, through the queue rather than directly - this host has no
+        // reference to the driver, only the other way around.
+        appScope.launch { commandQueue.readStatus(rh.gs(CoreUiStrings.device_changed)) }
     }
 
     override fun clearPairing() {
@@ -91,7 +108,10 @@ class IosDanaRsHost(
     }
 
     override fun restartApp(reason: String) {
-        // No real app restart yet: there is no iOS driver using this host in production (step 4c).
-        aapsLogger.error(LTag.PUMPCOMM, "DanaRS iOS: restart requested but not implemented yet: $reason")
+        // No real app restart yet: there is no such thing as "restart the app" to offer on iOS the
+        // way Android can. Rare in practice (two failed Dana RS v3 encryption attempts in a row);
+        // logging it and leaving the next reconnect attempt to the normal retry path is an
+        // acceptable gap for now.
+        aapsLogger.error(LTag.PUMPCOMM, "DanaRS iOS: restart requested but not implemented: $reason")
     }
 }
