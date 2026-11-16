@@ -139,6 +139,8 @@ object IosPlatformBindings {
                     AlarmAction.HYPO_TREATED -> rh.gs(CoreUiStrings.alert_hypo_treated)
                 }
             },
+            // Button text of a generic notification action, for example the DKA "Enter ketones" button.
+            resolveText = { textRef -> rh.gs(textRef) },
             // "Hypo treated" on the lock screen, same as the Android notification button.
             onAlarmAction = { action ->
                 when (action) {

@@ -8,9 +8,11 @@ import app.aaps.core.interfaces.notifications.AlarmSound
 import app.aaps.core.interfaces.notifications.AlarmSoundCategory
 import app.aaps.core.interfaces.notifications.AlarmSoundPlayer
 import app.aaps.core.interfaces.notifications.IosNotificationDelegate
+import app.aaps.core.interfaces.notifications.NotificationAction
 import app.aaps.core.interfaces.notifications.NotificationId
 import app.aaps.core.interfaces.notifications.NotificationLevel
 import app.aaps.core.interfaces.notifications.SystemNotificationPlatform
+import app.aaps.core.keys.interfaces.TextRef
 import platform.UserNotifications.UNAuthorizationOptionAlert
 import platform.UserNotifications.UNAuthorizationOptionBadge
 import platform.UserNotifications.UNAuthorizationOptionSound
@@ -56,6 +58,16 @@ class IosSystemNotificationPlatform(
      */
     private val alarmActionLabel: (AlarmAction) -> String = { it.name },
     /**
+     * Turns the [NotificationAction.buttonText] of a generic action into the string a real iOS
+     * button shows. Read every time [show] posts, not once at start up like [alarmActionLabel],
+     * because a generic action's label is chosen by whoever built the notification, not by a fixed
+     * enum.
+     *
+     * The default only resolves a literal, so code built without a real resolver - a test, for
+     * example - still gets something readable instead of a cryptic fallback.
+     */
+    private val resolveText: (TextRef) -> String = { (it as? TextRef.Literal)?.text ?: it.toString() },
+    /**
      * What to do when the user presses the button of an [AlarmAction] on the notification. A
      * function rather than `LocalAlertUtils` itself, because `LocalAlertUtils` posts through the
      * notification manager that is built on top of this class.
@@ -87,6 +99,20 @@ class IosSystemNotificationPlatform(
     private val unanswered = mutableSetOf<Int>()
 
     /**
+     * The [NotificationAction]s currently posted for an instance key, so the dispatch handler in
+     * [onDismissed] can find the one a button press refers to.
+     *
+     * Same lifecycle as [unanswered]: set in [show], cleared in [forget]/[forgetAll] - that is, when
+     * the notification is genuinely finished with. A stale entry is harmless (it would answer a
+     * button that is no longer shown to anyone), a missing one means the button silently does
+     * nothing, which is why both [forget] and [forgetAll] clear this alongside [unanswered].
+     */
+    private val currentActions = mutableMapOf<Int, List<NotificationAction>>()
+
+    /** Label sets already registered as a category, so posting the same buttons again does not. */
+    private val knownActionCategoryIds = mutableSetOf<String>()
+
+    /**
      * Resolved on first use, not in the constructor.
      *
      * `currentNotificationCenter()` needs an app bundle and throws
@@ -110,14 +136,18 @@ class IosSystemNotificationPlatform(
      * was no ramping player to hand it to. There is: `IosAlarmSoundPlayer`, which ramps exactly as
      * the Android one does.)
      *
-     * `actions` (the in-app buttons) are still not attached, and that one is a real gap rather than
-     * a decision - they hold a lambda that cannot travel through iOS. What does travel is the
-     * [AlarmAction] an alarm declares on its [NotificationId] (for example "Hypo treated" on the low
-     * glucose alarm): it gets its own category with a real button, see [categoryFor].
+     * `actions` (the in-app buttons) now get a real button too: one [UNNotificationCategory] per
+     * resolved label set, registered the first time it is seen and reused afterwards, see
+     * [registerActionsCategoryIfNeeded]. A button's own closure travels only as far as this process -
+     * which is fine, since it is answered while the app is alive, the same way `NotificationBottomSheet`
+     * answers it in-app. The [AlarmAction] an alarm declares on its [NotificationId] (for example
+     * "Hypo treated" on the low glucose alarm) still takes priority and keeps its own fixed category,
+     * see [categoryFor].
      */
     override fun show(notification: AapsNotification, title: String) {
         ensureAuthorization()
         rememberIfUnanswered(notification)
+        rememberActions(notification)
         val breakThroughFocus = breaksThroughFocus(notification.level)
         val content = UNMutableNotificationContent().apply {
             setTitle(title)
@@ -125,7 +155,7 @@ class IosSystemNotificationPlatform(
             // The sound stays off here on purpose: audible alarms are driven by setAudibleAlarm, the
             // same split the Android side uses so a replaced alarm does not restart the sound.
             // Without the category the dismiss callback never fires - see onDismissed.
-            setCategoryIdentifier(categoryFor(notification.id))
+            setCategoryIdentifier(categoryFor(notification))
             // An urgent alarm also carries a sound. While iOS suspends the app, the alarm player
             // cannot start any audio, so with the phone locked this sound - played by iOS itself - is
             // the only sound the person hears.
@@ -185,14 +215,25 @@ class IosSystemNotificationPlatform(
         if (notification.actions.isNotEmpty()) unanswered += notification.instanceKey
     }
 
+    /**
+     * Notes, before posting, the actions [handleNotificationAction] must find back when a button is
+     * pressed. Split from [show] for the same reason as [rememberIfUnanswered]: it does not reach
+     * `UNUserNotificationCenter`, so a test can call it directly.
+     */
+    internal fun rememberActions(notification: AapsNotification) {
+        if (notification.actions.isNotEmpty()) currentActions[notification.instanceKey] = notification.actions
+    }
+
     /** The counterpart: this notification is finished with, however that came about. */
     internal fun forget(instanceKey: Int) {
         unanswered -= instanceKey
+        currentActions -= instanceKey
     }
 
     /** Same, for the "mute all alarms" path. */
     internal fun forgetAll() {
         unanswered.clear()
+        currentActions.clear()
     }
 
     override fun cancel(instanceKey: Int) {
@@ -275,13 +316,17 @@ class IosSystemNotificationPlatform(
         val categories = setOf(dismissibleCategory()) + if (onAlarmAction != null) AlarmAction.entries.map { alarmActionCategory(it) } else emptyList()
         IosNotificationDelegate.register(categories) { actionId, notificationId ->
             // Only answer a button of a notification this class posted.
-            if (instanceKeyOf(notificationId) != null && handleAlarmAction(actionId)) return@register true
+            val instanceKey = instanceKeyOf(notificationId)
+            if (instanceKey != null) {
+                if (handleAlarmAction(actionId)) return@register true
+                if (handleNotificationAction(instanceKey, actionId)) return@register true
+            }
             if (actionId != UNNotificationDismissActionIdentifier) return@register false
             // A tap is deliberately not a dismissal: the notification goes away, but the user asked
             // to *see* the thing, so it stays in the in-app list.
-            val instanceKey = instanceKeyOf(notificationId) ?: return@register true
-            if (clearedByDismissal(instanceKey)) callback(instanceKey)
-            else aapsLogger.debug(LTag.NOTIFICATION, "Swipe ignored for $instanceKey: it still carries an unanswered action")
+            val key = instanceKey ?: return@register true
+            if (clearedByDismissal(key)) callback(key)
+            else aapsLogger.debug(LTag.NOTIFICATION, "Swipe ignored for $key: it still carries an unanswered action")
             true
         }
     }
@@ -313,6 +358,99 @@ class IosSystemNotificationPlatform(
     internal fun categoryFor(id: NotificationId): String {
         val action = id.alarmAction ?: return CATEGORY
         return if (onAlarmAction != null) alarmActionCategoryId(action) else CATEGORY
+    }
+
+    /**
+     * The category to post [notification] with. The [AlarmAction] on its id still wins when it has
+     * one and a handler exists - a fixed button beats a dynamic one, and it is what [categoryFor]
+     * already decided. Otherwise, a notification carrying generic [AapsNotification.actions] gets the
+     * category built for its exact button labels, see [registerActionsCategoryIfNeeded].
+     */
+    internal fun categoryFor(notification: AapsNotification): String {
+        val byAlarmAction = categoryFor(notification.id)
+        if (byAlarmAction != CATEGORY) return byAlarmAction
+        if (notification.actions.isEmpty()) return CATEGORY
+        return registerActionsCategoryIfNeeded(notification.actions)
+    }
+
+    /**
+     * Makes sure a category exists for this exact set of resolved button labels, and returns its
+     * identifier.
+     *
+     * One category per label set, not per [NotificationId]: two notifications that share an id can
+     * still ask for different buttons - `ios_todo.md` calls this out explicitly - and a category's
+     * button titles are fixed at the moment it is registered, not per notification that later points
+     * at it. [knownActionCategoryIds] is what makes registering the same labels twice a no-op rather
+     * than wasted work on every [show].
+     */
+    private fun registerActionsCategoryIfNeeded(actions: List<NotificationAction>): String {
+        val labels = actions.map { resolveText(it.buttonText) }
+        val id = actionsCategoryId(labels)
+        if (knownActionCategoryIds.add(id)) {
+            IosNotificationDelegate.addCategories(setOf(actionsCategory(id, labels)))
+        }
+        return id
+    }
+
+    /**
+     * A category with one real button per label, in order. It also carries `customDismissAction`,
+     * the same as [alarmActionCategory], otherwise swiping these notifications away would no longer
+     * be reported.
+     */
+    private fun actionsCategory(id: String, labels: List<String>): UNNotificationCategory =
+        UNNotificationCategory.categoryWithIdentifier(
+            identifier = id,
+            actions = labels.mapIndexed { index, label ->
+                UNNotificationAction.actionWithIdentifier(
+                    identifier = notificationActionId(index),
+                    title = label,
+                    options = 0u
+                )
+            },
+            intentIdentifiers = emptyList<Any>(),
+            options = UNNotificationCategoryOptionCustomDismissAction
+        )
+
+    /**
+     * Identifies a category by its exact labels, not by content or [NotificationId], so two
+     * notifications that happen to share an id but want different buttons never collide. Visible for
+     * tests.
+     */
+    internal fun actionsCategoryId(labels: List<String>): String =
+        "$ACTIONS_CATEGORY_PREFIX${labels.joinToString("|").hashCode()}"
+
+    /**
+     * The identifier of the button at [index] within whichever category posted a notification.
+     *
+     * Positional rather than per-label: the title at a given index is fixed by whichever category
+     * posted the notification, so the index alone, together with the instance key the dispatch
+     * handler already has from [instanceKeyOf], is enough to find the matching action back in
+     * [currentActions].
+     */
+    internal fun notificationActionId(index: Int) = "$NOTIFICATION_ACTION_PREFIX$index"
+
+    /** The reverse of [notificationActionId]. Null for anything that is not one of these buttons. */
+    internal fun actionIndexOf(actionId: String): Int? =
+        if (actionId.startsWith(NOTIFICATION_ACTION_PREFIX)) actionId.removePrefix(NOTIFICATION_ACTION_PREFIX).toIntOrNull()
+        else null
+
+    /**
+     * Runs the `NotificationAction` whose button was pressed, the generic counterpart of
+     * [handleAlarmAction]. False when [actionId] is not one of these buttons, or [instanceKey] is
+     * not currently holding one - for example because it was already answered in the app, which
+     * clears [currentActions] through [forget].
+     *
+     * Mirrors what `NotificationBottomSheet` already does in-app: run the action's own closure, then
+     * let the notification be dismissed as usual. The closure is almost always empty - the DKA
+     * ketone-entry button and others like it do their real work through id-based navigation keyed on
+     * the `NotificationId` itself, not on this button; the button only has to travel with a label.
+     */
+    internal fun handleNotificationAction(instanceKey: Int, actionId: String): Boolean {
+        val index = actionIndexOf(actionId) ?: return false
+        val action = currentActions[instanceKey]?.getOrNull(index) ?: return false
+        aapsLogger.debug(LTag.NOTIFICATION, "Notification action pressed on $instanceKey: index $index")
+        action.action()
+        return true
     }
 
     /**
@@ -384,6 +522,12 @@ class IosSystemNotificationPlatform(
 
         /** Prefix of the identifier of an [AlarmAction] button. */
         private const val ALARM_ACTION_PREFIX = "aaps-alarm-action-"
+
+        /** Prefix of the identifier of a category built for a notification's own generic actions. */
+        private const val ACTIONS_CATEGORY_PREFIX = "aaps-actions-"
+
+        /** Prefix of the identifier of a button within such a category. */
+        private const val NOTIFICATION_ACTION_PREFIX = "aaps-naction-"
     }
 }
 

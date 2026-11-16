@@ -91,6 +91,19 @@ object IosNotificationDelegate {
     }
 
     /**
+     * Adds categories only, without adding a handler.
+     *
+     * For a caller whose handler is already registered once at start up (through [register]) but
+     * that discovers new categories later - one per resolved button-label set, found only as
+     * notifications are actually posted. Calling [register] again for this would append a redundant
+     * handler on every call, since [register] always adds one; this adds only what is new.
+     */
+    fun addCategories(newCategories: Set<UNNotificationCategory>) {
+        categories += newCategories
+        if (installed) install()
+    }
+
+    /**
      * Tells the tap observers, then offers the response to each handler until one claims it.
      *
      * Takes the identifiers and a plain string map rather than the `UNNotificationResponse` they

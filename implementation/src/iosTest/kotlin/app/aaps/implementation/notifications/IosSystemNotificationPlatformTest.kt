@@ -331,4 +331,119 @@ class IosSystemNotificationPlatformTest {
 
         assertTrue(pressed.isEmpty())
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Generic notification actions - the buttons on AapsNotification.actions, e.g. DKA "Enter ketones"
+    // ---------------------------------------------------------------------------------------------
+
+    private fun notificationWithActions(instanceKey: Int, vararg labels: String, onPressed: (Int) -> Unit = {}) = AapsNotification(
+        id = NotificationId.NS_ALARM,
+        instanceKey = instanceKey,
+        text = "test",
+        level = NotificationLevel.NORMAL,
+        actions = labels.mapIndexed { index, label -> NotificationAction(TextRef.Literal(label)) { onPressed(index) } }
+    )
+
+    /** Two notifications that want the same buttons must share one category, or every post would add a new one. */
+    @Test
+    fun `the same button labels share a category`() {
+        assertEquals(platform.actionsCategoryId(listOf("Enter ketones")), platform.actionsCategoryId(listOf("Enter ketones")))
+    }
+
+    /**
+     * Different labels, or a different count of them, must get different categories - a category's
+     * button titles are fixed when it is registered, so two notifications sharing one category by
+     * mistake would show each other's labels.
+     */
+    @Test
+    fun `different button labels get different categories`() {
+        val single = platform.actionsCategoryId(listOf("Enter ketones"))
+        val other = platform.actionsCategoryId(listOf("Login"))
+        val two = platform.actionsCategoryId(listOf("Enter ketones", "Dismiss"))
+
+        assertTrue(single != other)
+        assertTrue(single != two)
+    }
+
+    /** The action identifier round trip, the generic counterpart of the instance key one. */
+    @Test
+    fun `a button index survives the round trip`() {
+        assertEquals(1, platform.actionIndexOf(platform.notificationActionId(1)))
+    }
+
+    /** An alarm action button, or anything malformed, is not one of these buttons. */
+    @Test
+    fun `an unrelated action id is not a button index`() {
+        assertNull(platform.actionIndexOf(platform.alarmActionId(AlarmAction.HYPO_TREATED)))
+        assertNull(platform.actionIndexOf("aaps-naction-"))
+        assertNull(platform.actionIndexOf("aaps-naction-abc"))
+    }
+
+    /** Pressing a button runs the action its own instance key was posted with, by position. */
+    @Test
+    fun `pressing a generic action button runs the right action`() {
+        val pressed = mutableListOf<Int>()
+        platform.rememberActions(notificationWithActions(7, "Ignore", "Enter ketones", onPressed = { pressed += it }))
+
+        assertTrue(platform.handleNotificationAction(7, platform.notificationActionId(1)))
+        assertEquals(listOf(1), pressed)
+    }
+
+    /** A key this class never stored, or an index past the end, runs nothing. */
+    @Test
+    fun `an unknown instance key or index does not run anything`() {
+        platform.rememberActions(notificationWithActions(7, "Ignore"))
+
+        assertFalse(platform.handleNotificationAction(99, platform.notificationActionId(0)))
+        assertFalse(platform.handleNotificationAction(7, platform.notificationActionId(5)))
+        assertFalse(platform.handleNotificationAction(7, platform.alarmActionId(AlarmAction.HYPO_TREATED)))
+    }
+
+    /**
+     * Answering it in the app clears the stored action, the same way [forget] already clears
+     * `unanswered` - without this a button pressed after that would still fire.
+     */
+    @Test
+    fun `forget clears the stored action for its instance key`() {
+        platform.rememberActions(notificationWithActions(7, "Ignore"))
+        platform.forget(7)
+
+        assertFalse(platform.handleNotificationAction(7, platform.notificationActionId(0)))
+    }
+
+    /** "Mute all alarms" clears every stored action, the generic counterpart of [forgetAll]. */
+    @Test
+    fun `forgetAll clears every stored action`() {
+        platform.rememberActions(notificationWithActions(7, "Ignore"))
+        platform.rememberActions(notificationWithActions(8, "Ignore"))
+        platform.forgetAll()
+
+        assertFalse(platform.handleNotificationAction(7, platform.notificationActionId(0)))
+        assertFalse(platform.handleNotificationAction(8, platform.notificationActionId(0)))
+    }
+
+    /** A fixed alarm button beats a dynamic one when a notification somehow carries both. */
+    @Test
+    fun `an alarm action on the id wins over a generic action on the same notification`() {
+        val base = notificationWithActions(7, "Ignore")
+        val notif = base.copy(id = NotificationId.BG_HYPO)
+
+        assertEquals(platformWithActions.categoryFor(NotificationId.BG_HYPO), platformWithActions.categoryFor(notif))
+    }
+
+    /** No alarm action and no generic actions: the plain category, same as posting by id alone. */
+    @Test
+    fun `a notification with no actions at all gets the plain category`() {
+        val notif = AapsNotification(id = NotificationId.NS_ALARM, instanceKey = 7, text = "test", level = NotificationLevel.NORMAL)
+
+        assertEquals(platform.categoryFor(NotificationId.NS_ALARM), platform.categoryFor(notif))
+    }
+
+    /** No alarm action on the id, but generic actions: the label-set category. */
+    @Test
+    fun `a notification with generic actions gets the actions category`() {
+        val notif = notificationWithActions(7, "Enter ketones")
+
+        assertEquals(platform.actionsCategoryId(listOf("Enter ketones")), platform.categoryFor(notif))
+    }
 }
