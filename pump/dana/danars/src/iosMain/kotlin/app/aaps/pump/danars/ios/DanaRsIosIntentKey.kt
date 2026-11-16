@@ -5,14 +5,16 @@ import app.aaps.core.keys.interfaces.BooleanPreferenceKey
 import app.aaps.core.keys.interfaces.IntentPreferenceKey
 import app.aaps.core.keys.interfaces.TextRef
 import app.aaps.core.ui.CoreUiStrings
+import app.aaps.pump.dana.DanaStrings
 
 /**
- * The one screen this plugin offers in its settings on an iPhone: the pairing wizard.
+ * The screens this plugin offers in its settings on an iPhone: the pairing wizard and the
+ * reservoir refill/prime wizard.
  *
- * `iosMain`, so this is not in the Android preference schema. On Android the pairing wizard is
- * reached from the overview screen (`DanaOverviewEvent.StartPairWizard`); the Dana overview does
- * not exist yet on iOS, so a settings entry is the interim way in, same as `IosMedtrumPlugin`
- * does it for `PickPump`/`ChangePatch`.
+ * `iosMain`, so this is not in the Android preference schema. On Android both wizards are reached
+ * from the overview screen (`DanaOverviewEvent.StartPairWizard`); the iOS overview screen shows
+ * pump status only, with no entry points of its own yet, so a settings entry is the way in for
+ * now, same as `IosMedtrumPlugin` does it for `PickPump`/`ChangePatch`.
  */
 enum class DanaRsIosIntentKey(
     override val key: String,
@@ -32,5 +34,10 @@ enum class DanaRsIosIntentKey(
     PairPump(
         key = "danars_ios_pair_pump",
         title = CoreUiStrings.pairing
+    ),
+    RefillPrime(
+        key = "danars_ios_refill_prime",
+        title = DanaStrings.danars_refill_prime_title,
+        summary = DanaStrings.danars_refill_prime_summary
     )
 }

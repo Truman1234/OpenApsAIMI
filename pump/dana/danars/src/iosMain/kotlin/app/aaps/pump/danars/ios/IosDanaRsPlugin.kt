@@ -27,8 +27,11 @@ import app.aaps.core.ui.compose.icons.IcPluginDanaI
 import app.aaps.core.ui.compose.preference.PreferenceSubScreenDef
 import app.aaps.pump.dana.DanaPump
 import app.aaps.pump.dana.DanaStrings
+import app.aaps.pump.danars.comm.DanaRSPacketOptionSetUserOption
 import app.aaps.pump.danars.compose.DanaRsPairWizardModel
 import app.aaps.pump.danars.compose.DanaRsPairWizardScreen
+import app.aaps.pump.danars.compose.DanaRsRefillWizardModel
+import app.aaps.pump.danars.compose.DanaRsRefillWizardScreen
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
@@ -44,10 +47,12 @@ import dev.zacsweers.metro.IntKey as MetroIntKey
  * `@MetroIntKey(1040)` is the same number the Android `DanaRSPlugin` uses. No `@PumpDriver`: that
  * qualifier is Android-only, `IosAppGraph` keeps the iOS drivers in the unqualified bucket.
  *
- * The preference screen has one entry, [DanaRsIosIntentKey.PairPump]: the shared pairing wizard
- * over [DanaRsPairWizardModel]. The overview screen ([DanaRsOverviewContent], wired through
- * `composeContent{}` below) opens the very same wizard through its own "Pair" action, so this
- * settings entry is a second, independent way to reach it.
+ * The preference screen has two entries: [DanaRsIosIntentKey.PairPump], the shared pairing wizard
+ * over [DanaRsPairWizardModel] (the overview screen - [DanaRsOverviewContent], wired through
+ * `composeContent{}` below - opens the very same wizard through its own "Pair" action, so this
+ * settings entry is a second, independent way to reach it); and [DanaRsIosIntentKey.RefillPrime],
+ * the reservoir refill/prime wizard over [DanaRsRefillWizardModel], reachable only from here for
+ * now.
  *
  * [danaRsHost] is the same [app.aaps.pump.danars.session.DanaRsHost] the driver uses (through
  * [host]): the wizard must drive the one session the driver will later use to talk to the pump,
@@ -74,7 +79,9 @@ class IosDanaRsPlugin(
     private val persistenceLayer: () -> PersistenceLayer,
     private val ch: () -> ConcentrationHelper,
     private val uel: () -> UserEntryLogger,
-    private val dateUtil: () -> DateUtil
+    private val dateUtil: () -> DateUtil,
+    // Provider: only the refill/prime wizard needs this, and only when it is opened.
+    private val danaRSPacketOptionSetUserOption: () -> DanaRSPacketOptionSetUserOption
 ) : PumpPluginBase(
     // The pump screen of the overview. Built when it is opened, so building the plugin builds no UI.
     pluginDescription = PluginDescription()
@@ -108,6 +115,9 @@ class IosDanaRsPlugin(
         items = listOf(
             DanaRsIosIntentKey.PairPump.withCompose(
                 ComposeScreenContent { onBack -> PairWizard(onBack = onBack) }
+            ),
+            DanaRsIosIntentKey.RefillPrime.withCompose(
+                ComposeScreenContent { onBack -> RefillWizard(onBack = onBack) }
             )
         ),
         icon = pluginDescription.icon
@@ -131,6 +141,25 @@ class IosDanaRsPlugin(
             onDispose { model.close() }
         }
         DanaRsPairWizardScreen(
+            model = model,
+            onFinish = onBack,
+            onCancel = {
+                model.cancel()
+                onBack()
+            }
+        )
+    }
+
+    /**
+     * [DanaRsRefillWizardModel] has no scan or subscription to start/stop, unlike
+     * [DanaRsPairWizardModel] - it only reacts to button clicks - so there is no `open()`/`close()`
+     * pair here, just the plain `remember`.
+     */
+    @Composable
+    private fun RefillWizard(onBack: () -> Unit) {
+        val scope = rememberCoroutineScope()
+        val model = remember { refillWizardModel(scope) }
+        DanaRsRefillWizardScreen(
             model = model,
             onFinish = onBack,
             onCancel = {
@@ -164,6 +193,16 @@ class IosDanaRsPlugin(
         preferences = preferences,
         pumpSync = pumpSync(),
         commandQueue = commandQueue,
+        scope = scope
+    )
+
+    private fun refillWizardModel(scope: CoroutineScope) = DanaRsRefillWizardModel(
+        aapsLogger = aapsLogger,
+        rh = rh,
+        danaPump = danaPump,
+        commandQueue = commandQueue,
+        danaRSPacketOptionSetUserOption = danaRSPacketOptionSetUserOption,
+        session = host.session.value,
         scope = scope
     )
 }
