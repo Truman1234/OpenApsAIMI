@@ -285,8 +285,8 @@ fun ElementNavigator.handleQuickLaunchAction(action: QuickLaunchAction) {
 /**
  * Tapping a notification that offers to fix what it is complaining about.
  *
- * Only the three that have somewhere to go do anything; the rest are informational, and sending
- * the user to an unrelated screen would be worse than doing nothing.
+ * Only the ids handled below do anything; the rest are informational, and sending the user to an
+ * unrelated screen would be worse than doing nothing.
  */
 fun ElementNavigator.handleNotificationAction(notificationId: NotificationId) {
     when (notificationId) {
@@ -295,6 +295,15 @@ fun ElementNavigator.handleNotificationAction(notificationId: NotificationId) {
 
         NotificationId.MASTER_PASSWORD_NOT_SET ->
             navController.navigate(AppRoute.PreferenceScreen.createRoute("protection", StringKey.ProtectionMasterPassword.key))
+
+        // The ketone entry field on the AIMI DKA sub screen. The screen key and the highlight key
+        // are literal strings, not an import from :plugins:aps, to avoid a new inter-module
+        // dependency - they must keep matching "aimi_compose_dka" in
+        // OpenAPSAIMIPlugin.aimiComposeDkaSubScreen() and AimiDkaKeys.KetoneEntry.key.
+        NotificationId.DKA_WATCH,
+        NotificationId.DKA_WARNING,
+        NotificationId.DKA_CRITICAL           ->
+            navController.navigate(AppRoute.PreferenceScreen.createRoute("aimi_compose_dka", "aimi_dka_ketone_entry"))
 
         // Both go to the same picker: one has never chosen a directory, the other chose one and lost
         // the permission behind it. Re-granting is the same action in each case.

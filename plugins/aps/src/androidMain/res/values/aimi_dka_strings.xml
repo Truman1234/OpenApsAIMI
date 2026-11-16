@@ -25,6 +25,7 @@
     <string name="aimi_dka_ketone_unit_mmol">mmol/L</string>
     <string name="aimi_dka_ketone_unit_mgdl">mg/dL</string>
     <string name="aimi_dka_ketone_invalid">DKA protection: ketone value ignored. Please enter a number between 0 and 8 mmol/L (0 and 83 mg/dL).</string>
+    <string name="aimi_dka_enter_ketones_action">Enter ketones</string>
     <string name="aimi_dka_floor_enabled_title">Semaglutide: minimum insulin (basal floor)</string>
     <string name="aimi_dka_floor_enabled_summary">Never let the loop deliver less than a percentage of your scheduled basal rate, unless glucose is low. Agree the value with your diabetes team.</string>
     <string name="aimi_dka_floor_percent_title">Minimum basal (% of scheduled basal)</string>
