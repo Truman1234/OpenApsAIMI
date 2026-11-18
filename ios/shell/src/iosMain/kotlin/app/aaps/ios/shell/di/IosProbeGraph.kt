@@ -4,6 +4,7 @@ import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.notifications.AlarmSoundPlayer
 import app.aaps.core.interfaces.notifications.NotificationManager
 import app.aaps.core.interfaces.utils.DateUtil
+import app.aaps.core.interfaces.utils.fabric.CrashReporter
 import app.aaps.core.interfaces.utils.fabric.FabricPrivacy
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.objects.di.CoreObjectsGraph
@@ -19,6 +20,7 @@ import app.aaps.plugins.smoothing.ExponentialSmoothingPlugin
 import app.aaps.plugins.smoothing.NoSmoothingPlugin
 import app.aaps.plugins.smoothing.UnscentedKalmanFilterPlugin
 import app.aaps.pump.medtrum.ios.IosMedtrumPlugin
+import app.aaps.pump.omnipod.dashctl.ios.plugin.IosOmnipodDashPlugin
 import app.aaps.shared.clientbindings.ClientGraphBindings
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
@@ -83,6 +85,13 @@ interface IosProbeGraph {
      */
     val medtrumPump: IosMedtrumPlugin
 
+    /**
+     * The iOS Omnipod Dash pump plugin, for the same reason as [medtrumPump]: this proves the graph
+     * can hand over the plugin with its driver, its Keychain state and its `PumpSync` recorder.
+     * Building it does not start Bluetooth - see `IosDashDriverHost`.
+     */
+    val omnipodDashPump: IosOmnipodDashPlugin
+
     /** Real AAPS classes, built from the iOS implementations underneath them. */
     val dateUtil: DateUtil
     val fabricPrivacy: FabricPrivacy
@@ -117,7 +126,13 @@ interface IosProbeGraph {
          */
         fun create(
             @Includes coreObjects: CoreObjectsGraph,
-            @Includes clientBindings: ClientGraphBindings
+            @Includes clientBindings: ClientGraphBindings,
+            /**
+             * Needed only because this graph exposes [fabricPrivacy], which now reports through it.
+             * The probes pass [NoCrashReporter]: nothing a startup check does belongs in a crash
+             * dashboard.
+             */
+            @Provides crashReporter: CrashReporter
         ): IosProbeGraph
     }
 }

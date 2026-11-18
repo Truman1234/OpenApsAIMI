@@ -2,6 +2,7 @@ package app.aaps.plugins.sync.garmin
 
 import app.aaps.core.data.model.GV
 import app.aaps.core.data.model.GlucoseUnit
+import app.aaps.core.data.model.SC
 import app.aaps.core.data.model.SourceSensor
 import app.aaps.core.data.model.TrendArrow
 import app.aaps.core.interfaces.db.PersistenceLayer
@@ -26,7 +27,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
-import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mock
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
@@ -49,7 +49,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.locks.Condition
+import kotlin.time.toKotlinInstant
 import kotlin.ranges.LongProgression.Companion.fromClosedRange
 
 class GarminPluginTest : TestBaseWithProfile() {
@@ -88,6 +88,7 @@ class GarminPluginTest : TestBaseWithProfile() {
     private val getGlucoseValuesFrom = clock.instant()
         .minus(2, ChronoUnit.HOURS)
         .minus(9, ChronoUnit.MINUTES)
+        .toKotlinInstant()
 
     private fun createUri(params: Map<String, Any>): URI {
         return URI("http://foo?" + params.entries.joinToString(separator = "&") { (k, v) ->
@@ -116,8 +117,8 @@ class GarminPluginTest : TestBaseWithProfile() {
 
     private fun verifyStepsStored(steps: Map<String, Any>) {
         verify(loopHub).storeStepsCount(
-            Instant.ofEpochSecond(steps["stepsStart"] as Long),
-            Instant.ofEpochSecond(steps["stepsEnd"] as Long),
+            Instant.ofEpochSecond(steps["stepsStart"] as Long).toKotlinInstant(),
+            Instant.ofEpochSecond(steps["stepsEnd"] as Long).toKotlinInstant(),
             steps["steps5"] as Int,
             steps["steps10"] as Int,
             steps["steps15"] as Int,
@@ -164,8 +165,8 @@ class GarminPluginTest : TestBaseWithProfile() {
         val params = createHeartRate(99) + createSteps()
         gp.receiveHeartRate(createUri(params))
         verify(loopHub).storeHeartRate(
-            Instant.ofEpochSecond(params["hrStart"] as Long),
-            Instant.ofEpochSecond(params["hrEnd"] as Long),
+            Instant.ofEpochSecond(params["hrStart"] as Long).toKotlinInstant(),
+            Instant.ofEpochSecond(params["hrEnd"] as Long).toKotlinInstant(),
             99,
             params["device"] as String
         )
@@ -182,20 +183,73 @@ class GarminPluginTest : TestBaseWithProfile() {
 
     @Test
     fun testReceiveStepsUri_TotalStoresTheDelta() {
+        storedSteps()
         whenever(preferences.get(GarminIntNonKey.LastTotalSteps)).thenReturn(1000)
         gp.receiveSteps(URI("http://foo?steps=1250&device=Watch"))
         verify(preferences).put(GarminIntNonKey.LastTotalSteps, 1250)
+        // No time of the last total: the steps are the last 5 minutes, and every window holds them.
         val now = clock.instant().epochSecond
-        verify(loopHub).storeStepsCount(Instant.ofEpochSecond(now - 300), Instant.ofEpochSecond(now), 250, 0, 0, 0, 0, 0, "Watch")
+        verify(loopHub).storeStepsCount(Instant.ofEpochSecond(now - 300).toKotlinInstant(), Instant.ofEpochSecond(now).toKotlinInstant(), 250, 250, 250, 250, 250, 250, "Watch")
     }
 
     @Test
     fun testReceiveStepsUri_LowerTotalIsANewDay() {
+        storedSteps()
         whenever(preferences.get(GarminIntNonKey.LastTotalSteps)).thenReturn(17506)
         gp.receiveSteps(URI("http://foo?steps=165&device=Watch"))
         verify(preferences).put(GarminIntNonKey.LastTotalSteps, 165)
         val now = clock.instant().epochSecond
-        verify(loopHub).storeStepsCount(Instant.ofEpochSecond(now - 300), Instant.ofEpochSecond(now), 165, 0, 0, 0, 0, 0, "Watch")
+        verify(loopHub).storeStepsCount(Instant.ofEpochSecond(now - 300).toKotlinInstant(), Instant.ofEpochSecond(now).toKotlinInstant(), 165, 165, 165, 165, 165, 165, "Watch")
+    }
+
+    @Test
+    fun testReceiveStepsUri_TotalIsSpreadOverTheTimeSinceTheLastTotal() {
+        val now = 1_000_000_000_000L
+        gp.clock = Clock.fixed(Instant.ofEpochMilli(now), ZoneId.of("UTC"))
+        val minute = 60_000L
+        storedSteps(
+            stepsRow(now - 20 * minute, 30, "Watch"),
+            stepsRow(now - 20 * minute, 999, "Other watch"),
+        )
+        whenever(preferences.get(GarminIntNonKey.LastTotalSteps)).thenReturn(1000)
+        whenever(preferences.get(GarminLongNonKey.LastTotalStepsTime)).thenReturn(now - 12 * minute)
+
+        gp.receiveSteps(URI("http://foo?steps=1120&device=Watch"))
+
+        // 120 steps in 12 minutes: 20 in the first 2 minutes, then 50 in each 5 minutes.
+        verify(loopHub).storeStepsCount(at(now - 12 * minute), at(now - 10 * minute), 20, 0, 0, 0, 0, 0, "Watch")
+        verify(loopHub).storeStepsCount(at(now - 10 * minute), at(now - 5 * minute), 50, 0, 0, 0, 0, 0, "Watch")
+        // The newest row has the windows: 10 min = 100, 15 min = 120, from 30 min on also the 30 stored
+        // 20 minutes ago by the same watch. The other watch is not counted.
+        verify(loopHub).storeStepsCount(at(now - 5 * minute), at(now), 50, 100, 120, 150, 150, 150, "Watch")
+    }
+
+    @Test
+    fun testReceiveStepsUri_StepsOlderThan3HoursGoInOneRow() {
+        val now = 1_000_000_000_000L
+        gp.clock = Clock.fixed(Instant.ofEpochMilli(now), ZoneId.of("UTC"))
+        val minute = 60_000L
+        storedSteps()
+        whenever(preferences.get(GarminIntNonKey.LastTotalSteps)).thenReturn(1000)
+        whenever(preferences.get(GarminLongNonKey.LastTotalStepsTime)).thenReturn(now - 300 * minute)
+
+        gp.receiveSteps(URI("http://foo?steps=4000&device=Watch"))
+
+        // 3000 steps in 5 hours: 1200 in the 2 hours before the last 3, then 50 in each 5 minutes.
+        verify(loopHub).storeStepsCount(at(now - 300 * minute), at(now - 180 * minute), 1200, 0, 0, 0, 0, 0, "Watch")
+        verify(loopHub, times(35)).storeStepsCount(any(), any(), eq(50), eq(0), eq(0), eq(0), eq(0), eq(0), eq("Watch"))
+        verify(loopHub).storeStepsCount(at(now - 5 * minute), at(now), 50, 100, 150, 300, 600, 1800, "Watch")
+    }
+
+    private fun at(ms: Long) = Instant.ofEpochMilli(ms).toKotlinInstant()
+
+    private fun stepsRow(timestamp: Long, steps5: Int, device: String) = SC(
+        timestamp = timestamp, duration = 300_000L, steps5min = steps5, steps10min = 0, steps15min = 0,
+        steps30min = 0, steps60min = 0, steps180min = 0, device = device,
+    )
+
+    private fun storedSteps(vararg rows: SC) = runBlocking {
+        whenever(persistenceLayer.getStepsCountFromTimeToTime(any(), any())).thenReturn(rows.toList())
     }
 
     @Test
@@ -222,8 +276,8 @@ class GarminPluginTest : TestBaseWithProfile() {
         val hr = createHeartRate(80)
         gp.receiveHeartRate(hr, false)
         verify(loopHub).storeHeartRate(
-            Instant.ofEpochSecond(hr["hrStart"] as Long),
-            Instant.ofEpochSecond(hr["hrEnd"] as Long),
+            Instant.ofEpochSecond(hr["hrStart"] as Long).toKotlinInstant(),
+            Instant.ofEpochSecond(hr["hrEnd"] as Long).toKotlinInstant(),
             80,
             hr["device"] as String
         )
@@ -235,8 +289,8 @@ class GarminPluginTest : TestBaseWithProfile() {
         val uri = createUri(hr)
         gp.receiveHeartRate(uri)
         verify(loopHub).storeHeartRate(
-            Instant.ofEpochSecond(hr["hrStart"] as Long),
-            Instant.ofEpochSecond(hr["hrEnd"] as Long),
+            Instant.ofEpochSecond(hr["hrStart"] as Long).toKotlinInstant(),
+            Instant.ofEpochSecond(hr["hrEnd"] as Long).toKotlinInstant(),
             99,
             hr["device"] as String
         )
@@ -264,12 +318,12 @@ class GarminPluginTest : TestBaseWithProfile() {
         val from = getGlucoseValuesFrom
         val lastTimestamp = clock.instant()
         val prev = createGlucoseValue(clock.instant())
-        gp.newValue = mock<Condition>()
         whenever(loopHub.getGlucoseValues(from, true)).thenReturn(listOf(prev))
         gp.onNewBloodGlucose(listOf(createGlucoseValue(lastTimestamp)))
         assertArrayEquals(arrayOf(prev), gp.getGlucoseValues().toTypedArray())
 
-        verify(gp.newValue).signalAll()
+        // The new value is what wakes a waiting /get request.
+        assertEquals(lastTimestamp.toEpochMilli(), gp.requests.newestGlucoseTimestamp)
         verify(loopHub).getGlucoseValues(from, true)
     }
 
@@ -439,8 +493,8 @@ class GarminPluginTest : TestBaseWithProfile() {
         verify(loopHub).lowGlucoseMark
         verify(loopHub).highGlucoseMark
         verify(loopHub).storeHeartRate(
-            Instant.ofEpochSecond(hr["hrStart"] as Long),
-            Instant.ofEpochSecond(hr["hrEnd"] as Long),
+            Instant.ofEpochSecond(hr["hrStart"] as Long).toKotlinInstant(),
+            Instant.ofEpochSecond(hr["hrEnd"] as Long).toKotlinInstant(),
             99,
             hr["device"] as String
         )
@@ -459,7 +513,8 @@ class GarminPluginTest : TestBaseWithProfile() {
         val params = createHeartRate(99).toMutableMap()
         params["wait"] = 10
         val uri = createUri(params)
-        gp.newValue = mock<Condition>()
+        val waits = mutableListOf<Long>()
+        gp.requests.awaitNewGlucose = { waits += it }
         val result = gp.onGetBloodGlucose(uri)
         assertEquals(
             """{"encodedGlucose":"/wS6AQ==",""" +
@@ -468,7 +523,8 @@ class GarminPluginTest : TestBaseWithProfile() {
                 """"profile":"D","connected":true}""",
             result.toString()
         )
-        verify(gp.newValue).awaitNanos(anyLong())
+        // "wait=10" in the request: one wait of at most 10 s for the next value.
+        assertEquals(listOf(10_000L), waits)
         verify(loopHub, times(2)).getGlucoseValues(from, true)
         verify(loopHub).insulinOnboard
         verify(loopHub).temporaryBasal
@@ -477,8 +533,8 @@ class GarminPluginTest : TestBaseWithProfile() {
         verify(loopHub).lowGlucoseMark
         verify(loopHub).highGlucoseMark
         verify(loopHub).storeHeartRate(
-            Instant.ofEpochSecond(params["hrStart"] as Long),
-            Instant.ofEpochSecond(params["hrEnd"] as Long),
+            Instant.ofEpochSecond(params["hrStart"] as Long).toKotlinInstant(),
+            Instant.ofEpochSecond(params["hrEnd"] as Long).toKotlinInstant(),
             99,
             params["device"] as String
         )
@@ -695,7 +751,7 @@ class GarminPluginTest : TestBaseWithProfile() {
         whenever(loopHub.glucoseUnit).thenReturn(GlucoseUnit.MMOL)
         whenever(loopHub.getGlucoseValues(any(), eq(false))).thenReturn(emptyList())
         assertEquals("[]", gp.onSgv(createUri(mapOf())))
-        verify(loopHub).getGlucoseValues(clock.instant().minusSeconds(25L * 300L), false)
+        verify(loopHub).getGlucoseValues(clock.instant().minusSeconds(25L * 300L).toKotlinInstant(), false)
     }
 
     @Test
@@ -718,7 +774,7 @@ class GarminPluginTest : TestBaseWithProfile() {
             """[{"_id":"-900000","device":"RANDOM","deviceString":"1969-12-31T23:58:30Z","sysTime":"1969-12-31T23:58:30Z","unfiltered":90.0,"date":-90000,"sgv":99,"direction":"Flat","noise":4.5,"units_hint":"mmol","iob":5.2,"tbr":"0.0/80","cob":10.7,"tir":100,"basalHistory":[],"smbHistory":[]}]""",
             gp.onSgv(createUri(mapOf()))
         )
-        verify(loopHub).getGlucoseValues(clock.instant().minusSeconds(25L * 300L), false)
+        verify(loopHub).getGlucoseValues(clock.instant().minusSeconds(25L * 300L).toKotlinInstant(), false)
         verify(loopHub).glucoseUnit
         verify(loopHub, atLeastOnce()).currentTargetMgdl
         verify(loopHub, atLeastOnce()).activeTherapyMode
@@ -737,8 +793,8 @@ class GarminPluginTest : TestBaseWithProfile() {
         whenever(loopHub.temporaryBasalHistory(any())).thenReturn(emptyList())
         whenever(loopHub.smbHistory(any())).thenReturn(emptyList())
         whenever(loopHub.getGlucoseValues(any(), eq(false))).thenAnswer { i ->
-            val from = i.getArgument<Instant>(0)
-            fromClosedRange(from.toEpochMilli(), clock.instant().toEpochMilli(), 300_000L)
+            val from = i.getArgument<kotlin.time.Instant>(0)
+            fromClosedRange(from.toEpochMilliseconds(), clock.instant().toEpochMilli(), 300_000L)
                 .map(Instant::ofEpochMilli)
                 .mapIndexed { idx, ts -> createGlucoseValue(ts, 100.0 + (10 * idx)) }.reversed()
         }
@@ -747,7 +803,7 @@ class GarminPluginTest : TestBaseWithProfile() {
             gp.onSgv(createUri(mapOf("count" to "1")))
         )
         verify(loopHub).getGlucoseValues(
-            clock.instant().minusSeconds(600L), false
+            clock.instant().minusSeconds(600L).toKotlinInstant(), false
         )
 
 
@@ -757,7 +813,7 @@ class GarminPluginTest : TestBaseWithProfile() {
             gp.onSgv(createUri(mapOf("count" to "2")))
         )
         verify(loopHub).getGlucoseValues(
-            clock.instant().minusSeconds(900L), false
+            clock.instant().minusSeconds(900L).toKotlinInstant(), false
         )
 
         assertEquals(
@@ -766,7 +822,7 @@ class GarminPluginTest : TestBaseWithProfile() {
             gp.onSgv(createUri(mapOf("count" to "2", "brief_mode" to "true")))
         )
         verify(loopHub, times(2)).getGlucoseValues(
-            clock.instant().minusSeconds(900L), false
+            clock.instant().minusSeconds(900L).toKotlinInstant(), false
         )
 
         verify(loopHub, atLeastOnce()).glucoseUnit

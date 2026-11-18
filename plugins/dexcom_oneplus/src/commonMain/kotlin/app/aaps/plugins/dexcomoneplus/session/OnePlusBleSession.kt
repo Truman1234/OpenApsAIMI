@@ -2,17 +2,18 @@ package app.aaps.plugins.dexcomoneplus.session
 
 import app.aaps.core.interfaces.concurrent.AapsLock
 import app.aaps.core.interfaces.concurrent.withLock
+import app.aaps.plugins.dexcomoneplus.OnePlusCalibrationOutcome
 import app.aaps.plugins.dexcomoneplus.OnePlusGlucoseSample
 import app.aaps.plugins.dexcomoneplus.OnePlusLog
 import app.aaps.plugins.dexcomoneplus.OnePlusLogMarkers
 import app.aaps.plugins.dexcomoneplus.OnePlusWarmupState
 import app.aaps.plugins.dexcomoneplus.gatt.OnePlusGattClient
-import app.aaps.plugins.dexcomoneplus.gatt.OnePlusGattClientUnimplemented
 import app.aaps.plugins.dexcomoneplus.oem.DeviceProfileRegistry
 import app.aaps.plugins.dexcomoneplus.oem.OemDeviceProfile
 import app.aaps.plugins.dexcomoneplus.onePlusSleep
 import app.aaps.plugins.dexcomoneplus.parse.OnePlusCalibrateRx
 import app.aaps.plugins.dexcomoneplus.parse.OnePlusCalibrationBoundsRx
+import app.aaps.plugins.dexcomoneplus.parse.OnePlusExtendedVersionRx
 import app.aaps.plugins.dexcomoneplus.reconnect.OemAwareReconnectPolicy
 import app.aaps.plugins.dexcomoneplus.reconnect.OnePlusReconnectPolicy
 import app.aaps.plugins.dexcomoneplus.warmup.OnePlusWarmupClock
@@ -44,11 +45,14 @@ interface OnePlusBleSession {
  *   2026-08-03: 18 min of `target ADV absent — remain waiting`, no glucose, no error, no retry).
  * @param foreignAdv redacted label of the strongest *other* ONE+ heard while the target stayed
  *   silent — the stale-stored-MAC signature.
+ * @param pendingConnect no sighting, and none is needed: the platform holds the connect open until
+ *   the sensor comes back ([OemDeviceProfile.holdsPendingConnect], iPhone only).
  */
 data class OnePlusConnectPrep(
     val advFresh: Boolean = false,
     val blindFallback: Boolean = false,
     val foreignAdv: String? = null,
+    val pendingConnect: Boolean = false,
 )
 
 /** Next persistent-ADV retry: raised strategy index plus the connect prep to use. */
@@ -109,6 +113,13 @@ internal object OnePlusBleSessionCyclePolicy {
      * legitimately still be advertising and that sighting is worth catching.
      */
     const val POST_CYCLE_ADV_GUARD_MS = 10_000L
+
+    /**
+     * Pause before a held connect is asked again after a failed one (iPhone only). Short, because the
+     * app may be suspended soon after the link closed and only an armed connect wakes it again; not
+     * zero, so a connect that fails at once (Bluetooth off) does not spin.
+     */
+    const val PENDING_CONNECT_RETRY_PAUSE_MS = 2_000L
 
     /**
      * Length of one filtered ADV window during the persistent wait.
@@ -193,7 +204,9 @@ internal object OnePlusBleSessionCyclePolicy {
         restoredSessionMode: Boolean,
         advertisementFresh: Boolean,
         blindFallbackAuthorized: Boolean = false,
-    ): Boolean = !restoredSessionMode || advertisementFresh || blindFallbackAuthorized
+        /** A connect the platform holds until the sensor advertises is never a blind one. */
+        pendingConnectAuthorized: Boolean = false,
+    ): Boolean = !restoredSessionMode || advertisementFresh || blindFallbackAuthorized || pendingConnectAuthorized
 
     /**
      * Long enough silence on the stored MAC to suspect it is stale.
@@ -254,6 +267,47 @@ internal object OnePlusBleSessionCyclePolicy {
         )
     }
 
+    /** Android GATT status when the peer ended the link itself (HCI 0x13, remote user terminated). */
+    const val GATT_STATUS_PEER_TERMINATED = 19
+
+    /** What to do after a failed cycle in persistent-ADV mode (Android; the iPhone holds a connect). */
+    enum class FailureRetry {
+        /** Park an `autoConnect` at once, without waiting for an advertisement. */
+        IMMEDIATE_AUTO_CONNECT,
+
+        /** The sensor closed the link and went back to sleep: wait for its next cycle, with the guard. */
+        WAIT_AFTER_SENSOR_CLOSE,
+
+        /** Wait for the next advertisement. */
+        WAIT_FOR_ADV,
+    }
+
+    /**
+     * Picks the retry after a failed cycle.
+     *
+     * A link the sensor closed itself ([GATT_STATUS_PEER_TERMINATED]) after we reached it means the
+     * sensor is asleep until its next wake-up, about 4.5 min later. An `autoConnect` parked at once
+     * cannot succeed then (field log 2026-11-14 06:47: 60 s park, no connect). After a lost link
+     * (status 8, supervision timeout) the sensor is sometimes still awake, and the same immediate
+     * park saved the cycle 2 times in 5 in a snoop log, so that case keeps
+     * [skipAdvWaitAfterFailedConnect].
+     *
+     * @param sensorReached the connect of this cycle finished (link up, services found)
+     * @param linkDownStatus [app.aaps.plugins.dexcomoneplus.gatt.OnePlusGattClient.lastLinkDownStatus]
+     */
+    fun retryAfterFailure(
+        sensorReached: Boolean,
+        linkDownStatus: Int?,
+        lastConnectUsedAutoConnect: Boolean,
+        nextAttempt: Int,
+        autoConnectFromAttempt: Int,
+    ): FailureRetry = when {
+        sensorReached && linkDownStatus == GATT_STATUS_PEER_TERMINATED -> FailureRetry.WAIT_AFTER_SENSOR_CLOSE
+        skipAdvWaitAfterFailedConnect(lastConnectUsedAutoConnect, nextAttempt, autoConnectFromAttempt) ->
+            FailureRetry.IMMEDIATE_AUTO_CONNECT
+        else -> FailureRetry.WAIT_FOR_ADV
+    }
+
     /**
      * One blind connect after [BLIND_CONNECT_AFTER_ADV_SILENCE_MS] of silence, then not again until
      * another full silence window has passed **since that blind**. The silence clock itself must
@@ -284,8 +338,8 @@ internal object OnePlusBleSessionCyclePolicy {
  * Does **not** claim production BLE. Stub driver remains the default façade.
  */
 class OnePlusBleSessionSkeleton(
-    private val gatt: OnePlusGattClient = OnePlusGattClientUnimplemented(),
-    private val auth: OnePlusSessionAuth = OnePlusSessionAuthUnimplemented(),
+    private val gatt: OnePlusGattClient,
+    private val auth: OnePlusSessionAuth,
     private val reconnectPolicy: OnePlusReconnectPolicy = OemAwareReconnectPolicy(),
     private val profile: OemDeviceProfile = DeviceProfileRegistry.resolve(),
     private val onWarmup: (OnePlusWarmupState) -> Unit = {},
@@ -321,6 +375,8 @@ class OnePlusBleSessionSkeleton(
     private val cpuLease: OnePlusCpuLease? = null,
     /** Sensor slot owning this session (`prod` / `staging`) — logged on every marker. */
     private val slot: String = OnePlusLogMarkers.SLOT_PRODUCTION,
+    /** [OnePlusBleSessionCyclePolicy.POST_CYCLE_ADV_GUARD_MS]; a test shortens it, the app never does. */
+    private val postCycleAdvGuardMs: Long = OnePlusBleSessionCyclePolicy.POST_CYCLE_ADV_GUARD_MS,
     /**
      * Fingersticks waiting to be handed to the sensor's own algorithm, or null when this session may
      * not calibrate.
@@ -335,6 +391,24 @@ class OnePlusBleSessionSkeleton(
     private val onCalibrationResult: (OnePlusCalibrateRx?) -> Unit = {},
     /** The sensor's calibration state read after a calibration, and whether it holds the value sent. */
     private val onCalibrationState: (OnePlusCalibrationBoundsRx, Boolean) -> Unit = { _, _ -> },
+    /** Checks run again right before a waiting value is written, see `OnePlusEgvSession`. Default: refuse. */
+    private val calibrationSendCheck: (Int, Long, Long) -> OnePlusCalibrationGate.Refusal? = { _, _, _ ->
+        OnePlusCalibrationGate.Refusal.NOT_READY
+    },
+    /** A waiting value was dropped before any write, and why. */
+    private val onCalibrationNotSent: (OnePlusCalibrationOutcome.NotSent.Reason) -> Unit = {},
+    /**
+     * Where the refusals in a row of this slot's sensor are kept. The driver backs it with the slot
+     * store, so the count outlives this session and an app restart. See [OnePlusAuthRefusals].
+     */
+    private val refusalLedger: OnePlusAuthRefusalLedger = OnePlusAuthRefusalLedgerInMemory(),
+    private val refusalPolicy: OnePlusAuthRefusalPolicy = OnePlusAuthRefusalPolicy(),
+    /** Whether the session length of this slot's sensor may still be asked (0x52), see `OnePlusEgvSession`. */
+    private val askSensorInfo: () -> Boolean = { false },
+    private val onSensorInfoAsked: () -> Unit = {},
+    private val onSensorInfo: (OnePlusExtendedVersionRx) -> Unit = {},
+    /** Warm-up length of this slot's sensor. */
+    private val warmupMs: () -> Long = { OnePlusWarmupClock.DEFAULT_WARMUP_MS },
 ) : OnePlusBleSession {
 
     @Volatile
@@ -389,6 +463,9 @@ class OnePlusBleSessionSkeleton(
      * (which already parked) does not GATT-storm after status 133.
      */
     private var lastConnectUsedAutoConnect = false
+
+    /** When the connect of the current cycle finished (link up, services found); 0 = not reached. */
+    private var cycleLinkReadyAtMs = 0L
 
     override fun startWithPairingCode(deviceAddress: String, pairingCode: String) {
         val codeError = OnePlusSessionStart.validationError(pairingCode)
@@ -469,6 +546,7 @@ class OnePlusBleSessionSkeleton(
                     }
                 } else {
                     val bypassReason = when {
+                        preparedConnect?.pendingConnect == true -> "held_connect"
                         preparedConnect?.advFresh == true -> "fresh_adv"
                         preparedConnect?.blindFallback == true -> "blind_escape"
                         else -> "prepared_connect"
@@ -507,7 +585,7 @@ class OnePlusBleSessionSkeleton(
                     preparedConnect = preparePostCollectionReconnect(
                         deviceAddress = deviceAddress,
                         reason = "egv_cycle_complete_waiting_for_adv",
-                        postCycleQuietMs = OnePlusBleSessionCyclePolicy.POST_CYCLE_ADV_GUARD_MS,
+                        postCycleQuietMs = postCycleAdvGuardMs,
                     )
                     if (!running || preparedConnect == null) return
                     // Attempt 1 suppresses SessionStart and reports a reconnect, while the prepared
@@ -606,7 +684,33 @@ class OnePlusBleSessionSkeleton(
             if (attempt == 0) OnePlusWarmupState.Phase.CONNECTING else OnePlusWarmupState.Phase.RECONNECTING
         setWarmup(OnePlusWarmupState(phase = connectingPhase, message = "connect_attempt_$attempt"))
 
-        val prep = preparedConnect ?: try {
+        // Before anything else, even the scan: a sensor that refused us must not be asked again too
+        // soon, nor at all once it refused enough times to lock itself. Normal link losses never
+        // reach this, they are not refusals.
+        var usablePrep = preparedConnect
+        when (val decision = refusalPolicy.decide(refusalLedger.load(), deviceAddress, nowMs())) {
+            OnePlusAuthRefusalPolicy.Decision.Locked  -> {
+                failRefusedTooOften(refusalLedger.load().count)
+                return CycleOutcome.Fatal
+            }
+
+            is OnePlusAuthRefusalPolicy.Decision.Wait -> {
+                val waitMs = decision.untilMs - nowMs()
+                OnePlusLog.w(
+                    "${OnePlusLogMarkers.SESSION}: [$slot] the sensor refused us " +
+                        "${refusalLedger.load().count} time(s) in a row, waiting ${waitMs / 1000}s before asking again " +
+                        "(${OnePlusAuthRefusalPolicy.MAX_REFUSALS_IN_A_ROW + 1} in a row lock it)",
+                )
+                enterReconnecting(OnePlusAuthRefusalPolicy.MESSAGE_PAUSED)
+                if (!sleepWhileRunning(waitMs)) return CycleOutcome.Stopped
+                // A sighting from before the pause is long out of date.
+                usablePrep = null
+            }
+
+            OnePlusAuthRefusalPolicy.Decision.Allowed -> Unit
+        }
+
+        val prep = usablePrep ?: try {
             beforeConnect(deviceAddress, attempt, null)
         } catch (t: Throwable) {
             val msg = t.message ?: "ONEPLUS_BEFORE_CONNECT_FAILED"
@@ -622,6 +726,7 @@ class OnePlusBleSessionSkeleton(
                 restoredSessionMode = !this.requestNewSensorStart,
                 advertisementFresh = prep.advFresh,
                 blindFallbackAuthorized = prep.blindFallback,
+                pendingConnectAuthorized = prep.pendingConnect,
             )
         ) {
             OnePlusLog.i(
@@ -646,6 +751,7 @@ class OnePlusBleSessionSkeleton(
             autoConnectFromAttempt = profile.autoConnectFromAttempt,
         )
         lastConnectUsedAutoConnect = useAutoConnect
+        cycleLinkReadyAtMs = 0L
         OnePlusLog.i(
             "${OnePlusLogMarkers.SESSION}: [$slot] connect decision advFresh=${prep.advFresh} " +
                 "autoConnect=$useAutoConnect attempt=$attempt profile=${profile.id}",
@@ -668,6 +774,7 @@ class OnePlusBleSessionSkeleton(
             }
 
             if (!running) return CycleOutcome.Stopped
+            cycleLinkReadyAtMs = Clock.System.now().toEpochMilliseconds()
 
             val authResult = auth.authenticate(pairingCode, savedSharedKeyProvider())
             if (!running) return CycleOutcome.Stopped
@@ -686,6 +793,9 @@ class OnePlusBleSessionSkeleton(
                     } catch (_: Throwable) {
                     }
                 }
+                if (authResult.refusedBySensor && recordRefusal(deviceAddress, authResult.refusedSavedKey)) {
+                    return CycleOutcome.Fatal
+                }
                 onError(msg, false)
                 // Retryable: the loop will re-attempt (short-auth reject wipes the key → full J-PAKE
                 // next). Show RECONNECTING, NOT FAILED — the old FAILED flash made the user abandon
@@ -694,6 +804,10 @@ class OnePlusBleSessionSkeleton(
                 return if (running) CycleOutcome.RetryableFailure else CycleOutcome.Stopped
             }
 
+            if (refusalLedger.load().count > 0) {
+                OnePlusLog.i("${OnePlusLogMarkers.SESSION}: [$slot] the sensor accepted us, refusal count cleared")
+                refusalLedger.save(refusalPolicy.afterSuccess())
+            }
             authResult.sharedKey?.let { key ->
                 try {
                     onAuthSuccess(deviceAddress, key)
@@ -735,6 +849,12 @@ class OnePlusBleSessionSkeleton(
                 calibrationQueue = calibrationQueue,
                 onCalibrationResult = onCalibrationResult,
                 onCalibrationState = onCalibrationState,
+                calibrationSendCheck = calibrationSendCheck,
+                onCalibrationNotSent = onCalibrationNotSent,
+                askSensorInfo = askSensorInfo,
+                onSensorInfoAsked = onSensorInfoAsked,
+                onSensorInfo = onSensorInfo,
+                warmupMs = warmupMs,
             )
             try {
                 egv.run(shouldContinue = { running && gatt.isConnected() })
@@ -790,25 +910,91 @@ class OnePlusBleSessionSkeleton(
         reason: String,
     ): PersistentRetry {
         val nextAttempt = OnePlusBleSessionCyclePolicy.nextPersistentAttempt(currentAttempt)
-        if (OnePlusBleSessionCyclePolicy.skipAdvWaitAfterFailedConnect(
+        val sensorReachedAtMs = cycleLinkReadyAtMs
+        cycleLinkReadyAtMs = 0L
+        if (profile.holdsPendingConnect) {
+            // iPhone: no scan wait. Ask iOS to hold the connect again; it wakes the app for it.
+            reportStaleSensorIfSilent(deviceAddress)
+            if (!sleepWhileRunning(OnePlusBleSessionCyclePolicy.PENDING_CONNECT_RETRY_PAUSE_MS)) {
+                return PersistentRetry(attempt = nextAttempt, prep = null)
+            }
+            OnePlusLog.i(
+                "${OnePlusLogMarkers.RECONNECT}: [$slot] held connect asked again after $reason attempt=$nextAttempt",
+            )
+            return PersistentRetry(attempt = nextAttempt, prep = OnePlusConnectPrep(pendingConnect = true))
+        }
+        if (sensorReachedAtMs != 0L) {
+            // The sensor was there a moment ago, so its cycle is known again: count the silence from
+            // that moment, and the blind connect lands near its next wake-up instead of being placed
+            // from an older silence or blocked by an older blind.
+            advSilenceStartedMs = sensorReachedAtMs
+            lastBlindConnectAtMs = 0L
+            staleMacReportedThisSilence = false
+        }
+        val linkDownStatus = gatt.lastLinkDownStatus()
+        return when (
+            OnePlusBleSessionCyclePolicy.retryAfterFailure(
+                sensorReached = sensorReachedAtMs != 0L,
+                linkDownStatus = linkDownStatus,
                 lastConnectUsedAutoConnect = lastConnectUsedAutoConnect,
                 nextAttempt = nextAttempt,
                 autoConnectFromAttempt = profile.autoConnectFromAttempt,
             )
         ) {
-            OnePlusLog.i(
-                "${OnePlusLogMarkers.RECONNECT}: [$slot] skip ADV wait — previous was hard connect, " +
-                    "retry autoConnect attempt=$nextAttempt profile=${profile.id}",
-            )
-            lastBlindConnectAtMs = Clock.System.now().toEpochMilliseconds()
-            return PersistentRetry(
+            OnePlusBleSessionCyclePolicy.FailureRetry.IMMEDIATE_AUTO_CONNECT -> {
+                OnePlusLog.i(
+                    "${OnePlusLogMarkers.RECONNECT}: [$slot] skip ADV wait — previous was hard connect, " +
+                        "retry autoConnect attempt=$nextAttempt profile=${profile.id} linkDown=$linkDownStatus",
+                )
+                // Not counted as a blind connect: it would block the real blind escape for a whole
+                // silence window, and that escape is how the next cycle is caught.
+                PersistentRetry(
+                    attempt = nextAttempt,
+                    prep = OnePlusConnectPrep(advFresh = false, blindFallback = true),
+                )
+            }
+
+            OnePlusBleSessionCyclePolicy.FailureRetry.WAIT_AFTER_SENSOR_CLOSE -> {
+                OnePlusLog.i(
+                    "${OnePlusLogMarkers.RECONNECT}: [$slot] sensor closed the link (status $linkDownStatus) — " +
+                        "no immediate retry, wait for its next cycle attempt=$nextAttempt",
+                )
+                PersistentRetry(
+                    attempt = nextAttempt,
+                    prep = preparePostCollectionReconnect(deviceAddress, reason, postCycleQuietMs = postCycleAdvGuardMs),
+                )
+            }
+
+            OnePlusBleSessionCyclePolicy.FailureRetry.WAIT_FOR_ADV -> PersistentRetry(
                 attempt = nextAttempt,
-                prep = OnePlusConnectPrep(advFresh = false, blindFallback = true),
+                prep = preparePostCollectionReconnect(deviceAddress, reason),
             )
         }
-        return PersistentRetry(
-            attempt = nextAttempt,
-            prep = preparePostCollectionReconnect(deviceAddress, reason),
+    }
+
+    /**
+     * The held-connect side of the stale-MAC check in [awaitFreshAdvertisement]: there is no scan on
+     * iPhone, so the silence is counted from the first failed held connect after a good cycle, and
+     * reported once per episode after [OnePlusBleSessionCyclePolicy.STALE_MAC_SUSPICION_AFTER_MS].
+     */
+    private fun reportStaleSensorIfSilent(deviceAddress: String) {
+        val nowMs = Clock.System.now().toEpochMilliseconds()
+        if (advSilenceStartedMs == 0L) advSilenceStartedMs = nowMs
+        val silenceMs = nowMs - advSilenceStartedMs
+        if (staleMacReportedThisSilence || !OnePlusBleSessionCyclePolicy.suspectStaleMac(silenceMs, 0)) return
+        staleMacReportedThisSilence = true
+        val message = "ONEPLUS_ADV_STALE_MAC: target ${redactAddress(deviceAddress)} not reached for " +
+            "${OnePlusBleSessionCyclePolicy.advSilenceMinutes(silenceMs)}min through the held connect — " +
+            "sensor replaced or out of range?"
+        OnePlusLog.e("${OnePlusLogMarkers.ERROR}: [$slot] $message")
+        try {
+            onError(message, false)
+        } catch (_: Throwable) {
+        }
+        enterReconnecting(
+            message = "waiting_for_adv",
+            advSilenceMinutes = OnePlusBleSessionCyclePolicy.advSilenceMinutes(silenceMs),
+            staleMacSuspected = true,
         )
     }
 
@@ -856,6 +1042,14 @@ class OnePlusBleSessionSkeleton(
             )
         }
         if (!running) return null
+        if (profile.holdsPendingConnect) {
+            // No quiet period and no scan: the GATT client asks iOS for a start delay that covers the
+            // sensor's advertising tail, and iOS keeps that held connect while the app is suspended.
+            OnePlusLog.i(
+                "${OnePlusLogMarkers.SESSION}: [$slot] cycle down reason=$reason — held connect for the next radio window",
+            )
+            return OnePlusConnectPrep(pendingConnect = true)
+        }
         OnePlusLog.i(
             "${OnePlusLogMarkers.SESSION}: [$slot] cycle down reason=$reason — wait persistently for next ADV",
         )
@@ -976,6 +1170,35 @@ class OnePlusBleSessionSkeleton(
         }
         return null
     }
+
+    /**
+     * Counts one refusal from [deviceAddress].
+     *
+     * @return true when that was the last refusal we allow: the session has then failed for good and
+     *   the caller must stop.
+     */
+    private fun recordRefusal(deviceAddress: String, withSavedKey: Boolean): Boolean {
+        val updated = refusalPolicy.afterRefusal(refusalLedger.load(), deviceAddress, nowMs(), withSavedKey)
+        refusalLedger.save(updated)
+        OnePlusLog.w(
+            "${OnePlusLogMarkers.SESSION}: [$slot] the sensor refused authentication " +
+                "${updated.count} time(s) in a row savedKey=$withSavedKey",
+        )
+        if (refusalPolicy.decide(updated, deviceAddress, nowMs()) != OnePlusAuthRefusalPolicy.Decision.Locked) return false
+        failRefusedTooOften(updated.count)
+        return true
+    }
+
+    /** Stops for good, before the refusal that would lock the sensor. Only the user starts again. */
+    private fun failRefusedTooOften(count: Int) {
+        fail(
+            "${OnePlusAuthRefusalPolicy.MESSAGE_LOCKED}: the sensor refused us $count times in a row, " +
+                "stopped before it locks itself; check the code, close other apps that use the sensor, then start it again",
+            fatal = false,
+        )
+    }
+
+    private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
 
     private fun fail(message: String, fatal: Boolean) {
         running = false

@@ -1,8 +1,10 @@
 package app.aaps.implementation.maintenance
 
+import app.aaps.core.data.model.ICfg
 import app.aaps.core.data.plugin.PluginType
 import app.aaps.core.interfaces.configuration.Config
 import app.aaps.core.interfaces.db.PersistenceLayer
+import app.aaps.core.interfaces.insulin.InsulinManager
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.maintenance.Prefs
 import app.aaps.core.interfaces.plugin.ActivePlugin
@@ -10,10 +12,13 @@ import app.aaps.core.interfaces.plugin.PluginBase
 import app.aaps.core.interfaces.plugin.PluginBaseWithPreferences
 import app.aaps.core.interfaces.plugin.PluginDescription
 import app.aaps.core.interfaces.profile.ProfileUtil
+import app.aaps.core.interfaces.resources.TextResolver
 import app.aaps.core.interfaces.sharedPreferences.KeyValueStore
 import app.aaps.core.interfaces.utils.DateUtil
+import app.aaps.core.interfaces.utils.HardLimits
 import app.aaps.core.keys.BooleanComposedKey
 import app.aaps.core.keys.BooleanKey
+import app.aaps.core.keys.BooleanNonKey
 import app.aaps.core.keys.DoubleKey
 import app.aaps.core.keys.IntKey
 import app.aaps.core.keys.LongComposedKey
@@ -21,6 +26,8 @@ import app.aaps.core.keys.StringKey
 import app.aaps.core.keys.StringNonKey
 import app.aaps.core.keys.interfaces.NonPreferenceKey
 import app.aaps.core.keys.interfaces.Preferences
+import app.aaps.core.keys.interfaces.TextRef
+import app.aaps.implementation.maintenance.migration.InsulinMigration
 import app.aaps.implementation.maintenance.migration.PreferenceMigrations
 import app.aaps.implementation.sharedPreferences.PreferenceKeyResolverFactory
 import com.google.common.truth.Truth.assertThat
@@ -65,8 +72,19 @@ class PreferenceImportApplierTest {
             config = config,
             aapsLogger = mock<AAPSLogger>(),
             dateUtil = mock<DateUtil>(),
-            migrations = PreferenceMigrations(mock<AAPSLogger>(), config, mock<PersistenceLayer>(), mock<DateUtil>(), mock<ProfileUtil>())
+            migrations = PreferenceMigrations(mock<AAPSLogger>(), config, mock<PersistenceLayer>(), mock<DateUtil>(), mock<ProfileUtil>()),
+            insulinMigration = InsulinMigration(mock<AAPSLogger>(), mock<HardLimits>(), rh),
+            insulinManager = insulinManager
         )
+    }
+
+    private val rh = mock<TextResolver>().also { whenever(it.gs(any<TextRef>())).thenReturn("Free-Peak Oref") }
+
+    /** Hands back what it is given, labelled the way the list labels it, so the tests can read peak and DIA. */
+    private val insulinManager = mock<InsulinManager>().also {
+        whenever(it.seedFromMigration(any())).thenAnswer { call ->
+            (call.arguments[0] as ICfg).also { iCfg -> iCfg.insulinLabel = "${iCfg.peak}m ${iCfg.dia}h" }
+        }
     }
 
     private fun prefs(vararg pairs: Pair<String, String>) = Prefs(mapOf(*pairs), mutableMapOf())
@@ -268,6 +286,110 @@ class PreferenceImportApplierTest {
 
         assertThat(outcome.syncedSkipped).isEqualTo(0)
         assertThat(outcome.changed).isEqualTo(1)
+    }
+
+    // ---- the insulin of a 3.x backup (#5453) ----
+
+    /** What a 3.4.2.6 export carries for a user on Free-Peak Oref at 38 min, one profile with a 6 h DIA. */
+    private val v3FreePeakFile = arrayOf(
+        "ConfigBuilder_Enabled_INSULIN_InsulinOrefFreePeakPlugin" to "true",
+        "insulin_oref_peak" to "38",
+        "LocalProfile_name_0" to "Default",
+        "LocalProfile_dia_0" to "6.0"
+    )
+
+    /**
+     * The migrations delete the v3 insulin names, and start-up only reads the DEVICE store. So a 3.4
+     * backup imported into a new install kept the install's default insulin - a different curve.
+     */
+    @Test fun `a v3 backup's insulin is added to the insulin list`() = runTest {
+        val outcome = sut().apply(prefs(*v3FreePeakFile), keepPumpSettings = false)
+
+        assertThat(outcome.importedInsulins).containsExactly("38m 6.0h")
+        verify(insulinManager).seedFromMigration(any())
+    }
+
+    @Test fun `profiles with different DIAs give one insulin each`() = runTest {
+        val outcome = sut().apply(
+            prefs(*v3FreePeakFile, "LocalProfile_name_1" to "Sport", "LocalProfile_dia_1" to "5.0"),
+            keepPumpSettings = false
+        )
+
+        assertThat(outcome.importedInsulins).containsExactly("38m 5.0h", "38m 6.0h").inOrder()
+    }
+
+    /** No DIA in the file means nothing to build an insulin from. The hard-limit maximum is never invented here. */
+    @Test fun `a v3 backup without a profile DIA adds nothing`() = runTest {
+        val outcome = sut().apply(
+            prefs("ConfigBuilder_Enabled_INSULIN_InsulinOrefFreePeakPlugin" to "true", "insulin_oref_peak" to "38"),
+            keepPumpSettings = false
+        )
+
+        assertThat(outcome.importedInsulins).isEmpty()
+        verify(insulinManager, never()).seedFromMigration(any())
+    }
+
+    /** A v4 file carries the insulin list itself; rebuilding one from leftovers would add a duplicate. */
+    @Test fun `a v4 backup adds nothing`() = runTest {
+        val outcome = sut().apply(prefs(*v3FreePeakFile, StringNonKey.InsulinConfiguration.key to """{"insulin":[]}"""), keepPumpSettings = false)
+
+        assertThat(outcome.importedInsulins).isEmpty()
+        verify(insulinManager, never()).seedFromMigration(any())
+    }
+
+    /** A client's insulin list belongs to the master. */
+    @Test fun `a client adds nothing`() = runTest {
+        val outcome = sut(client = true).apply(prefs(*v3FreePeakFile), keepPumpSettings = false)
+
+        assertThat(outcome.importedInsulins).isEmpty()
+        verify(insulinManager, never()).seedFromMigration(any())
+    }
+
+    // ---- AIMI meal factor repair (step T2) ----
+
+    /** An old backup with a meal factor on the 1.0 scale of the old TPO ends at the default in the live store. */
+    @Test fun `an old backup with an AIMI meal factor below 2 is repaired on import`() = runTest {
+        store.putDouble(DoubleKey.OApsAIMILunchFactor.key, 80.0)
+
+        sut().apply(prefs(DoubleKey.OApsAIMILunchFactor.key to "1.15"), keepPumpSettings = false)
+
+        assertThat(store.getDouble(DoubleKey.OApsAIMILunchFactor.key, 0.0)).isEqualTo(50.0)
+    }
+
+    /** A backup made after the repair holds the flag, so a low value set by hand is kept. */
+    @Test fun `a backup with the repair flag keeps its AIMI meal factor`() = runTest {
+        store.putDouble(DoubleKey.OApsAIMILunchFactor.key, 80.0)
+
+        sut().apply(
+            prefs(DoubleKey.OApsAIMILunchFactor.key to "1.5", BooleanNonKey.OApsAIMIMealFactorScaleRepaired.key to "true"),
+            keepPumpSettings = false
+        )
+
+        assertThat(store.getDouble(DoubleKey.OApsAIMILunchFactor.key, 0.0)).isEqualTo(1.5)
+    }
+
+    // ---- AIMI keys deleted in step S3 ----
+
+    /**
+     * An old backup still carries the deleted AIMI keys, one of them an API key. The import removes
+     * them from the file first, so they are neither written nor listed as names this build does not know.
+     */
+    @Test fun `an old backup with deleted AIMI keys writes none of them`() = runTest {
+        store.putDouble(DoubleKey.OApsAIMILunchFactor.key, 80.0)
+
+        val outcome = sut().apply(
+            prefs(
+                "aimi_context_llm_openai_key" to "sk-secret",
+                "OApsAIMIKickerStep" to "0.2",
+                DoubleKey.OApsAIMILunchFactor.key to "60.0",
+            ),
+            keepPumpSettings = false
+        )
+
+        assertThat(store.contains("aimi_context_llm_openai_key")).isFalse()
+        assertThat(store.contains("OApsAIMIKickerStep")).isFalse()
+        assertThat(outcome.unresolved).isEmpty()
+        assertThat(store.getDouble(DoubleKey.OApsAIMILunchFactor.key, 0.0)).isEqualTo(60.0)
     }
 
     // ---- preview ----

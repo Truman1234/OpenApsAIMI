@@ -15,8 +15,11 @@ import app.aaps.core.interfaces.profile.ProfileUtil
 import app.aaps.core.interfaces.sharedPreferences.KeyValueStore
 import app.aaps.core.interfaces.tempTargets.toJson
 import app.aaps.core.interfaces.utils.DateUtil
+import app.aaps.core.keys.AimiMealFactorScaleRepair
+import app.aaps.core.keys.AimiRetiredSettings
 import app.aaps.core.keys.BooleanComposedKey
 import app.aaps.core.keys.BooleanKey
+import app.aaps.core.keys.BooleanNonKey
 import app.aaps.core.keys.IntKey
 import app.aaps.core.keys.ProfileComposedBooleanKey
 import app.aaps.core.keys.ProfileComposedStringKey
@@ -24,6 +27,7 @@ import app.aaps.core.keys.StringKey
 import app.aaps.core.keys.StringNonKey
 import app.aaps.core.keys.UnitDoubleKey
 import dev.zacsweers.metro.Inject
+import kotlin.math.roundToInt
 
 /**
  * The preference migrations, as an ordered list of functions over the store they are given.
@@ -69,7 +73,13 @@ import dev.zacsweers.metro.Inject
  * So a new migration goes at the END of the list, and writes whatever the build it belongs to wrote.
  *
  * Every function is guarded by its own data - it does nothing when its names are absent - so running
- * the whole list every time is correct and there is nothing to record or skip.
+ * the whole list every time is correct and there is nothing to record or skip. The one exception is
+ * [aimiMealFactorScaleRepaired], which also stops once the store holds its done flag.
+ *
+ * These run on Android only at start-up (`MainApp`); iOS runs them on an import. On iOS a value of a
+ * deleted key that is already stored stays in the store, unread, as it did after step P3. The AIMI
+ * settings deleted in step S3 are the exception: the AIMI plugin start also removes them, on both
+ * platforms (`AimiRetiredSettings.removeStored`), because four of them could hold an API key.
  *
  * ## What is NOT here
  *
@@ -117,6 +127,32 @@ class PreferenceMigrations(
         apsMode(sp)
         tempTargetPresets(sp)
         activityMonitorRetired(sp)
+        rapidFallDropToMgdl(sp)
+        dashboardSkin(sp)
+        smsCommunicatorType(sp)
+        aimiPkpdKeysRetired(sp)
+        aimiMealFactorScaleRepaired(sp)
+        aimiDeadKeysRetired(sp)
+    }
+
+    /**
+     * The `dev_OAPSAIMI` home screen choice `skin` becomes [StringKey.GeneralDashboardSkin].
+     *
+     * On DEV `skin` holds the class name of a skin. An empty value, or a name DEV did not know, gave the
+     * first skin, `SkinMinimal`, which is the AIMI dashboard. `SkinGlass` is the Glass home. The View skins
+     * (`SkinClassic`, `SkinButtonsOn`, `SkinLargeDisplay`, `SkinLowRes`) were removed upstream, so their
+     * users get the Overview.
+     *
+     * A home screen already chosen on this build is kept: only the old name is removed then.
+     */
+    private fun dashboardSkin(sp: KeyValueStore) {
+        if (!sp.contains(LEGACY_SKIN)) return
+        val stored = LegacyPreferenceValue.asString(sp.getAll()[LEGACY_SKIN])
+            ?: return skip(LEGACY_SKIN, "expected a skin name, found ${LegacyPreferenceValue.describeType(sp.getAll()[LEGACY_SKIN])}")
+        if (!sp.contains(StringKey.GeneralDashboardSkin.key)) {
+            sp.putString(StringKey.GeneralDashboardSkin.key, dashboardHomeForLegacySkin(stored))
+        }
+        sp.remove(LEGACY_SKIN)
     }
 
     /**
@@ -141,6 +177,8 @@ class PreferenceMigrations(
             sp.remove("ConfigBuilder_INSULIN_${plugin}_Enabled")
             sp.remove("ConfigBuilder_INSULIN_${plugin}_Visible")
             sp.remove("ConfigBuilder_Enabled_INSULIN_$plugin")
+            // The renamed visibility row too, or an import lists all four as names it does not know
+            sp.remove("ConfigBuilder_Visible_INSULIN_$plugin")
         }
         sp.remove("insulin_oref_peak")
     }
@@ -444,6 +482,96 @@ class PreferenceMigrations(
         if (sp.contains("stats_activity_expanded")) sp.remove("stats_activity_expanded")
     }
 
+    /**
+     * The rapid-fall drop size moved from the float `alert_rapid_fall_drop` (dev_OAPSAIMI) to the Int
+     * key `alert_rapid_fall_drop_mgdl`, see [IntKey.AlertRapidFallDrop].
+     *
+     * The old key was a unit-double, which guessed the unit from the number, so the stored value is
+     * often wrong (a typed 25 could be stored as 450). Only a value inside the new key's range of
+     * 15-60 mg/dL can be a real setting, so only such a value is copied. Anything else is dropped and
+     * the default applies, as before this migration.
+     *
+     * It runs once: the old name is removed after it is read. A value already stored under the new
+     * name is the user's newer choice, so it is never overwritten. A value that cannot be read as a
+     * number is left in place, like in every other migration here.
+     */
+    private fun rapidFallDropToMgdl(sp: KeyValueStore) {
+        val stored = sp.getAll()[LEGACY_RAPID_FALL_DROP] ?: return
+        val value = LegacyPreferenceValue.asDouble(stored)
+            ?: return skip(LEGACY_RAPID_FALL_DROP, "expected a number, found ${LegacyPreferenceValue.describeType(stored)}")
+        val key = IntKey.AlertRapidFallDrop
+        val inRange = value >= key.min && value <= key.max
+        if (inRange && !sp.contains(key.key)) sp.putInt(key.key, value.roundToInt())
+        sp.remove(LEGACY_RAPID_FALL_DROP)
+    }
+
+    /**
+     * SMS Communicator moved from `PluginType.GENERAL` to `PluginType.SYNC`, so the row that says it
+     * is enabled sits under a name this build never reads.
+     *
+     * The flag is stored as `ConfigBuilder_Enabled_<TYPE>_<Class>`, and `ConfigBuilderImpl.savePref`
+     * only ever writes the type the plugin has now. An install coming from 3.x therefore carries
+     * `ConfigBuilder_Enabled_GENERAL_SmsCommunicatorPlugin`, 4.0 asks for the `SYNC_` name, finds
+     * nothing and falls back to the default - off. SMS commands stop working after the upgrade,
+     * without a word, which for a caregiver is the whole remote control gone.
+     *
+     * This runs after [configBuilder]. That one turns the 3.x name,
+     * `ConfigBuilder_GENERAL_SmsCommunicatorPlugin_Enabled`, into the composed name above, so by the
+     * time this looks the row is in the shape 4.0 writes.
+     *
+     * The value is carried over ONLY when the `SYNC_` name is absent. Once that name exists it is
+     * what this build stored for the user - `storeSettings` writes every plugin whenever one of them
+     * is switched - and a migration must not turn a remote control channel back on over it. The
+     * `GENERAL_` name is removed either way: with the `SYNC_` name present it can never be read again.
+     */
+    private fun smsCommunicatorType(sp: KeyValueStore) {
+        val legacyName = BooleanComposedKey.ConfigBuilderEnabled.composeKey("GENERAL_SmsCommunicatorPlugin")
+        val currentName = BooleanComposedKey.ConfigBuilderEnabled.composeKey("SYNC_SmsCommunicatorPlugin")
+        val stored = sp.getAll()[legacyName] ?: return
+        val enabled = LegacyPreferenceValue.asBoolean(stored)
+            ?: return skip(legacyName, "expected true or false, found ${LegacyPreferenceValue.describeType(stored)}")
+        if (!sp.contains(currentName)) sp.putBoolean(currentName, enabled)
+        sp.remove(legacyName)
+    }
+
+    /**
+     * AIMI step P3: PK/PD values that are no longer preferences, so their stored names are dead.
+     *
+     * The five peak branch values, the dominant branch and the two peak governor log lines are kept
+     * in memory now (they were written by the loop only). The two governor blend weights and three
+     * switches are constants with the old default values. The learned DIA and peak, the wizard flag
+     * and the two governor switches keep their names and are not touched.
+     */
+    private fun aimiPkpdKeysRetired(sp: KeyValueStore) {
+        AIMI_PKPD_RETIRED_KEYS.filter { sp.contains(it) }.forEach(sp::remove)
+    }
+
+    /**
+     * AIMI step T2: a meal factor the old TPO wrote on the 1.0 scale (below 2, for example 1.15) goes
+     * back to its default, once. See [repairAimiMealFactorScale].
+     *
+     * The one function here that is not guarded by its data alone: a low value is also a value a
+     * user can type, so it also stops once [sp] holds the done flag. The flag is written by the AIMI
+     * plugin start, not here, and it is exported: an old backup is repaired on import, a backup made
+     * after the repair is not, and a store with no meal factor is left untouched.
+     */
+    private fun aimiMealFactorScaleRepaired(sp: KeyValueStore) {
+        repairAimiMealFactorScale(sp).forEach {
+            aapsLogger.info(LTag.CORE, "AIMI meal factor repaired (old TPO scale): $it")
+        }
+    }
+
+    /**
+     * AIMI step S3: settings nothing read were deleted (basal kicker, night growth multipliers, the
+     * context provider and its API keys, and more). Their stored values go, so an old backup writes
+     * none of them and a stored API key does not stay. Only the names are logged, never a value.
+     * See [removeRetiredAimiSettings].
+     */
+    private fun aimiDeadKeysRetired(sp: KeyValueStore) {
+        val removed = removeRetiredAimiSettings(sp)
+        if (removed.isNotEmpty()) aapsLogger.info(LTag.CORE, "AIMI deleted settings removed: $removed")
+    }
+
     /** Moves a legacy name holding a whole number to [destinationPrefix] + [argument]. */
     private fun moveLong(sp: KeyValueStore, name: String, value: Any?, argument: String?, destinationPrefix: String) {
         if (argument == null) return skip(name, "the name does not say what it belongs to")
@@ -475,7 +603,32 @@ class PreferenceMigrations(
 
     private companion object {
 
+        /** The `dev_OAPSAIMI` skin choice (`StringKey.GeneralSkin` there). */
+        const val LEGACY_SKIN = "skin"
+
+        /** Values of [StringKey.GeneralDashboardSkin], as `DashboardHomeSelection` in `:ui` stores them. */
+        const val HOME_OVERVIEW = "overview"
+        const val HOME_AIMI_DASHBOARD = "aimi_dashboard"
+        const val HOME_GLASS = "glass"
+
+        /** The View skins of DEV that have no home screen here any more. */
+        val VIEW_SKINS = setOf("SkinClassic", "SkinButtonsOn", "SkinLargeDisplay", "SkinLowRes")
+
+        /**
+         * The home screen for a DEV skin value. DEV matched the full class name or the simple name and
+         * fell back to its first skin, `SkinMinimal`, for anything else, also an empty value.
+         */
+        fun dashboardHomeForLegacySkin(skin: String): String =
+            when (skin.trim().substringAfterLast('.')) {
+                "SkinGlass"   -> HOME_GLASS
+                in VIEW_SKINS -> HOME_OVERVIEW
+                else          -> HOME_AIMI_DASHBOARD
+            }
+
         const val LOCAL_PROFILE_PREFIX = "LocalProfile_"
+
+        /** The dev_OAPSAIMI float key of the rapid-fall drop size, replaced by [IntKey.AlertRapidFallDrop]. */
+        const val LEGACY_RAPID_FALL_DROP = "alert_rapid_fall_drop"
 
         /** The five schedules a profile carries, and the key each one moves to. */
         val SCHEDULE_FIELDS = mapOf(
@@ -487,6 +640,23 @@ class PreferenceMigrations(
         )
 
         val TEMP_TARGET_PRESETS = StringNonKey.TempTargetPresets.key
+
+        /** Stored names of the AIMI PK/PD keys removed in step P3. See [aimiPkpdKeysRetired]. */
+        val AIMI_PKPD_RETIRED_KEYS = listOf(
+            "aimi_pkpd_state_prior_peak",
+            "aimi_pkpd_state_physio_peak",
+            "aimi_pkpd_state_site_peak",
+            "aimi_pkpd_state_traj_peak",
+            "aimi_pkpd_state_effective_peak",
+            "aimi_pkpd_state_dominant_branch",
+            "aimi_pkpd_state_last_peak_gov_log",
+            "aimi_pkpd_state_last_peak_gov_console_echoed",
+            "aimi_peak_governor_learned_weight",
+            "aimi_dia_governor_learned_weight",
+            "key_aimi_intelligence_single_learn_path",
+            "key_aimi_intelligence_kinetics_profiler",
+            "key_aimi_pkpd_prediction_kinetics"
+        )
 
         /** The three counters the activity monitor kept for each activity. */
         val MONITOR_COUNTERS = listOf("start", "resumed", "total")
@@ -506,3 +676,45 @@ class PreferenceMigrations(
         )
     }
 }
+
+/**
+ * [AimiMealFactorScaleRepair] over a raw store: the live store on Android start-up, or an import
+ * file.
+ *
+ * It repairs only while [sp] does not say the repair ran, and it never writes that flag itself. The
+ * AIMI plugin start sets the flag (`AimiMealFactorScaleRepair.repairOnce(preferences)`), on Android
+ * and iOS. So:
+ * - on the live store it repairs until the AIMI plugin has started once, and a low value the user
+ *   types later is kept;
+ * - a backup made before the repair has no flag and is repaired on import; a backup made after it
+ *   carries the flag (it is exported) and keeps its values;
+ * - a store with no meal factor stays untouched, so an import counts no extra change.
+ *
+ * A file holds every value as text, so values are read with [LegacyPreferenceValue]. A value that is
+ * not a number is left in place.
+ */
+internal fun repairAimiMealFactorScale(sp: KeyValueStore): List<AimiMealFactorScaleRepair.Repair> =
+    AimiMealFactorScaleRepair.repairOnce(
+        alreadyDone = LegacyPreferenceValue.asBoolean(sp.getAll()[BooleanNonKey.OApsAIMIMealFactorScaleRepaired.key]) == true,
+        readStored = { key -> LegacyPreferenceValue.asDouble(sp.getAll()[key.key]) },
+        write = { key, value -> sp.putDouble(key.key, value) },
+        markDone = {},
+    )
+
+/**
+ * Removes the stored values of the AIMI settings deleted in step S3 ([AimiRetiredSettings]) from [sp]:
+ * the live store on Android start-up, or an import file before it is applied.
+ *
+ * Guarded by its data alone: it removes only names that are present, so running it again does
+ * nothing. Four of the names could hold an API key, which is why the value is removed and not left
+ * as an unknown name.
+ *
+ * @return the names it removed
+ */
+internal fun removeRetiredAimiSettings(sp: KeyValueStore): List<String> =
+    AimiRetiredSettings.removeStored(
+        contains = sp::contains,
+        read = { name -> sp.getAll()[name] },
+        putString = sp::putString,
+        remove = sp::remove,
+    )

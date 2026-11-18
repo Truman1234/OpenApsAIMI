@@ -54,6 +54,15 @@ object CorrectionAggressionGate {
         val hasRecentMealEstimate: Boolean,
         val isConfirmedHighRise: Boolean,
         val postHypoHint: PostHypoHint = PostHypoHint.NONE,
+        /**
+         * A meal was declared recently: a meal mode or an "fcl"/"anticip" note is active, or the last
+         * meal note is younger than 3 h (4 h for high-carb). See `DynamicBasalStackCap.declaredMealActive`.
+         *
+         * This is not meal evidence for [isMealTierFull]: it must never open the FULL tier. It only
+         * stops a low inside the meal (for example from the prebolus) from being read as a rebound,
+         * see [isLowInsideDeclaredMeal].
+         */
+        val declaredMealEpisode: Boolean = false,
     )
 
     data class Decision(
@@ -107,6 +116,7 @@ object CorrectionAggressionGate {
     fun refineForPostHypo(decision: Decision, input: Input, postHypoHint: PostHypoHint): Decision {
         if (postHypoHint != PostHypoHint.REBOUND_SUSPECTED) return decision
         if (hasIndependentMealEvidence(input)) return decision
+        if (isLowInsideDeclaredMeal(input)) return decision
         val reboundInput = input.copy(postHypoHint = postHypoHint)
         return buildDecision(
             reboundInput,
@@ -160,7 +170,19 @@ object CorrectionAggressionGate {
     }
 
     /**
+     * How long ago the last Meal Advisor estimate was made, for [isMealLikelyPostHypoStrict].
+     *
+     * The preference holds the TIME of the estimate, not its age. Two callers passed the time itself, so
+     * a real estimate never counted as recent while "no estimate" (0) always did.
+     * No estimate gives [Long.MAX_VALUE], which is never recent.
+     */
+    fun estimatedCarbsAgeMs(estimatedCarbsTimeMs: Long, nowMs: Long): Long =
+        if (estimatedCarbsTimeMs > 0L) nowMs - estimatedCarbsTimeMs else Long.MAX_VALUE
+
+    /**
      * Stricter unannounced-meal detection inside post-hypo recovery window (replaces score≥2 heuristic).
+     *
+     * [recentBGs] is newest first, like `getRecentBGs`: a rise means each value is above the one after it.
      */
     fun isMealLikelyPostHypoStrict(
         cob: Double,
@@ -176,12 +198,26 @@ object CorrectionAggressionGate {
         if (estimatedCarbs > 15.0 && estimatedCarbsAgeMs in 0..(90 * 60_000L)) return true
         if (uamConfidence >= 0.65) return true
         val sustainedRise = shortAvgDelta >= 3.0f && delta >= 2.0f &&
-            recentBGs.take(3).zipWithNext().all { (prev, curr) -> curr > prev }
+            recentBGs.take(3).zipWithNext().all { (newer, older) -> newer > older }
         return bg > 125.0 && sustainedRise
     }
 
+    /**
+     * The low in the lookback window happened inside a declared meal, and glucose is back at or above
+     * target. Then the rise is the meal, not a rebound, and the rebound guard must not hold it back.
+     *
+     * Case 2026-11-16: an FCL prebolus pushed glucose to 70 before the carbs arrived. One hour later,
+     * at 158 mg/dL and falling after the meal peak, that low was still in the 75 min window, and one
+     * tick of rebound guard started a 45 min post-hypo tuning session.
+     *
+     * While glucose is still under target the guard stays: the person was just low.
+     */
+    internal fun isLowInsideDeclaredMeal(input: Input): Boolean =
+        input.declaredMealEpisode && input.bg >= input.targetBg
+
     internal fun isReboundGuardPattern(input: Input, mealFull: Boolean): Boolean {
         if (mealFull) return false
+        if (isLowInsideDeclaredMeal(input)) return false
         if (input.minBgLookback75m >= REBOUND_MIN_BG_LOOKBACK_MGDL) return false
         if (input.bg >= input.targetBg + REBOUND_BG_MARGIN_MGDL) return false
         if (input.postHypoHint == PostHypoHint.REBOUND_SUSPECTED) return true

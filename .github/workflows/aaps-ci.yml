@@ -6,9 +6,11 @@ on:
       tagName:
         description: 'Select AAPS Version'
         required: true
-        default: '3.4.2.6'
+        default: '4.0.0'
         type: choice
         options:
+          # ── 4.0.x (JDK 21) ──────────────────────────────
+          - 4.0.0
           # ── 3.4.x (JDK 21) ──────────────────────────────
           - 3.4.2.6
           - 3.4.2.4
@@ -266,6 +268,10 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build APKs
+        env:
+          # Eversense cloud client secret, read by plugins/eversense at build time. Without it an
+          # Eversense 365 transmitter cannot pair. Set it as a repository secret.
+          EVERSENSE_CLIENT_SECRET: ${{ secrets.EVERSENSE_CLIENT_SECRET }}
         run: |
               ./gradlew :app:assemble${{ env.BUILD_VARIANT }} :wear:assemble${{ env.BUILD_VARIANT }} \
               -Dorg.gradle.jvmargs="-Xmx8g -XX:+UseParallelGC -Xss4m" \

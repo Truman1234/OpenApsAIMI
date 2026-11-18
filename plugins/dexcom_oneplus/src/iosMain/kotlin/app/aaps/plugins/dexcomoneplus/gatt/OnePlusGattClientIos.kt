@@ -67,6 +67,14 @@ class OnePlusGattClientIos(
     private val profile: OemDeviceProfile = DeviceProfileRegistry.resolve(),
     private val nowMs: () -> Long = ::onePlusIosElapsedMs,
     private val sleep: (Long) -> Boolean = ::onePlusSleep,
+    /**
+     * Puts this client back on the shared radio.
+     *
+     * A cycle ends with [disconnect], which marks the client retired. The other slot can then
+     * build a client of its own and drop every retired one. The session reconnects *this* object,
+     * so the next [connect] has to register it again or the link waits for events that never come.
+     */
+    private val onConnectAttempt: (() -> Unit)? = null,
 ) : OnePlusGattClient {
 
     /** Serializes one outstanding write or subscription, exactly as the Android client does. */
@@ -81,6 +89,13 @@ class OnePlusGattClientIos(
 
     @Volatile
     private var connected = false
+
+    /** Set once [disconnect] has run, so the radio can drop this client without dropping a live link. */
+    @Volatile
+    private var retired = false
+
+    /** True after [disconnect]. A client that is connecting or connected is not retired. */
+    fun isRetired(): Boolean = retired
 
     /**
      * Completed once per [connect]: `READY_OK` when the sensor is ready, otherwise the reason it
@@ -118,7 +133,12 @@ class OnePlusGattClientIos(
     // -- lifecycle -------------------------------------------------------------------------------
 
     override fun connect(deviceAddress: String, autoConnect: Boolean) {
-        disconnectInternal(poisonQueues = false)
+        // Before the prelude disconnect, so a client that is about to connect is not dropped as
+        // finished while the other slot attaches its own client. Re-register as well: the pause
+        // between [disconnect] and this call is long enough for the other slot to have pruned us.
+        retired = false
+        onConnectAttempt?.invoke()
+        disconnectInternal(poisonQueues = false, retire = false)
         awaitPostCloseSettle()
         drainQueues()
         if (deviceAddress.isBlank()) {
@@ -145,8 +165,12 @@ class OnePlusGattClientIos(
         linkId = deviceAddress
         // There is no autoConnect on CoreBluetooth: connectPeripheral simply never gives up by
         // itself. The flag therefore only widens our own patience, as it does on Android.
-        OnePlusLog.i("${OnePlusLogMarkers.SESSION}: connect autoConnect=$autoConnect (iOS waits either way)")
-        if (!central.connect(deviceAddress)) {
+        val startDelaySeconds = if (profile.holdsPendingConnect) advertisingTailDelaySeconds() else 0
+        OnePlusLog.i(
+            "${OnePlusLogMarkers.SESSION}: connect autoConnect=$autoConnect held=${profile.holdsPendingConnect} " +
+                "startDelay=${startDelaySeconds}s (iOS waits either way)",
+        )
+        if (!central.connect(deviceAddress, startDelaySeconds)) {
             linkId = null
             ready = null
             error("ONEPLUS_GATT: central refused the connection")
@@ -156,13 +180,16 @@ class OnePlusGattClientIos(
         } else {
             profile.connectTimeoutMs
         }
+        // The ready answer can land in the same moment as the time limit when iOS wakes the app after
+        // a long sleep; a link that is ready is used, not cancelled.
         val outcome = runBlocking { withTimeoutOrNull(timeout) { latch.await() } }
+            ?: if (latch.isCompleted) runBlocking { latch.await() } else null
         if (outcome == null) {
-            disconnectInternal(poisonQueues = true)
+            disconnectInternal(poisonQueues = true, retire = true)
             error("ONEPLUS_GATT: connect/discover timeout ${timeout}ms")
         }
         if (outcome != READY_OK) {
-            disconnectInternal(poisonQueues = true)
+            disconnectInternal(poisonQueues = true, retire = true)
             error("ONEPLUS_GATT: $outcome")
         }
         // Drop subscription noise and late disconnect sentinels before KEKS waits for Auth frames.
@@ -170,7 +197,7 @@ class OnePlusGattClientIos(
     }
 
     override fun disconnect() {
-        disconnectInternal(poisonQueues = true)
+        disconnectInternal(poisonQueues = true, retire = true)
     }
 
     override fun isConnected(): Boolean = connected && linkId != null
@@ -409,7 +436,7 @@ class OnePlusGattClientIos(
                 "dropping it instead of carrying on, because a restored link can still deliver " +
                 "frames from before the app was ended and they would be read as current glucose",
         )
-        disconnectInternal(poisonQueues = true)
+        disconnectInternal(poisonQueues = true, retire = true)
     }
 
     private fun onLink(event: BleCentralEvent.Link) {
@@ -597,7 +624,7 @@ class OnePlusGattClientIos(
         ready?.complete(reason)
     }
 
-    private fun disconnectInternal(poisonQueues: Boolean) {
+    private fun disconnectInternal(poisonQueues: Boolean, retire: Boolean) {
         connected = false
         cccdPhase = CccdPhase.NONE
         completePendingOp(GATT_FAILURE)
@@ -609,6 +636,23 @@ class OnePlusGattClientIos(
             central.cancel(id)
             lastCloseMs = nowMs()
         }
+        if (retire) retired = true
+    }
+
+    /**
+     * What is left of the sensor's advertising tail after the last link closed, in whole seconds.
+     *
+     * After it closes a link the sensor still advertises for other displays for about 20 to 24 s. A
+     * connect in that tail fails, and repeated failures make CoreBluetooth ask for a very strong
+     * signal. LoopKit G7SensorKit (Trio) therefore asks iOS for a 30 s start delay on every
+     * reconnect (`G7BluetoothManager.reconnectStartDelay`); the same is done here. iOS counts the
+     * delay, so it still runs while the app sleeps.
+     */
+    private fun advertisingTailDelaySeconds(): Int {
+        if (lastCloseMs <= 0L) return 0
+        val remainingMs = ADVERTISING_TAIL_MS - (nowMs() - lastCloseMs)
+        if (remainingMs <= 0L) return 0
+        return ((remainingMs + 999L) / 1000L).toInt()
     }
 
     /**
@@ -688,6 +732,9 @@ class OnePlusGattClientIos(
         private const val EXTRA_DATA_AFTER_MS = 500L
 
         private const val AUTO_CONNECT_MIN_TIMEOUT_MS = 60_000L
+
+        /** The sensor's advertising tail after a link closes, see [advertisingTailDelaySeconds]. */
+        internal const val ADVERTISING_TAIL_MS = 30_000L
 
         /** Stands in for the Android `BluetoothGatt.GATT_FAILURE`, which has no iOS equivalent. */
         private const val GATT_FAILURE = 257

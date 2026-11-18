@@ -3,7 +3,8 @@ package app.aaps.plugins.dexcomoneplus.identity
 /**
  * Juggluco-aligned ADV name / candidate matching for ONE+ / G7 family.
  *
- * Juggluco `isG7`: local name starts with `DX` + (`CM`|`02`|`01`).
+ * Juggluco `isG7`: local name starts with `DX` + (`CM`|`02`|`01`). `01` is the Dexcom Stelo, which is
+ * refused here on purpose, see [isUnsupportedStelo].
  * Once a device name is known from a successful session, prefer exact match.
  *
  * Do **not** treat marketing names like `Dexcom65` / `DexcomONE` as ONE+ candidates —
@@ -25,12 +26,23 @@ object OnePlusAdvCandidate {
         if (!n.startsWith("DX", ignoreCase = true)) return false
         val rest = n.substring(2, 4)
         return rest.equals("CM", ignoreCase = true) ||
-            rest.equals("02", ignoreCase = true) ||
-            rest.equals("01", ignoreCase = true)
+            rest.equals("02", ignoreCase = true)
     }
 
     /**
-     * Open-scan name filter: G7/ONE+ family only (`DX02` / `DX01` / `DXCM`).
+     * A Dexcom Stelo (`DX01`). It is refused on purpose: it gives a reading every 15 minutes, not every
+     * 5, and it is not made for insulin dosing. The loop computes its trends from readings 5 minutes
+     * apart. Checked before every other rule, so a stored name, a stored address or the FEBC service
+     * cannot let one through.
+     */
+    fun isUnsupportedStelo(name: String?): Boolean =
+        name?.trim()?.startsWith(STELO_PREFIX, ignoreCase = true) == true
+
+    /** Advertised name prefix of the Dexcom Stelo. */
+    const val STELO_PREFIX = "DX01"
+
+    /**
+     * Open-scan name filter: G7/ONE+ family only (`DX02` / `DXCM`). The Stelo (`DX01`) is not part of it.
      * Intentionally excludes `Dex*` marketing names (G6 / phone companions).
      */
     fun nameMatchesSoft(name: String?): Boolean = isG7FamilyName(name)
@@ -46,6 +58,7 @@ object OnePlusAdvCandidate {
         address: String?,
         session: OnePlusStoredSession?,
     ): Boolean {
+        if (isUnsupportedStelo(name)) return false
         val storedName = session?.lastDeviceName
         if (!storedName.isNullOrBlank() && name != null && name.equals(storedName, ignoreCase = true)) {
             return true
@@ -109,29 +122,36 @@ object OnePlusAdvCandidate {
      *
      * Every part is a boost, never a filter — see the note on this object. Feed it the session from
      * [scanHintFor], not the raw store, or a new sensor is ranked with the old sensor's fingerprint.
+     *
+     * A sensor whose phone slot another phone holds ([phoneSlotHeld], from [OnePlusAdvSlot]) goes
+     * below the free ones, because it will refuse us and refusals in a row lock a sensor. The
+     * penalty is larger than any signal difference and smaller than the serial hint. It never
+     * applies to the stored sensor (sticky name or MAC match): the phone holding that slot is
+     * normally this one.
      */
     fun rankScore(
         name: String?,
         address: String?,
         rssi: Int,
         session: OnePlusStoredSession?,
+        phoneSlotHeld: Boolean? = null,
     ): Int {
         var score = rssi
-        if (!session?.lastDeviceName.isNullOrBlank() &&
+        val nameSticky = !session?.lastDeviceName.isNullOrBlank() &&
             name.equals(session?.lastDeviceName, ignoreCase = true)
-        ) {
-            score += 10_000
-        }
-        if (!session?.lastMac.isNullOrBlank() &&
+        val macSticky = !session?.lastMac.isNullOrBlank() &&
             address.equals(session?.lastMac, ignoreCase = true)
-        ) {
-            score += 5_000
-        }
+        if (nameSticky) score += 10_000
+        if (macSticky) score += 5_000
         val serial = session?.identity?.serial
         if (!serial.isNullOrBlank() && name?.contains(serial, ignoreCase = true) == true) {
             score += 1_000
         }
         if (isG7FamilyName(name)) score += 100
+        if (phoneSlotHeld == true && !nameSticky && !macSticky) score -= SLOT_HELD_PENALTY
         return score
     }
+
+    /** What a held phone slot costs in [rankScore]. More than any RSSI gap, less than the serial hint. */
+    const val SLOT_HELD_PENALTY = 500
 }

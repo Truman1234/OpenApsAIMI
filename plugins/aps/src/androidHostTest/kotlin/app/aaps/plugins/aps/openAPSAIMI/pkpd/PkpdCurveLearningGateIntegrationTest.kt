@@ -189,10 +189,30 @@ class PkpdCurveLearningGateIntegrationTest : TestBase() {
             predictionIobArray = emptyArray(),
             structural = PkPdParams(6.0, 55.0),
             effective = EffectiveKinetics(6.0, 55.0, 6.0, 55),
+            noContextEffective = EffectiveKinetics(6.0, 55.0, 6.0, 55),
+            contextReason = "no_posterior",
             learning = PkpdLearningDiagnostics(1.0, true, true, "UNKNOWN", null),
             activity = InsulinActivityView(0.5, "PEAK", 0.5),
-            peakGovernor = null,
-            diaGovernor = null,
+            peakGovernor = TapPeakGovernor.resolve(
+                insulinPeakMinutes = 55,
+                physioPeakShiftMinutes = 0,
+                pkpdLearnedPeak = null,
+                pkpdEnabled = false,
+                governorEnabled = false,
+                peakMinBound = 30.0,
+                peakMaxBound = 240.0,
+                learnedBlendWeight = 0.0,
+            ),
+            diaGovernor = DiaGovernor.resolve(
+                profileDiaHours = 6.0,
+                contextualDiaShiftHours = 0.0,
+                pkpdLearnedDiaHours = null,
+                pkpdEnabled = false,
+                governorEnabled = false,
+                diaMinBound = 4.0,
+                diaMaxBound = 24.0,
+                learnedBlendWeight = 0.0,
+            ),
             predictionUsesLearnedKinetics = false,
             learningTrace = trace,
         ),
@@ -221,6 +241,7 @@ class PkpdCurveLearningGateIntegrationTest : TestBase() {
         allowLearning = allowLearning,
         declaredMealAgeMin = declaredMealAgeMin,
         declaredMealHighCarb = declaredMealHighCarb,
+        profileInsulin = ProfileInsulin(diaHours = 6.0, peakMinutes = 55.0),
     )
 
     private fun acceptedUpdates(target: PkPdIntegration = integration): Long =
@@ -232,14 +253,11 @@ class PkpdCurveLearningGateIntegrationTest : TestBase() {
     private fun stubPkpdDefaults() {
         whenever(preferences.get(DoubleKey.OApsAIMIPkpdStateDiaH)).thenReturn(6.0)
         whenever(preferences.get(DoubleKey.OApsAIMIPkpdStatePeakMin)).thenReturn(55.0)
-        whenever(preferences.get(DoubleKey.OApsAIMIPkpdBoundsDiaMinH)).thenReturn(5.0)
-        whenever(preferences.get(DoubleKey.OApsAIMIPkpdBoundsDiaMaxH)).thenReturn(8.0)
-        whenever(preferences.get(DoubleKey.OApsAIMIPkpdBoundsPeakMinMin)).thenReturn(35.0)
-        whenever(preferences.get(DoubleKey.OApsAIMIPkpdBoundsPeakMinMax)).thenReturn(95.0)
         whenever(preferences.get(DoubleKey.OApsAIMIPkpdMaxDiaChangePerDayH)).thenReturn(0.5)
         whenever(preferences.get(DoubleKey.OApsAIMIPkpdMaxPeakChangePerDayMin)).thenReturn(5.0)
-        whenever(preferences.get(DoubleKey.OApsAIMIPkpdAnchorDiaH)).thenReturn(4.0)
-        whenever(preferences.get(DoubleKey.OApsAIMIPkpdAnchorPeakMin)).thenReturn(55.0)
+        // The loop already started from this profile insulin, so no tick re-seeds.
+        whenever(preferences.get(LongNonKey.OApsAIMIPkpdProfileInsulinDiaMin)).thenReturn(360L)
+        whenever(preferences.get(LongNonKey.OApsAIMIPkpdProfileInsulinPeakMin)).thenReturn(55L)
         whenever(preferences.get(DoubleKey.OApsAIMIIsfFusionMinFactor)).thenReturn(0.7)
         whenever(preferences.get(DoubleKey.OApsAIMIIsfFusionMaxFactor)).thenReturn(1.5)
         whenever(preferences.get(DoubleKey.OApsAIMIIsfFusionMaxChangePerTick)).thenReturn(0.2)

@@ -31,6 +31,9 @@ enum class BooleanKey(
 ) : BooleanPreferenceKey {
 
     GeneralSimpleMode(key = "simple_mode", defaultValue = true, title = KeysStrings.pref_title_simple_mode, sync = SyncSpec(SyncChannel.Cold, SyncDirection.Bidirectional)),
+    // Local to this phone, like on dev_OAPSAIMI: it only makes the status lights refresh less often,
+    // to lower the load on a slow phone. Not synced, a client phone decides for itself.
+    GeneralLowEndStabilityMode(key = "general_low_end_stability_mode", defaultValue = false, title = KeysStrings.pref_title_low_end_stability_mode),
     GeneralInsulinConcentration(
         key = "insulin_concentration_enabled", defaultValue = false, title = KeysStrings.pref_title_insulin_concentration, summary = KeysStrings.pref_summary_insulin_concentration,
         defaultedBySM = true,
@@ -86,6 +89,19 @@ enum class BooleanKey(
     AlertHypo("enable_hypo_alert", false, KeysStrings.pref_title_alert_hypo, KeysStrings.pref_summary_alert_hypo),
     AlertHyper("enable_hyper_alert", false, KeysStrings.pref_title_alert_hyper, KeysStrings.pref_summary_alert_hyper),
     AlertRapidFall("enable_rapid_fall_alert", false, KeysStrings.pref_title_alert_rapid_fall, KeysStrings.pref_summary_alert_rapid_fall),
+    // CGM alarms (see CgmAlarmType). The new glucose alarms are off by default: the user opts in.
+    AlertUrgentLow("enable_cgm_urgent_low_alert", false, KeysStrings.pref_title_alert_urgent_low, KeysStrings.pref_summary_alert_urgent_low),
+    AlertUrgentLowSoon("enable_cgm_urgent_low_soon_alert", false, KeysStrings.pref_title_alert_urgent_low_soon, KeysStrings.pref_summary_alert_urgent_low_soon),
+    AlertRapidRise("enable_cgm_rise_rate_alert", false, KeysStrings.pref_title_alert_rapid_rise, KeysStrings.pref_summary_alert_rapid_rise),
+    // Sensor state alarms. They are raised only for a BG source that reports its sensor state
+    // (CgmSensorAlertProvider); for every other source they do nothing, so they can default to on.
+    AlertCgmSensorFailed("enable_cgm_sensor_failed_alert", true, KeysStrings.pref_title_alert_cgm_sensor_failed, KeysStrings.pref_summary_alert_cgm_sensor_failed),
+    AlertCgmSensorExpired("enable_cgm_sensor_expired_alert", true, KeysStrings.pref_title_alert_cgm_sensor_expired, KeysStrings.pref_summary_alert_cgm_sensor_expired),
+    AlertCgmSensorExpiring("enable_cgm_sensor_expiring_alert", true, KeysStrings.pref_title_alert_cgm_sensor_expiring, KeysStrings.pref_summary_alert_cgm_sensor_expiring),
+    AlertCgmSignalLost("enable_cgm_signal_lost_alert", true, KeysStrings.pref_title_alert_cgm_signal_lost, KeysStrings.pref_summary_alert_cgm_signal_lost),
+    AlertCgmSensorIssue("enable_cgm_sensor_issue_alert", true, KeysStrings.pref_title_alert_cgm_sensor_issue, KeysStrings.pref_summary_alert_cgm_sensor_issue),
+    AlertCgmWarmupDone("enable_cgm_warmup_done_alert", true, KeysStrings.pref_title_alert_cgm_warmup_done, KeysStrings.pref_summary_alert_cgm_warmup_done),
+    AlertCgmSecondSensorReady("enable_cgm_second_sensor_ready_alert", true, KeysStrings.pref_title_alert_cgm_second_sensor_ready, KeysStrings.pref_summary_alert_cgm_second_sensor_ready),
 
     BgSourceUploadToNs("dexcomg5_nsupload", true, KeysStrings.pref_title_bg_source_upload_to_ns, defaultedBySM = true, hideParentScreenIfHidden = true, defaultedByHardenedMode = true),
     BgSourceCreateSensorChange("dexcom_lognssensorchange", true, KeysStrings.pref_title_bg_source_create_sensor_change, KeysStrings.pref_summary_bg_source_create_sensor_change, defaultedBySM = true),
@@ -205,6 +221,11 @@ enum class BooleanKey(
         sync = SyncSpec(SyncChannel.Cold, SyncDirection.Bidirectional)
     ),
 
+    // Simple Mode uploads with no switch, and that is the decision, not an oversight: `defaultedBySM`
+    // hides the row and `hideParentScreenIfHidden` takes the whole Data choices screen with it. Two
+    // separate reviews have read this as a bug and proposed dropping the flags - please do not.
+    // The stored value is still honoured: both FabricPrivacyImpl classes read the raw KeyValueStore,
+    // not `Preferences.get`, so an opt-out made in Advanced mode keeps working back in Simple Mode.
     MaintenanceEnableFabric("enable_fabric2", true, KeysStrings.pref_title_maintenance_enable_fabric, defaultedBySM = true, hideParentScreenIfHidden = true),
 
     // Master-only (not a follower client): unattended settings export backs up the local config, which on a
@@ -285,6 +306,12 @@ enum class BooleanKey(
     WearNotifyOnSmb(key = "wear_notifySMB", defaultValue = true, title = KeysStrings.pref_title_wear_notify_on_smb, summary = KeysStrings.pref_summary_wear_notify_on_smb),
     WearBroadcastData(key = "wear_broadcast_data", defaultValue = false, title = KeysStrings.pref_title_wear_broadcast_data, summary = KeysStrings.pref_summary_wear_broadcast_data, showInApsMode = false, showInPumpControlMode = false),
 
+    // The native Eversense driver is Android only, and these keys are not synced, so they are not
+    // offered on iOS or on the desktop.
+    EversenseCloudUploadEnabled("eversense_cloud_upload_enabled", true, KeysStrings.eversense_cloud_upload_enabled, platforms = AppPlatform.ANDROID_ONLY),
+    EversenseCloudUploadToast("eversense_notif_cloud_upload_toast", false, KeysStrings.eversense_cloud_upload_toast, KeysStrings.eversense_cloud_upload_toast_summary, platforms = AppPlatform.ANDROID_ONLY),
+    EversenseEuropeanRegion("eversense_european_region", false, KeysStrings.eversense_european_region, KeysStrings.eversense_european_region_summary, platforms = AppPlatform.ANDROID_ONLY),
+
     SiteRotationManagePump("site_rotation_manage_pump", defaultValue = false, title = KeysStrings.pref_title_site_rotation_manage_pump, sync = SyncSpec(SyncChannel.Cold, SyncDirection.Bidirectional)),
     SiteRotationManageCgm("site_rotation_manage_cgm", defaultValue = false, title = KeysStrings.pref_title_site_rotation_manage_cgm, sync = SyncSpec(SyncChannel.Cold, SyncDirection.Bidirectional)),
 
@@ -296,16 +323,24 @@ enum class BooleanKey(
         KeysStrings.pref_summary_overview_show_hybrid_aimi_pulse,
         defaultedBySM = true
     ),
+    /**
+     * AIMI dashboard: true shows the extended metrics (TIR bar, AIMI insights, adaptation card), false the
+     * compact row (steps, IOB, heart rate, TBR). Switched from the dashboard itself. No [defaultedBySM]: in
+     * simple mode the stored value would then be ignored, as on `dev_OAPSAIMI`.
+     */
+    OverviewDashboardExtendedMetrics(
+        "overview_dashboard_extended_metrics", false,
+        KeysStrings.pref_title_overview_dashboard_extended_metrics,
+        KeysStrings.pref_summary_overview_dashboard_extended_metrics
+    ),
     OApsAIMIMLtraining("key_enable_ML_training", false, title = KeysStrings.pref_title_oaps_aimi_m_ltraining),
     OApsAIMISmbTrainingRelaxedFilter(
         "aimi_smb_training_relaxed_filter", true,
         title = KeysStrings.pref_title_aimi_smb_training_relaxed_filter,
         summary = KeysStrings.pref_summary_aimi_smb_training_relaxed_filter,
     ),
-    OApsAIMIEnableBasal("key_enable_basal", false, title = KeysStrings.pref_title_oaps_aimi_enable_basal),
     OApsAIMIEnableStepsFromWatch("count_steps_watch", false, title = KeysStrings.pref_title_oaps_aimi_enable_steps_from_watch),
     OApsAIMIpregnancy("key_use_AimiPregnancy",false, title = KeysStrings.pref_title_oaps_aimi_pregnancy),
-    OApsAIMIforcelimits("key_use_AimiForceLimits",false, title = KeysStrings.pref_title_oaps_aimi_forcelimits),
     OApsAIMInight("OApsAIMI_Enable_night",false, title = KeysStrings.pref_title_oaps_aimi_night),
     OApsAIMIhoneymoon("key_use_Aimi_honeymoon",false, title = KeysStrings.pref_title_oaps_aimi_honeymoon),
     OApsAIMIT3cAdaptiveBasalEnabled("key_use_aimi_t3c_adaptive_basal", true, title = KeysStrings.pref_title_oaps_aimi_t3c_adaptive_basal_enabled),
@@ -313,7 +348,6 @@ enum class BooleanKey(
      *  Raises the aggressiveness ceiling toward the configured value only when the tree says risk is LOW/MODERATE
      *  and BG is clearly high; reduces (bounded) on exertion. Never enables SMB. Fail-safe when tree unavailable. */
     OApsAIMIT3cPhysioInformedEnabled("key_aimi_t3c_physio_informed", true, title = KeysStrings.pref_title_oaps_aimi_t3c_physio_informed_enabled),
-    OApsAIMIAutodriveV3EnhancedGater("key_use_aimi_autodrive_v3_enhanced_gater", false, title = KeysStrings.pref_title_oaps_aimi_autodrive_v3_enhanced_gater),
     OApsAIMIautoDriveActive(key = "key_use_aimi_autodrive_active", defaultValue = true, title = KeysStrings.pref_title_oaps_aimi_auto_drive_active),
     /**
      * Opt-in: on an aggressive rise, let Autodrive V3 deliver at least the user-defined prebolus
@@ -424,10 +458,13 @@ enum class BooleanKey(
     OApsAIMIwcycle(key = "key_use_Aimi_wcycle",defaultValue = false, title = KeysStrings.pref_title_oaps_aimi_wcycle),
     OApsAIMIWCycleShadow("key_use_Aimi_wcycle_shadow", false, title = KeysStrings.pref_title_oaps_aimi_w_cycle_shadow),
     OApsAIMIWCycleRequireConfirm("key_use_Aimi_wcycle_require_confirm", false, title = KeysStrings.pref_title_oaps_aimi_w_cycle_require_confirm),
-    OApsAIMINightGrowthEnabled("key_oaps_aimi_ngr_enabled", true, title = KeysStrings.pref_title_oaps_aimi_night_growth_enabled),
+    OApsAIMINightGrowthEnabled("key_oaps_aimi_ngr_enabled", false, title = KeysStrings.pref_title_oaps_aimi_night_growth_enabled),
     OApsAIMIPkpdEnabled("key_aimi_pkpd_enabled", false, title = KeysStrings.pref_title_oaps_aimi_pkpd_enabled),
-    /** Set after the guided PK/PD setup wizard completes (or is skipped). */
-    OApsAIMIPkpdSetupWizardCompleted("key_aimi_pkpd_setup_wizard_completed", false, title = KeysStrings.pref_title_oaps_aimi_pkpd_setup_wizard_completed),
+    /**
+     * TAP-G: blend the profile insulin peak with the learned PK/PD peak. Also the field off switch of
+     * the causal context path for the peak: off = no causal peak shift (and no trajectory nudge).
+     * Keep it a real key, not a constant.
+     */
     OApsAIMIPeakGovernorEnabled(
         key = "key_aimi_peak_governor_enabled",
         defaultValue = true,
@@ -436,14 +473,29 @@ enum class BooleanKey(
     ),
     /** Intelligence snapshot export in AIMI_Decisions.jsonl (intelligence_snapshot_v1). */
     OApsAIMIIntelligenceSnapshotExport("key_aimi_intelligence_snapshot_export", true, title = KeysStrings.pref_title_oaps_aimi_intelligence_snapshot_export),
-    /** Single PKPD learning path per tick (signal-prep only; plugin/early are read-only). */
-    OApsAIMIIntelligenceSingleLearnPath("key_aimi_intelligence_single_learn_path", true, title = KeysStrings.pref_title_oaps_aimi_intelligence_single_learn_path),
-    /** TAP-D: blend profile DIA with learned structural DIA for effective runtime kinetics. */
-    OApsAIMIDiaGovernorEnabled("key_aimi_dia_governor_enabled", true, title = KeysStrings.pref_title_oaps_aimi_dia_governor_enabled),
-    /** InsulinActionProfiler uses prediction IOB array from kinetics authority. */
-    OApsAIMIIntelligenceKineticsProfiler("key_aimi_intelligence_kinetics_profiler", true, title = KeysStrings.pref_title_oaps_aimi_intelligence_kinetics_profiler),
-    /** C1 shadow: log authority vs PKPD deltas without applying to dose path. */
-    OApsAIMIPredictionAuthorityShadow("key_aimi_prediction_authority_shadow", true, title = KeysStrings.pref_title_oaps_aimi_prediction_authority_shadow),
+    /**
+     * TAP-D: blend profile DIA with learned structural DIA for effective runtime kinetics. Also the
+     * field off switch of the causal context path for the DIA: off = no causal DIA shift. Keep it a
+     * real key, not a constant.
+     */
+    OApsAIMIDiaGovernorEnabled(
+        key = "key_aimi_dia_governor_enabled",
+        defaultValue = true,
+        title = KeysStrings.pref_title_oaps_aimi_dia_governor_enabled,
+        summary = KeysStrings.pref_summary_oaps_aimi_dia_governor_enabled,
+    ),
+    /**
+     * C1 shadow: log authority vs PKPD deltas without applying to dose path. It only acts while
+     * [OApsAIMIPredictionAuthorityEnabled] is off (`shadowOnly = shadow && !enabled`), so the row is shown
+     * only then: shown next to the enabled switch it read as "the authority is only a test".
+     */
+    OApsAIMIPredictionAuthorityShadow(
+        key = "key_aimi_prediction_authority_shadow",
+        defaultValue = true,
+        title = KeysStrings.pref_title_oaps_aimi_prediction_authority_shadow,
+        summary = KeysStrings.pref_summary_oaps_aimi_prediction_authority_shadow,
+        visibility = ElementVisibility { !it.preferences.get(OApsAIMIPredictionAuthorityEnabled) },
+    ),
     /** C1 prod: apply DecisionPredictionAuthority to eventualBG, predBGs, stacking, SafetyNet. Default ON (harmonized
      *  in production 2026-07-12): one authoritative, physio-enriched prediction feeds the tree/Harmonia/SMB/UI/safety.
      *  Fail-safe in PredictionAuthorityApplier falls back to raw PKPD if the authority terminal is invalid. */
@@ -662,6 +714,7 @@ enum class BooleanKey(
         defaultValue = true,
         dependency = OApsAIMIPkpdEndogenousReversion,
         title = KeysStrings.pref_title_oaps_aimi_pkpd_hyper_reversion,
+        summary = KeysStrings.pref_summary_oaps_aimi_pkpd_hyper_reversion,
     ),
     /** 🩸 pkpd Guard B — stack-aware floor suspension (F1-B, opt-in). The hyper floor (BG ≥ 160) holds every
      *  prediction curve at ≥ 80; legacy Guard B only releases it on delta ≤ -3, ignoring IOB — so a large
@@ -674,6 +727,7 @@ enum class BooleanKey(
         defaultValue = false,
         dependency = OApsAIMIPkpdHyperReversion,
         title = KeysStrings.pref_title_oaps_aimi_pkpd_stack_aware_guard_b,
+        summary = KeysStrings.pref_summary_oaps_aimi_pkpd_stack_aware_guard_b,
     ),
     /** 🩸 pkpd DIA/peak learning gate read from the glucose curve (opt-in). The causal learning score
      *  rewards a confident meal guess, so on UAM days 65–77 % of the ticks that trained DIA/peak were
@@ -805,12 +859,6 @@ enum class BooleanKey(
         title = KeysStrings.pref_title_aimi_tube_hyper_clamp_physical_bound,
         summary = KeysStrings.pref_summary_aimi_tube_hyper_clamp_physical_bound,
     ),
-    // 🩸 pkpd predictions: shape the insulin-activity curves on the LEARNED DIA/peak, not the static profile
-    OApsAIMIPkpdPredictionKinetics(
-        "key_aimi_pkpd_prediction_kinetics", true,
-        title = KeysStrings.pref_title_aimi_pkpd_prediction_kinetics,
-        summary = KeysStrings.pref_summary_aimi_pkpd_prediction_kinetics,
-    ),
     OApsAIMIContextLLMEnabled("key_aimi_context_llm_enabled", false, title = KeysStrings.pref_title_oaps_aimi_context_llm_enabled), // 🤖 LLM-powered context parsing
     OApsAIMIT3cBrittleMode("key_aimi_t3c_brittle_mode", false, title = KeysStrings.pref_title_oaps_aimi_t3c_brittle_mode),
     /**
@@ -874,8 +922,18 @@ enum class BooleanKey(
     // 🏥 AIMI Physiological Assistant (MTR) — vitals multipliers / assistant extras only.
     // Does NOT gate PhysiologicalTree / Harmonia (cascade native always-on since 2026-07-18).
     AimiPhysioAssistantEnable("aimi_physio_assistant_enable", false, title = KeysStrings.pref_title_aimi_physio_assistant_enable),
-    AimiPhysioSleepDataEnable("aimi_physio_sleep_enable", true, title = KeysStrings.pref_title_aimi_physio_sleep_data_enable),
-    AimiPhysioHRVDataEnable("aimi_physio_hrv_enable", true, title = KeysStrings.pref_title_aimi_physio_hrv_data_enable),
+    /** Off: AIMI ignores sleep data everywhere (physio run, live snapshot, stored context). See `PhysioDataSwitches`. */
+    AimiPhysioSleepDataEnable(
+        "aimi_physio_sleep_enable", true,
+        title = KeysStrings.pref_title_aimi_physio_sleep_data_enable,
+        summary = KeysStrings.pref_summary_aimi_physio_sleep_data_enable,
+    ),
+    /** Off: AIMI ignores heart rate variability everywhere. See `PhysioDataSwitches`. */
+    AimiPhysioHRVDataEnable(
+        "aimi_physio_hrv_enable", true,
+        title = KeysStrings.pref_title_aimi_physio_hrv_data_enable,
+        summary = KeysStrings.pref_summary_aimi_physio_hrv_data_enable,
+    ),
     AimiPhysioLLMAnalysisEnable("aimi_physio_llm_enable", false, title = KeysStrings.pref_title_aimi_physio_llm_analysis_enable),
 
     /**
@@ -901,11 +959,14 @@ enum class BooleanKey(
 
     /** Sync step counts from Health Connect. */
     AimiHealthConnectStepsEnable("aimi_health_connect_steps_enable", true, title = KeysStrings.pref_title_aimi_health_connect_steps_enable),
-    AimiPhysioDebugLogs("aimi_physio_debug_logs", false, title = KeysStrings.pref_title_aimi_physio_debug_logs),
     // 🌸 Endometriosis & Cycle Management (MTR)
     AimiEndometriosisEnable("aimi_endo_enable", false, title = KeysStrings.pref_title_aimi_endometriosis_enable),
-    AimiEndometriosisHormonalSuppression("aimi_endo_suppression", false, title = KeysStrings.pref_title_aimi_endometriosis_hormonal_suppression),
-    AimiEndometriosisPainFlare("aimi_endo_flare", false, title = KeysStrings.pref_title_aimi_endometriosis_pain_flare),
+    /** Ends by itself after [IntKey.AimiEndometriosisFlareDuration] hours (`EndometriosisFlareClock`). */
+    AimiEndometriosisPainFlare(
+        "aimi_endo_flare", false,
+        title = KeysStrings.pref_title_aimi_endometriosis_pain_flare,
+        summary = KeysStrings.pref_summary_aimi_endometriosis_pain_flare,
+    ),
     OApsAIMIMealAdvisorTrigger("aimi_meal_advisor_trigger", false, title = KeysStrings.pref_title_oaps_aimi_meal_advisor_trigger), // Trigger for one-shot MAX-SMB bypass
     // 🌀 Adaptive Kernel Bank (Cosine Gate)
     AimiCosineGateEnabled("aimi_cosine_gate_enabled", true, title = KeysStrings.pref_title_aimi_cosine_gate_enabled),
@@ -953,7 +1014,6 @@ enum class BooleanKey(
         KeysStrings.pref_summary_aimi_tpo_notify_on_apply,
         dependency = OApsAIMITpoEnabled,
     ),
-    OApsxdriponeminute(key = "key_use_Aimi_xdripOM", defaultValue = false, title = KeysStrings.pref_title_oapsxdriponeminute),
 
     ;
 

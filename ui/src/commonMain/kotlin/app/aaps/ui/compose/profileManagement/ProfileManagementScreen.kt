@@ -37,8 +37,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigationevent.NavigationEventInfo
@@ -65,6 +68,7 @@ import app.aaps.ui.compose.components.CarouselReorderConfig
 import app.aaps.ui.compose.components.ContentContainer
 import app.aaps.ui.compose.components.ManagementCarousel
 import app.aaps.ui.compose.profileManagement.viewmodels.ProfileManagementViewModel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -72,6 +76,9 @@ import kotlinx.coroutines.launch
  * the shared `CarouselDefaults.CardHeight`.
  */
 private val PROFILE_CARD_HEIGHT = 140.dp
+
+/** Grows with the font, so a large font still has room for the name and the lines under it. */
+internal fun profileCardHeight(fontScale: Float): Dp = PROFILE_CARD_HEIGHT * fontScale.coerceAtLeast(1f)
 
 /**
  * Screen for managing local profiles.
@@ -273,9 +280,15 @@ fun ProfileManagementScreen(
                         // programmatic page, and commitReorder settles the selection itself, so a
                         // committed reorder arrives here as an ordinary index change.
                         LaunchedEffect(uiState.currentProfileIndex) {
-                            if (!isReorderMode && pagerState.currentPage != uiState.currentProfileIndex) {
-                                pagerState.animateScrollToPage(uiState.currentProfileIndex)
-                            }
+                            if (isReorderMode) return@LaunchedEffect
+                            if (pagerState.currentPage == uiState.currentProfileIndex) return@LaunchedEffect
+                            // animateScrollToPage takes the last page the pager has laid out. There is
+                            // none while the user has no profile left, and none on the first frame: this
+                            // effect runs after the composition, the pager is measured after that. Both
+                            // threw "List is empty" and killed the screen. Wait for the first measure
+                            // instead; with no page at all this waits, and goes with the screen.
+                            snapshotFlow { pagerState.layoutInfo.visiblePagesInfo.isNotEmpty() }.first { it }
+                            pagerState.animateScrollToPage(uiState.currentProfileIndex)
                         }
 
                         // Update selected profile when pager changes
@@ -303,7 +316,7 @@ fun ProfileManagementScreen(
 
                             ManagementCarousel(
                                 state = pagerState,
-                                cardHeight = PROFILE_CARD_HEIGHT,
+                                cardHeight = profileCardHeight(LocalDensity.current.fontScale),
                                 reorder = workingOrder?.let { order ->
                                     CarouselReorderConfig(
                                         isActive = true,

@@ -25,7 +25,6 @@ import app.aaps.core.interfaces.source.CgmWarmupProvider
 import app.aaps.core.interfaces.ui.UiInteraction
 import app.aaps.core.keys.StringKey
 import app.aaps.core.ui.compose.AapsTheme
-import app.aaps.core.ui.compose.dialogs.OkDialog
 import app.aaps.core.ui.compose.navigation.NavigationRequest
 import app.aaps.core.ui.compose.pump.PumpCommunicationStatus
 import app.aaps.core.ui.compose.stringResource
@@ -33,6 +32,8 @@ import app.aaps.ui.UiStrings
 import app.aaps.ui.compose.loopSheet.LoopActionViewModel
 import app.aaps.ui.compose.dashboard.DashboardHomeSelection
 import app.aaps.ui.compose.dashboard.DashboardV2GraphScreen
+import app.aaps.ui.compose.dashboard.aimi.AimiDashboardHome
+import app.aaps.ui.compose.dashboard.essential.EssentialDashboardHome
 import app.aaps.ui.compose.dashboard.glass.GlassDashboardHome
 import app.aaps.ui.compose.maintenance.ImportSource
 import app.aaps.ui.compose.maintenance.MaintenanceViewModel
@@ -67,11 +68,11 @@ import kotlinx.coroutines.flow.Flow
  * ## What is still per platform
  *
  * The callbacks at the end, and only those: opening a browser, opening a directory picker, bringing
- * the window to the front, recreating the activity, and quitting after a failed authorization. Each
- * is a sentence of platform code, and each is passed in rather than guessed at.
+ * the window to the front and recreating the activity. Each is a sentence of platform code, and each
+ * is passed in rather than guessed at.
  *
- * [appName] and [authorizationFailedMessage] are parameters because they live in the app module's
- * own resources - the name differs per flavour - and this module cannot see them.
+ * [appName] is a parameter because it lives in the app module's own resources - the name differs per
+ * flavour - and this module cannot see it.
  */
 @Composable
 @Suppress("LongParameterList", "LongMethod")
@@ -103,7 +104,6 @@ fun OverviewScreen(
     pumpCommunicationStatus: PumpCommunicationStatus,
     // Text the app module owns
     appName: String,
-    authorizationFailedMessage: String,
     // Navigation, which the platform routes because it holds the controller
     onNavigate: (NavigationRequest) -> Unit,
     onSearchResultClick: (SearchIndexEntry) -> Unit,
@@ -115,7 +115,6 @@ fun OverviewScreen(
     onLaunchBrowser: (String) -> Unit,
     onBringToForeground: () -> Unit,
     onRecreateActivity: () -> Unit,
-    onAuthorizationFailed: () -> Unit,
     // Notification sheet, opened from outside when something important arrives
     autoShowNotificationSheet: Boolean,
     onAutoShowConsumed: () -> Unit,
@@ -183,18 +182,6 @@ fun OverviewScreen(
             uiInteraction.runAlarm(comment, title, AlarmSound.BOLUS_ERROR)
         },
     )
-
-    // Authorization failed dialog
-    if (state.showAuthFailedDialog) {
-        OkDialog(
-            title = "",
-            message = authorizationFailedMessage,
-            onDismiss = {
-                mainViewModel.setShowAuthFailedDialog(false)
-                onAuthorizationFailed()
-            }
-        )
-    }
 
     MainScreen(
         mainViewModel = mainViewModel,
@@ -272,6 +259,20 @@ fun OverviewScreen(
             }
         },
         dashboardV2Content = when (homeSelection) {
+            DashboardHomeSelection.AIMI_DASHBOARD -> { commandsAllowed ->
+                AimiDashboardHome(
+                    graphViewModel = graphViewModel,
+                    chipsViewModel = chipsViewModel,
+                    notifications = notifications,
+                    onDismissNotification = { notification -> notificationManager.dismiss(NotificationHandle(notification.instanceKey)) },
+                    onNotificationActionClick = onNotificationActionClick,
+                    aimiDashboardData = aimiGlassDashboardData,
+                    cgmSource = activePlugin.activeBgSource as? CgmWarmupProvider,
+                    availablePluginClassNames = activePlugin.getPluginsList().mapNotNull { it::class.simpleName }.toSet(),
+                    commandsAllowed = commandsAllowed,
+                    onNavigate = onNavigate,
+                )
+            }
             DashboardHomeSelection.DASHBOARD_V2 -> { commandsAllowed ->
                 DashboardV2GraphScreen(
                     graphViewModel = graphViewModel,
@@ -301,8 +302,18 @@ fun OverviewScreen(
                     cgmWarmupStatus = (activePlugin.activeBgSource as? CgmWarmupProvider)?.warmupStatus,
                 )
             }
+            DashboardHomeSelection.ESSENTIAL -> { commandsAllowed ->
+                EssentialDashboardHome(
+                    graphViewModel = graphViewModel,
+                    chipsViewModel = chipsViewModel,
+                    statusViewModel = statusViewModel,
+                    aimiDashboardData = aimiGlassDashboardData,
+                    commandsAllowed = commandsAllowed,
+                    cgmWarmupStatus = (activePlugin.activeBgSource as? CgmWarmupProvider)?.warmupStatus,
+                )
+            }
             DashboardHomeSelection.OVERVIEW -> null
         },
-        isGlassSkin = homeSelection == DashboardHomeSelection.GLASS,
+        useGlassChrome = homeSelection == DashboardHomeSelection.GLASS || homeSelection == DashboardHomeSelection.ESSENTIAL,
     )
 }

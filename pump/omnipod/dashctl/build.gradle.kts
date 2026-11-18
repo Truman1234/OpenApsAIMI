@@ -4,6 +4,33 @@ plugins {
     // NOT com.android.library: the multiplatform plugin owns the Android target,
     // same as :pump:virtual and the :core modules.
     alias(libs.plugins.android.kmp.library)
+    // The iOS Dash plugin (iosMain, `ios/plugin`) is contributed to the iOS app graph with
+    // `@ContributesIntoMap`, as `IosMedtrumPlugin` in :pump:medtrum. A build plugin, not a module
+    // dependency. Nothing in commonMain or androidMain is annotated, so Android gets nothing from it.
+    alias(libs.plugins.metro)
+    // The pump screens of the iPhone (overview, activation and deactivation wizards) are Compose
+    // Multiplatform in commonMain, the way the Medtrum patch wizard is in :pump:medtrum.
+    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.compose.multiplatform)
+}
+
+// Generates DashStrings (commonMain): the English texts of the iPhone Dash screens and notices,
+// from src/androidMain/res/values/strings.xml, with the generator every other module uses.
+//
+// Not through registerKeyStrings and StringOwnerModules on purpose: every shell registers each
+// owner of that list, so the Android app and the desktop would have to link this module. Only the
+// iPhone uses it, so the owner is registered at run time by the iOS plugin
+// (`registerDashStrings`, called by `IosDashDriverHost`). The Android id map the generator also
+// writes is not compiled: the Android app does not use this module.
+val generateDashStrings = tasks.register<GenerateKeyStringsTask>("generateDashStrings") {
+    resDir.set(layout.projectDirectory.dir("src/androidMain/res"))
+    packageName.set("app.aaps.pump.omnipod.dashctl")
+    owner.set("dashctl")
+    objectName.set("DashStrings")
+    idsObjectName.set("DashStringIds")
+    reportFile.set(layout.buildDirectory.file("reports/dashStrings/translations.txt"))
+    commonOutputDir.set(layout.buildDirectory.dir("generated/dashStrings/common"))
+    androidOutputDir.set(layout.buildDirectory.dir("generated/dashStrings/android"))
 }
 
 kotlin {
@@ -25,12 +52,23 @@ kotlin {
 
     sourceSets {
         commonMain {
+            kotlin.srcDir(generateDashStrings.flatMap { it.commonOutputDir })
             dependencies {
                 implementation(project(":core:data"))
                 implementation(project(":core:interfaces"))
                 implementation(project(":core:objects"))
+                // The shared pump screens (wizard layout, overview, profile gate, site location,
+                // insulin choice) and the theme. :pump:medtrum uses the same module for the same reason.
+                implementation(project(":core:ui"))
                 api(libs.kotlinx.coroutines.core)
                 api(libs.kotlinx.datetime)
+
+                api(libs.jetbrains.compose.runtime)
+                api(libs.jetbrains.compose.foundation)
+                api(libs.jetbrains.compose.ui)
+                api(libs.jetbrains.compose.material3)
+                api(libs.jetbrains.lifecycle.viewmodel.compose)
+                api(libs.jetbrains.lifecycle.runtime.compose)
             }
         }
 
@@ -56,6 +94,12 @@ kotlin {
         commonTest {
             dependencies {
                 implementation(kotlin("test"))
+                // The simulated pod (FakeDashPod and the centrals in front of it). A module of its own
+                // so the end-to-end test of :ios:shell can use it too.
+                implementation(project(":pump:omnipod:dashctl:emulator"))
+                // Virtual time for the bolus wait (DashBolusWaitTest), on the JVM and on iOS.
+                implementation(project.dependencies.platform(libs.kotlinx.coroutines.bom))
+                implementation(libs.kotlinx.coroutines.test)
             }
         }
 

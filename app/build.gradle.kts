@@ -32,8 +32,10 @@ fun generateGitBuild(): String {
         val output = File.createTempFile("git-build", "")
         processBuilder.redirectOutput(output)
         val process = processBuilder.start()
-        process.waitFor()
-        return output.readText().trim()
+        // The exit code decides, not the text. git run outside a work tree exits non-zero with
+        // empty output, and reading that as an answer silently reported no commit at all.
+        if (process.waitFor() != 0) return "NoGitSystemAvailable"
+        return output.readText().trim().ifEmpty { "NoGitSystemAvailable" }
     } catch (_: Exception) {
         return "NoGitSystemAvailable"
     }
@@ -45,8 +47,10 @@ fun generateGitRemote(): String {
         val output = File.createTempFile("git-remote", "")
         processBuilder.redirectOutput(output)
         val process = processBuilder.start()
-        process.waitFor()
-        return output.readText().trim()
+        // The exit code decides, not the text. git run outside a work tree exits non-zero with
+        // empty output, and reading that as an answer silently reported no remote at all.
+        if (process.waitFor() != 0) return "NoGitSystemAvailable"
+        return output.readText().trim().ifEmpty { "NoGitSystemAvailable" }
     } catch (_: Exception) {
         return "NoGitSystemAvailable"
     }
@@ -80,7 +84,10 @@ fun allCommitted(): Boolean {
         val output = File.createTempFile("git-comited", "")
         processBuilder.redirectOutput(output)
         val process = processBuilder.start()
-        process.waitFor()
+        // An ignored failure here was the worse one: empty output read as a clean tree, so a
+        // build could claim its sources matched the commit it names. Empty output with a zero
+        // exit really is clean, so only the exit code can tell the two apart.
+        if (process.waitFor() != 0) return false
         return output.readText().replace(Regex("""(?m)^\s*(M|A|D|\?\?)\s*.*?\.idea\/codeStyles\/.*?\s*$"""), "")
             // ignore all files added to project dir but not staged/known to GIT
             .replace(Regex("""(?m)^\s*(\?\?)\s*.*?\s*$"""), "").trim().isEmpty()
@@ -215,9 +222,11 @@ android {
         // Dana RS are separate keys so either one can be removed alone; `dana/common` holds the base
         // class both use and needs only :pump:dana:common.
         val pumpTestSources = mapOf(
+            ":pump:carelevo" to "src/androidTestPumps/carelevo/kotlin",
             ":pump:dana:common" to "src/androidTestPumps/dana/common/kotlin",
             ":pump:dana:danar" to "src/androidTestPumps/dana/danar/kotlin",
             ":pump:dana:danars" to "src/androidTestPumps/dana/danars/kotlin",
+            ":pump:diaconn" to "src/androidTestPumps/diaconn/kotlin",
             ":pump:equil" to "src/androidTestPumps/equil/kotlin"
         )
         listOf("androidTestFull", "androidTestPumpcontrol").forEach { name ->
@@ -275,7 +284,10 @@ dependencies {
     // app.aaps.pump.medtrum.extension.BoolExtensionKt... is defined multiple times". It is gone -
     // :pump:medtrum is multiplatform itself now and holds the one copy in commonMain, which is
     // also what the iOS driver links. Nothing to exclude any more.
-    val pumpExclusions = setOf(":pump:virtual")
+    //  - :pump:apex is fork WIP (in settings.gradle but was never wired into app dependencies). The
+    //    driver compiles, but it has never been tested with a real pump, so it stays out of the app
+    //    and no user can select it - the same as on dev_OAPSAIMI.
+    val pumpExclusions = setOf(":pump:virtual", ":pump:apex")
     rootProject.subprojects
         .filter { it.path.startsWith(":pump:") && it.path !in pumpExclusions && it.buildFile.exists() }
         .forEach { pump ->

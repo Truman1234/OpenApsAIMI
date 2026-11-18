@@ -8,6 +8,8 @@ import app.aaps.plugins.dexcomoneplus.identity.OnePlusStoredSession
 import app.aaps.plugins.dexcomoneplus.oem.OemDeviceProfile
 import app.aaps.plugins.dexcomoneplus.scan.OnePlusBleScanner
 import app.aaps.plugins.dexcomoneplus.scan.OnePlusBleScannerStub
+import app.aaps.plugins.dexcomoneplus.session.OnePlusAuthRefusalPolicy
+import app.aaps.plugins.dexcomoneplus.session.OnePlusAuthRefusals
 import app.aaps.plugins.dexcomoneplus.session.OnePlusCpuLease
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -83,6 +85,24 @@ class OnePlusCgmDriverRealSharedTest {
     }
 
     @Test
+    fun `the watch driver is never calibrated and its slot cannot feed the loop`() {
+        val driver = OnePlusCgmDriverReal(storeNamespace = "watch", displaySlot = OnePlusDisplaySlot.WATCH)
+        driver.attach(FakePlatform())
+        assertFalse(driver.offerCalibration(glucoseMgdl = 120, bloodAtMs = nowMs()))
+        assertNull(driver.lastCalibrationOutcome())
+        assertFalse(driver.displaySlot.mayFeedLoop)
+        driver.shutdown()
+    }
+
+    @Test
+    fun `only the phone slot keeps the library auth byte`() {
+        assertNull(OnePlusDisplaySlot.PHONE.authSlotOverride)
+        assertEquals(3, OnePlusDisplaySlot.WATCH.authSlotOverride)
+        assertTrue(OnePlusDisplaySlot.PHONE.mayFeedLoop)
+        assertEquals(OnePlusDisplaySlot.PHONE, OnePlusGlucoseSample(mgdl = 100.0, timestampMs = 1L).displaySlot)
+    }
+
+    @Test
     fun `a fingerstick is refused while there is no session`() {
         val driver = OnePlusCgmDriverReal()
         driver.attach(FakePlatform())
@@ -107,6 +127,31 @@ class OnePlusCgmDriverRealSharedTest {
         driver.saveIdentity(OnePlusSensorIdentity(pin = "1234"))
         driver.sensorStore()?.saveLastMac("AA:BB:CC:DD:EE:FF")
         assertFalse(driver.resumeStoredSession())
+        driver.shutdown()
+    }
+
+    @Test
+    fun `a sensor that refused us too often is not resumed and says why`() {
+        val platform = FakePlatform()
+        val driver = OnePlusCgmDriverReal()
+        driver.attach(platform)
+        val store = assertNotNull(driver.sensorStore())
+        // A session that would resume: code, MAC and key are all there.
+        store.saveIdentity(OnePlusSensorIdentity(pin = "1234"))
+        store.saveLastMac("AA:BB:CC:DD:EE:FF")
+        store.saveSharedKey(ByteArray(16) { it.toByte() })
+        store.saveAuthRefusals(
+            OnePlusAuthRefusals(
+                address = "AA:BB:CC:DD:EE:FF",
+                count = OnePlusAuthRefusalPolicy.MAX_REFUSALS_IN_A_ROW,
+                lastAtMs = nowMs(),
+            ),
+        )
+        // No GATT client is asked for: the fake platform would throw if it were.
+        assertFalse(driver.resumeStoredSession())
+        val state = driver.warmupState()
+        assertEquals(OnePlusWarmupState.Phase.FAILED, state.phase)
+        assertEquals(OnePlusAuthRefusalPolicy.MESSAGE_LOCKED, state.message)
         driver.shutdown()
     }
 

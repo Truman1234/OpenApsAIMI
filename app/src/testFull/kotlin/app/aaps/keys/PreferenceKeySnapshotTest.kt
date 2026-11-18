@@ -1,10 +1,14 @@
 package app.aaps.keys
 
+import app.aaps.core.keys.interfaces.BooleanNonPreferenceKey
 import app.aaps.core.keys.interfaces.ComposedKey
+import app.aaps.core.keys.interfaces.IntNonPreferenceKey
+import app.aaps.core.keys.interfaces.IntPreferenceKey
 import app.aaps.core.keys.interfaces.NonPreferenceKey
 import app.aaps.di.metro.AppRootGraph
 import app.aaps.shared.tests.aapsClassesOnClasspath
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import org.junit.jupiter.api.Test
 import java.io.File
 
@@ -59,9 +63,8 @@ class PreferenceKeySnapshotTest {
         keys.map { key ->
             // A composed key stores many values under one prefix, so record the format it composes
             // with - the prefix alone would not say which stored strings belong to it.
-            val stored = if (key is ComposedKey) key.key + key.format else key.key
             val type = key::class.java.simpleName
-            "$stored|$type|${key.exportable}"
+            "${stored(key)}|$type|${key.exportable}"
         }.distinct().sorted().joinToString("\n")
 
     @Test
@@ -90,15 +93,59 @@ class PreferenceKeySnapshotTest {
     /**
      * The stored key is the only thing connecting a user's saved value to the code that reads it, so
      * two keys sharing one string means one of them reads the other's value.
+     *
+     * The only exception is [SHARED_STORED_KEYS]: a group of keys that share a string passes only when
+     * it is exactly one pair of that list.
      */
     @Test
     fun `no two keys share a stored key string`() {
         val duplicates = allKeys()
-            .groupBy { if (it is ComposedKey) it.key + it.format else it.key }
-            .filter { (_, sharing) -> sharing.map { it::class.java.name + "." + it }.distinct().size > 1 }
+            .groupBy(::stored)
+            .filter { (_, sharing) ->
+                val ids = sharing.map(::id).toSet()
+                ids.size > 1 && ids !in SHARED_STORED_KEY_IDS
+            }
             .keys
 
         assertThat(duplicates).isEmpty()
+    }
+
+    /**
+     * Each pair of [SHARED_STORED_KEYS] must really share its stored string, and both sides must read
+     * the saved value the same way: same value type, same default, same limits, same export flag.
+     * Otherwise an iPhone and an Android phone would see a different setting under the same name.
+     * A pair whose keys no longer share a string is a stale entry and must be removed from the list.
+     */
+    @Test
+    fun `every allowed shared key pair shares its string and reads the value the same way`() {
+        val scanned = allKeys().map(::id).toSet()
+        SHARED_STORED_KEYS.forEach { (android, ios) ->
+            val pair = "${id(android)} / ${id(ios)}"
+            assertWithMessage("$pair: both keys must be found by the classpath scan")
+                .that(scanned).containsAtLeast(id(android), id(ios))
+            assertWithMessage("$pair: stored key").that(stored(ios)).isEqualTo(stored(android))
+            assertWithMessage("$pair: exportable").that(ios.exportable).isEqualTo(android.exportable)
+            assertWithMessage("$pair: default value").that(defaultValue(ios)).isEqualTo(defaultValue(android))
+            if (android is IntPreferenceKey || ios is IntPreferenceKey) {
+                assertWithMessage("$pair: both must be int preference keys")
+                    .that(android is IntPreferenceKey && ios is IntPreferenceKey).isTrue()
+                android as IntPreferenceKey
+                ios as IntPreferenceKey
+                assertWithMessage("$pair: min").that(ios.min).isEqualTo(android.min)
+                assertWithMessage("$pair: max").that(ios.max).isEqualTo(android.max)
+            }
+        }
+    }
+
+    private fun stored(key: NonPreferenceKey): String = if (key is ComposedKey) key.key + key.format else key.key
+
+    private fun id(key: NonPreferenceKey): String = sharedKeyId(key)
+
+    /** The value type and the default together, so a Boolean `true` never equals an Int `1`. */
+    private fun defaultValue(key: NonPreferenceKey): Pair<String, Any> = when (key) {
+        is BooleanNonPreferenceKey -> "Boolean" to key.defaultValue
+        is IntNonPreferenceKey     -> "Int" to key.defaultValue
+        else                       -> error("${id(key)}: add its value type here before it can be a shared key")
     }
 
     private fun repoRoot(): File {

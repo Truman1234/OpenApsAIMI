@@ -14,7 +14,6 @@ import app.aaps.core.interfaces.resources.ResourceHelper
 import app.aaps.core.interfaces.source.PromotionRejectReason
 import app.aaps.core.interfaces.source.PromotionResult
 import app.aaps.core.interfaces.source.StagingState
-import app.aaps.core.keys.BooleanKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.plugins.dexcomoneplus.OnePlusAndroidPlatform
 import app.aaps.plugins.dexcomoneplus.OnePlusCgmDriverReal
@@ -23,7 +22,7 @@ import app.aaps.plugins.dexcomoneplus.OnePlusWarmupState
 import app.aaps.plugins.dexcomoneplus.identity.OnePlusSensorIdentity
 import app.aaps.plugins.dexcomoneplus.identity.OnePlusSensorStore
 import app.aaps.plugins.dexcomoneplus.session.OnePlusMacArbiter
-import app.aaps.plugins.source.activities.dexcomOnePlusPromotionMessage
+import app.aaps.plugins.source.compose.DexcomOnePlusStatusState
 import app.aaps.shared.tests.AAPSLoggerTest
 import app.aaps.shared.tests.SharedPreferencesMock
 import app.aaps.shared.tests.TestBase
@@ -37,7 +36,6 @@ import org.mockito.Mock
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
-import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.timeout
@@ -82,10 +80,12 @@ class DexcomOnePlusPromotionOrderTest : TestBase() {
         whenever(context.applicationContext).thenReturn(context)
         whenever(context.getSharedPreferences(PRODUCTION_PREFS_NAME, Context.MODE_PRIVATE)).thenReturn(productionPrefs)
         whenever(context.getSharedPreferences(STAGING_PREFS_NAME, Context.MODE_PRIVATE)).thenReturn(stagingPrefs)
+        whenever(persistenceLayer.getTherapyEventDataFromToTime(any(), any())).thenReturn(emptyList())
+        whenever(persistenceLayer.getTherapyEventDataIncludingInvalidFromTime(any(), any())).thenReturn(emptyList())
         whenever(persistenceLayer.insertCgmSourceData(any(), any(), any(), anyOrNull()))
             .thenReturn(PersistenceLayer.TransactionResult())
         plugin = DexcomOnePlusPlugin(
-            rh, logger, preferences, config, notificationManager, DexcomOnePlusAndroidHost(context), persistenceLayer,
+            rh, logger, preferences, config, notificationManager, DexcomOnePlusAndroidHost(context) { error("the log is not read here") }, persistenceLayer,
             warmupBasalGuard, bleRadioPriority, activePlugin, rxBus,
         )
         plugin.promotionAlerter = { alerts += it }
@@ -167,8 +167,20 @@ class DexcomOnePlusPromotionOrderTest : TestBase() {
     }
 
     @Test
+    fun `a long soak with a stale reading writes nothing irreversible`() = runTest {
+        readyStaging(mac = "AA:BB:CC:DD:EE:29", ageMs = 13L * 60L * 60L * 1000L)
+        setPrivate("stagingLastValueAtMs", System.currentTimeMillis() - 31L * 60L * 1000L)
+        setStagingState(StagingState.READY)
+        val stagingBefore = stagingPrefs.all.toMap()
+
+        val result = plugin.promoteStagingToProduction(allowEarly = false)
+
+        assertThat(result).isEqualTo(PromotionResult.Rejected(PromotionRejectReason.STAGING_NO_RECENT_GLUCOSE))
+        assertNothingIrreversible(stagingBefore)
+    }
+
+    @Test
     fun `the bound runs after the exchange and before select`() = runTest {
-        whenever(preferences.get(BooleanKey.BgSourceCreateSensorChange)).thenReturn(true)
         val startMs = System.currentTimeMillis() - 60_000L
         readyStaging(mac = "AA:BB:CC:DD:EE:24", ageMs = 60_000L, startMs = startMs)
         val soak = OnePlusCgmDrivers.staging()
@@ -189,9 +201,7 @@ class DexcomOnePlusPromotionOrderTest : TestBase() {
         assertThat(identityAdoptedAtBound).isTrue()
         assertThat(stagingClearedAtBound).isTrue()
         assertThat(productionWasSoakAtBound).isTrue()
-        val order = inOrder(preferences, activeCalibration)
-        order.verify(preferences).get(BooleanKey.BgSourceCreateSensorChange)
-        order.verify(activeCalibration).ignoreEntriesBefore(any())
+        verify(activeCalibration).ignoreEntriesBefore(any())
         assertThat(OnePlusCgmDrivers.default()).isSameInstanceAs(soak)
         verify(persistenceLayer, timeout(2_000L)).insertCgmSourceData(any(), any(), any(), eq(startMs))
     }
@@ -307,76 +317,16 @@ class DexcomOnePlusPromotionOrderTest : TestBase() {
             "Capteur promu, mais les anciennes entrées de calibration n'ont pas pu être ignorées.",
         )
         assertThat(french).contains("Retirez les glycémies capillaires prises avant cet échange")
-        assertThat(
-            dexcomOnePlusPromotionMessage(
-                result = PromotionResult.Rejected(PromotionRejectReason.STAGING_ABSENT),
-                ok = "ok",
-                boundFailed = "bound",
-                followUpIdentityPresent = "follow",
-                followUpIdentityMissing = "missing",
-                rejectedAbsent = "absent",
-                rejectedNotSettled = "settling",
-                rejectedNoGlucose = "glucose",
-                rejectedNoRecentGlucose = "recent",
-                rejectedLoopBusy = "busy",
-            ),
-        ).isEqualTo("absent")
-        assertThat(
-            dexcomOnePlusPromotionMessage(
-                result = PromotionResult.OkBoundFailed,
-                ok = "ok",
-                boundFailed = "bound",
-                followUpIdentityPresent = "follow",
-                followUpIdentityMissing = "missing",
-                rejectedAbsent = "absent",
-                rejectedNotSettled = "settling",
-                rejectedNoGlucose = "glucose",
-                rejectedNoRecentGlucose = "recent",
-                rejectedLoopBusy = "busy",
-            ),
-        ).isEqualTo("bound")
-        assertThat(
-            dexcomOnePlusPromotionMessage(
-                result = PromotionResult.OkFollowUpFailed(productionIdentityPresent = true),
-                ok = "ok",
-                boundFailed = "bound",
-                followUpIdentityPresent = "follow",
-                followUpIdentityMissing = "missing",
-                rejectedAbsent = "absent",
-                rejectedNotSettled = "settling",
-                rejectedNoGlucose = "glucose",
-                rejectedNoRecentGlucose = "recent",
-                rejectedLoopBusy = "busy",
-            ),
-        ).isEqualTo("follow")
-        assertThat(
-            dexcomOnePlusPromotionMessage(
-                result = PromotionResult.OkFollowUpFailed(productionIdentityPresent = false),
-                ok = "ok",
-                boundFailed = "bound",
-                followUpIdentityPresent = "follow",
-                followUpIdentityMissing = "missing",
-                rejectedAbsent = "absent",
-                rejectedNotSettled = "settling",
-                rejectedNoGlucose = "glucose",
-                rejectedNoRecentGlucose = "recent",
-                rejectedLoopBusy = "busy",
-            ),
-        ).isEqualTo("missing")
-        assertThat(
-            dexcomOnePlusPromotionMessage(
-                result = PromotionResult.Ok,
-                ok = "ok",
-                boundFailed = "bound",
-                followUpIdentityPresent = "follow",
-                followUpIdentityMissing = "missing",
-                rejectedAbsent = "absent",
-                rejectedNotSettled = "settling",
-                rejectedNoGlucose = "glucose",
-                rejectedNoRecentGlucose = "recent",
-                rejectedLoopBusy = "busy",
-            ),
-        ).isEqualTo("ok")
+        assertThat(DexcomOnePlusStatusState.promotionMessage(PromotionResult.Rejected(PromotionRejectReason.STAGING_ABSENT)))
+            .isEqualTo(SourceStrings.dexcom_oneplus_staging_promote_rejected_absent)
+        assertThat(DexcomOnePlusStatusState.promotionMessage(PromotionResult.OkBoundFailed))
+            .isEqualTo(SourceStrings.dexcom_oneplus_staging_promote_bound_failed)
+        assertThat(DexcomOnePlusStatusState.promotionMessage(PromotionResult.OkFollowUpFailed(productionIdentityPresent = true)))
+            .isEqualTo(SourceStrings.dexcom_oneplus_staging_promote_follow_up_failed)
+        assertThat(DexcomOnePlusStatusState.promotionMessage(PromotionResult.OkFollowUpFailed(productionIdentityPresent = false)))
+            .isEqualTo(SourceStrings.dexcom_oneplus_staging_promote_follow_up_failed_no_identity)
+        assertThat(DexcomOnePlusStatusState.promotionMessage(PromotionResult.Ok))
+            .isEqualTo(SourceStrings.dexcom_oneplus_staging_promote_ok)
     }
 
     @Test

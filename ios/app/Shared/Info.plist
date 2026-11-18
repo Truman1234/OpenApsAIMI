@@ -2,117 +2,41 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!--
-	  Compose Multiplatform refuses to start without this key: without it iOS caps the app at 60 Hz
-	  on 120 Hz iPhones. Xcode only turns a known list of INFOPLIST_KEY_* build settings into plist
-	  entries, and this key is not on that list, so it needs a real file. GENERATE_INFOPLIST_FILE
-	  stays on and Xcode merges the generated entries into this one.
-	-->
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<!--
-	  Shows the app's Documents folder in the Files app, as "On My iPhone > AAPS". That is how
-	  a person reaches an export to copy it off the phone, drops one in to import, and creates
-	  `extra/engineering_mode` by hand - the whole user-facing file story rests on this one key.
-
-	  Here rather than as INFOPLIST_KEY_UIFileSharingEnabled for the reason given above: it is not on
-	  Xcode's known list, so the build setting is accepted, ignored, and produces no key at all. It
-	  was set that way and the folder would never have appeared, which nothing would have reported -
-	  a missing plist key and a user who has not looked yet are indistinguishable.
-	-->
-	<key>UIFileSharingEnabled</key>
-	<true/>
-	<!--
-	  The second half of the same story: UIFileSharingEnabled alone shows the folder only in the
-	  Finder of a connected Mac. The Files app on the phone lists it only with this key as well.
-	-->
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
-	<!--
-	  Required before CoreBluetooth may be used at all. iOS terminates an app that creates a
-	  `CBCentralManager` without it, the same way it does for HealthKit below. It has not bitten
-	  yet only because no iOS driver has opened the radio in a shipped build.
-	-->
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>AAPS connects over Bluetooth to your glucose sensor and your insulin pump. It needs this to read your glucose and to send insulin commands, including while the app is in the background.</string>
-	<!--
-	  Required before the camera may be asked for anything. iOS terminates an app that creates a
-	  capture input, or asks for camera access, without a usage description - the same rule as the
-	  location key below, and the same way it fails: the process dies, it is not refused.
-	  Two features use the camera: a client reads the set-up QR code a master shows, and Meal
-	  Advisor takes a meal photo. A plist can hold this key only once, so one text covers both.
-	-->
-	<key>NSCameraUsageDescription</key>
-	<string>AAPS uses the camera only to read the set-up QR code shown by your master phone, and to take a meal photo when you ask Meal Advisor to estimate its carbohydrates.</string>
-	<!--
-	  Required before Core Location may be asked for anything. iOS terminates an app that requests
-	  location without a usage description, so this has to exist before IosLastKnownLocation runs -
-	  which it does the first time an automation location trigger is evaluated.
-	-->
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>AAPS uses your location only to evaluate automation rules you set up yourself, such as starting a temporary target when you arrive somewhere.</string>
-	<!--
-	  Required before HealthKit may be asked for anything. iOS terminates an app that touches
-	  HealthKit without a usage description, so this has to exist before the AIMI physio reads run -
-	  which they do the first time the loop asks for a health snapshot.
-
-	  Reading only. `IosHealthKitWindowPort.requestReadAuthorization` passes `typesToShare = null`,
-	  and the physio source only fetches. NSHealthUpdateUsageDescription is therefore deliberately
-	  absent: add it the day anything writes a sample back, or that write will terminate the app the
-	  same way.
-
-	  The entitlement is separate and lives in Device.entitlements and Simulator.entitlements. The
-	  string alone is not enough; the entitlement alone is not enough either.
-	-->
-	<key>NSHealthShareUsageDescription</key>
-	<string>AAPS reads your steps, heart rate, resting heart rate, heart rate variability and sleep from Health. It uses them to tell when you are active, asleep or unwell, and takes that into account when it decides how much insulin to give. AAPS only reads from Health. It never writes to it.</string>
-	<!--
-	  Export compliance. AAPS uses only exempt cryptography - HTTPS to Nightscout, and Apple's own
-	  Keychain and CryptoKit for the export password. Without this key every upload stops in App
-	  Store Connect waiting for the question to be answered by hand, which would make an automatic
-	  TestFlight upload not automatic at all.
-	-->
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<!--
-	  Which configuration built this, substituted by Xcode. Read back by `IosConfig`, which used
-	  to answer "debug" and `DEBUG = true` whatever it was built as - so a TestFlight build would have
-	  told the user it was a development build, and `isDev()` would have been true in front of real
-	  users.
-	-->
 	<key>AAPSBuildType</key>
 	<string>$(CONFIGURATION)</string>
-	<!--
-	  Background tasks for AIMI. Required for BGTaskScheduler to allow
-	  the retention janitor and ML training scheduler to run.
-	-->
+	<key>AAPSConnectIqUrlScheme</key>
+	<string>$(AAPS_CIQ_URL_SCHEME)</string>
+	<key>AapsAppGroupId</key>
+	<string>$(AAPS_APP_GROUP_ID)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>app.aaps.aimi.retention</string>
 		<string>app.aaps.aimi.ml-training</string>
 	</array>
-	<!--
-	  `bluetooth-central` is what lets a sensor or a pump reach this app once iOS has suspended it.
-	  Without it CoreBluetooth stops delivering notifications the moment the app leaves the
-	  foreground, so a CGM that sends every minute would send into nothing and the loop would only
-	  run while somebody is looking at the screen. This is the same mechanism Loop and Trio use:
-	  they have no background timer either, and their five-minute cadence is the sensor's own
-	  notification waking the app.
-
-	  It covers a SUSPENDED app, not a terminated one. After iOS reclaims the app, or after a
-	  reboot, only CoreBluetooth state restoration brings it back. `CoreBluetoothCentral` now does
-	  that part: it passes a restore identifier to `CBCentralManager` and reads `willRestoreState`,
-	  so iOS starts the app again for a Bluetooth event. See the KDoc on `CoreBluetoothCentral` and
-	  `BleRestoreIdentifier`.
-
-	  Two limits stay. iOS does not restore after the person force-quits the app from the app
-	  switcher, and it does not restore while Bluetooth is off in Settings. In both cases the loop
-	  only runs again once somebody opens the app.
-	-->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).connectiq</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(AAPS_CIQ_URL_SCHEME)</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>gcm-ciq</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>
 		<string>bluetooth-central</string>
+		<string>audio</string>
 	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 </dict>
 </plist>
