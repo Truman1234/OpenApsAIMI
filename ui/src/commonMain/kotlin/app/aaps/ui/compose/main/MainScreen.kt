@@ -56,6 +56,8 @@ import app.aaps.core.ui.compose.dialogs.OkCancelDialog
 import app.aaps.core.ui.compose.dialogs.ThreeButtonDialog
 import app.aaps.core.ui.compose.navigation.NavigationRequest
 import app.aaps.core.ui.compose.preference.PreferenceSubScreenDef
+import app.aaps.core.ui.compose.pump.PumpActivityDialog
+import app.aaps.core.ui.compose.pump.PumpActivityFab
 import app.aaps.core.ui.compose.stringResource
 import app.aaps.ui.UiStrings
 import app.aaps.ui.compose.aboutDialog.AboutAlertDialog
@@ -155,9 +157,9 @@ fun MainScreen(
     onStopBolus: () -> Unit = {},
     /** Replaces only the home content; drawer, toolbar, notifications and shell chrome remain. */
     dashboardV2Content: (@Composable (commandsAllowed: Boolean) -> Unit)? = null,
-    /** True only for the GLASS skin: shows [GlassNavigationBar] instead of [MainNavigationBar] and hides
-     *  the Quick Launch toolbar. The other skins keep [MainNavigationBar]. */
-    isGlassSkin: Boolean = false,
+    /** True for the GLASS and ESSENTIAL skins: shows [GlassNavigationBar] (with the profile) instead of
+     *  [MainNavigationBar] and hides the Quick Launch toolbar. The other skins keep [MainNavigationBar]. */
+    useGlassChrome: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     LocalDateUtil.current
@@ -239,9 +241,9 @@ fun MainScreen(
             // WindowInsets.statusBars / navigationBars, which would be consumed
             // (returning zero height) if those Scaffold slots were populated.
             Scaffold { scaffoldPadding ->
-                // Glass has its own shortcut pills and its own bottom bar, so the Quick Launch toolbar
+                // Glass and Essential have their own bottom bar, so the Quick Launch toolbar
                 // would only float on top of them.
-                val hasToolbar = quickLaunchItems.isNotEmpty() && !isGlassSkin
+                val hasToolbar = quickLaunchItems.isNotEmpty() && !useGlassChrome
 
                 // Content padding: in preview mode use only system bars;
                 // in normal mode add measured bar heights
@@ -451,6 +453,7 @@ fun MainScreen(
                                     onMenuClick()
                                 }
                             },
+                            onUserManualClick = { onNavigate(NavigationRequest.UserManual) },
                             onPreferencesClick = { onNavigate(NavigationRequest.Element(ElementType.SETTINGS)) },
                             onSearchQueryChange = onSearchQueryChange,
                             onSearchClear = onSearchClear,
@@ -475,7 +478,7 @@ fun MainScreen(
                             .padding(bottom = scaffoldPadding.calculateBottomPadding())
                     ) {
                         val loopActionState = loopActionViewModel.uiState.collectAsStateWithLifecycle().value
-                        if (isGlassSkin) {
+                        if (useGlassChrome) {
                             GlassNavigationBar(
                                 masterOrPairedClient = masterOrPairedClient,
                                 onTreatmentClick = {
@@ -549,6 +552,34 @@ fun MainScreen(
                         )
                     }
 
+                    // A dashboard home (Glass, AIMI, Dashboard V2) has no pump button of its own, so the SMB
+                    // and the pump link are shown here, as on dev_OAPSAIMI. The Overview draws its own.
+                    if (dashboardV2Content != null) {
+                        val showDashboardPumpFab = isPumpCommunicating || (bolusState != null && bolusState.isSMB)
+                        var dashboardPumpDialog by remember { mutableStateOf(false) }
+                        LaunchedEffect(showDashboardPumpFab) {
+                            if (!showDashboardPumpFab) dashboardPumpDialog = false
+                        }
+                        PumpActivityFab(
+                            visible = showDashboardPumpFab && showChrome,
+                            bolusState = bolusState,
+                            onClick = { dashboardPumpDialog = true },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(contentPadding)
+                                .padding(end = 16.dp, bottom = 16.dp)
+                        )
+                        if (dashboardPumpDialog) {
+                            PumpActivityDialog(
+                                bolusState = bolusState,
+                                pumpStatus = pumpStatusText,
+                                queueStatus = queueStatusText,
+                                isModal = false,
+                                onStop = onStopBolus,
+                                onDismiss = { dashboardPumpDialog = false }
+                            )
+                        }
+                    }
                 }
             }
         }

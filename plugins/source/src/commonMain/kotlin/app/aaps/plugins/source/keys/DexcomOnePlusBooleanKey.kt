@@ -41,55 +41,6 @@ enum class DexcomOnePlusBooleanKey(
     ),
 
     /**
-     * Put a missing SENSOR_CHANGE back for the running ONE+ session.
-     *
-     * Parity with dev_OAPSAIMI: the reference writes the missing event whenever
-     * "create sensor change" is on, so this defaults to true. When the repair is
-     * on but "create sensor change" is off, the refresh still writes nothing.
-     */
-    RepairMissingSensorChange(
-        key = "dexcom_oneplus_repair_missing_sensor_change",
-        defaultValue = true,
-        title = SourceStrings.dexcom_oneplus_repair_missing_sensor_change,
-        summary = SourceStrings.dexcom_oneplus_repair_missing_sensor_change_summary,
-        engineeringModeOnly = true,
-        exportable = false,
-    ),
-
-    /**
-     * Let the Status screen move the insertion time of the sensor that feeds the loop.
-     *
-     * Parity with dev_OAPSAIMI: the reference exposes the correction without a gate,
-     * so this defaults to true. Invalidating SENSOR_CHANGE events rewrites the sensor
-     * start; calibration rows are never removed.
-     */
-    CorrectSensorStart(
-        key = "dexcom_oneplus_correct_sensor_start",
-        defaultValue = true,
-        title = SourceStrings.dexcom_oneplus_correct_sensor_start,
-        summary = SourceStrings.dexcom_oneplus_correct_sensor_start_summary,
-        engineeringModeOnly = true,
-        exportable = false,
-    ),
-
-    /**
-     * Replace the automatic session start with a SENSOR_CHANGE the user already logged.
-     *
-     * The reference does this on every start and on the first accepted reading. That rolls
-     * the stored start back by up to 24 hours. On by default, as the reference: a sensor inserted
-     * (and logged) before it is paired, or soaked before it is promoted, keeps its real age. The
-     * switch stays, in engineering mode only, to go back to the plain automatic time.
-     */
-    AnchorSessionToManualSensorChange(
-        key = "dexcom_oneplus_anchor_session_to_manual_sensor_change",
-        defaultValue = true,
-        title = SourceStrings.dexcom_oneplus_anchor_session_to_manual_sensor_change,
-        summary = SourceStrings.dexcom_oneplus_anchor_session_to_manual_sensor_change_summary,
-        engineeringModeOnly = true,
-        exportable = false,
-    ),
-
-    /**
      * Switches the pre-soak sensor to production by itself, [DexcomOnePlusIntKey.AutoPromoteHours]
      * after the pre-soak start, when its readings are recent and real. The promote button still works.
      *
@@ -102,5 +53,36 @@ enum class DexcomOnePlusBooleanKey(
         defaultValue = false,
         title = SourceStrings.staging_auto_promote_title,
         summary = SourceStrings.staging_auto_promote_summary,
+    ),
+
+    /**
+     * Direct-to-watch: a Wear OS watch also reads the sensor that feeds the loop, in the sensor's
+     * watch slot, so the watch faces keep a value when the phone is away. The watch's readings stay
+     * on the watch and never reach the loop.
+     *
+     * Off by default. Not offered on iPhone: an Apple Watch would need its own watchOS app.
+     */
+    WatchDirect(
+        key = "dexcom_oneplus_watch_direct",
+        defaultValue = false,
+        title = SourceStrings.dexcom_oneplus_watch_direct,
+        summary = SourceStrings.dexcom_oneplus_watch_direct_summary,
+    ),
+
+    /**
+     * Pre-soak (a second ONE+ / G7 warming up beside the one that feeds the loop) on iPhone.
+     *
+     * On by default: that is the behaviour the iPhone build is meant to have. Off falls back to a
+     * single sensor and does not start the second driver. Android does not show this switch and
+     * does not read it; the pre-soak slot there is always available.
+     *
+     * Key: `dexcom_oneplus_ios_presoak`.
+     */
+    IosPreSoak(
+        key = "dexcom_oneplus_ios_presoak",
+        defaultValue = true,
+        title = SourceStrings.dexcom_oneplus_ios_presoak,
+        summary = SourceStrings.dexcom_oneplus_ios_presoak_summary,
+        exportable = false,
     ),
 }

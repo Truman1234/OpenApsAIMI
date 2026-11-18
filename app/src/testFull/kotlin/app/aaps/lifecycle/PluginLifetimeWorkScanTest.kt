@@ -69,6 +69,11 @@ class PluginLifetimeWorkScanTest {
      * Nothing may be added here without a decision recorded next to it.
      */
     private val survivesStop: Map<String, String> = mapOf(
+        "EversensePlugin#mainHandler" to
+            "main-thread Handler, kept as in dev_OAPSAIMI. It only posts one-shot notifications and toasts from the " +
+                "driver callbacks and reschedules nothing. onStop removes the plugin as a watcher, so nothing new is posted " +
+                "after a stop. A post already queued only shows an alarm or a notice, and an alarm must not be dropped " +
+                "because of a restart, so onStop deliberately does not clear it.",
         "VirtualPumpPlugin#deliverTreatment" to
             "one-shot appScope.launch that persists a bolus; it reschedules nothing, but it can still write during a restart window",
         "InsightPlugin#bolusProgressData" to
@@ -258,10 +263,12 @@ class PluginLifetimeWorkScanTest {
                 "before anything is queued. The only site here where cancelling really does prevent the command."
         ),
         "DanaRSPlugin.kt#changePump" to Site(
-            1,
+            2,
             "readStatus(device_changed). Status read, no dosing. The command is queued before the await, so a " +
                 "cancel only abandons the answer - but CommandExecutor drops the whole queue when the new " +
-                "driver reports !isConfigured(), so nothing reaches a pump. SAFE to abandon."
+                "driver reports !isConfigured(), so nothing reaches a pump. SAFE to abandon. " +
+                "connectNewPump() after an unpair (D9): ends the temp basal and extended bolus of the removed pump, no " +
+                "pump talk. Cancelled, they end at the next pairing as before. SAFE to abandon."
         ),
         "DiaconnG8Plugin.kt#changePump" to Site(
             1,

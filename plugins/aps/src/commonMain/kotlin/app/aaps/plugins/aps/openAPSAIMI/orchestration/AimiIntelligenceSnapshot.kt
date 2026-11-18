@@ -24,13 +24,39 @@ data class InsulinActivityView(
 data class InsulinKineticsView(
     val accountingIobArray: Array<IobTotal>,
     val predictionIobArray: Array<IobTotal>,
+    /**
+     * Learned PK/PD parameters. In the snapshot these are the ones of this tick, after the learning
+     * inside `determine_basal`; in the plugin they are the ones from before that learning.
+     */
     val structural: PkPdParams,
+    /**
+     * The DIA and peak that dose this tick, with the causal context of the previous tick. After
+     * `DosingKineticsRateLimiter` this is the limited value; the value before the limit is
+     * [targetEffective].
+     */
     val effective: EffectiveKinetics,
+    /**
+     * The DIA and peak the governors asked for this tick, before the rate limit. The same as
+     * [effective] when nothing was limited. Only for the log, never for dosing.
+     */
+    val targetEffective: EffectiveKinetics = effective,
+    /** The same resolution without the causal shifts. Only for the log, never for dosing. */
+    val noContextEffective: EffectiveKinetics,
+    /**
+     * Why the causal context of the PREVIOUS tick shifted the kinetics that dosed, or `no_posterior`.
+     * Not the same as [CausalContextView.causalModulationReason], which is about this tick.
+     */
+    val contextReason: String,
     val learning: PkpdLearningDiagnostics,
     val activity: InsulinActivityView,
-    val peakGovernor: TapPeakGovernorResult?,
-    val diaGovernor: DiaGovernorResult?,
+    val peakGovernor: TapPeakGovernorResult,
+    val diaGovernor: DiaGovernorResult,
     val predictionUsesLearnedKinetics: Boolean,
+    /**
+     * False when [peakGovernor] and [diaGovernor] are not what dosed: the caller gave only the dosing
+     * numbers (see `InsulinKineticsAuthority.fromDosingValues`). The export then leaves them out.
+     */
+    val governorsDosed: Boolean = true,
     /** Numbers about the DIA learning loop; null when PK/PD is off. */
     val learningTrace: PkpdLearningTrace? = null,
 ) {
@@ -90,7 +116,9 @@ data class SnapshotMeta(
 
 data class AimiIntelligenceSnapshot(
     val meta: SnapshotMeta,
+    /** Causal posterior of THIS tick. It doses only from the next tick on, through the kinetics. */
     val causal: CausalContextView,
+    /** The kinetics that dosed this tick, resolved with the causal posterior of the previous tick. */
     val kinetics: InsulinKineticsView,
     val isf: IsfAuthorityView,
     val predictions: PredictionAuthorityView,

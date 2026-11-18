@@ -2,9 +2,13 @@ package app.aaps.plugins.source
 
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
+import app.aaps.core.ui.compose.navigation.NavigationRequest
 import app.aaps.plugins.dexcomoneplus.OnePlusCgmDriverStub
 import app.aaps.plugins.dexcomoneplus.OnePlusCgmDrivers
+import app.aaps.plugins.source.keys.DexcomOnePlusIntentKey
+import kotlin.test.AfterTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
@@ -26,6 +30,8 @@ import kotlin.test.assertTrue
  */
 class DexcomOnePlusIosHostTest {
 
+    private var preSoak = true
+
     private val host = DexcomOnePlusIosHost(
         aapsLogger = SilentLogger,
         configBuilder = { error("the config builder is not used here") },
@@ -33,13 +39,26 @@ class DexcomOnePlusIosHostTest {
         rh = { error("the text resolver is not used here") },
         dateUtil = { error("the date util is not used here") },
         preferences = { error("the preferences are not used here") },
-        persistenceLayer = { error("the database is not used here") },
-        profileUtil = { error("the profile util is not used here") },
-    )
+    ).apply {
+        iosPreSoakEnabled = { preSoak }
+    }
+
+    @AfterTest
+    fun releaseDrivers() {
+        OnePlusCgmDrivers.shutdownAll()
+        preSoak = true
+    }
 
     @Test
     fun `nothing locks the plugin on iPhone any more`() {
         assertNull(host.notUsableReason)
+    }
+
+    @Test
+    fun `on iPhone this is the default BG source`() {
+        // Without a default BG source the app stopped at start-up with "Default plugin not found":
+        // the Dexcom (BYODA) default exists only on Android.
+        assertTrue(host.isDefaultBgSource)
     }
 
     @Test
@@ -53,8 +72,18 @@ class DexcomOnePlusIosHostTest {
     }
 
     @Test
-    fun `the pre-soak slot is the stub because a second slot cannot have its own scan here`() {
+    fun thePreSoakSlotIsTheRealDriverWhileTheSwitchIsOn() {
+        assertTrue(host.supportsStaging)
+        assertTrue(host.offersIosPreSoakSwitch)
+        assertSame(OnePlusCgmDrivers.staging(), host.stagingDriver())
+    }
+
+    @Test
+    fun thePreSoakSlotIsTheStubWhenTheSwitchIsOff() {
+        preSoak = false
+        assertTrue(!host.supportsStaging)
         assertSame(OnePlusCgmDriverStub.instance, host.stagingDriver())
+        assertNull(host.promoteStagingInstance())
     }
 
     @Test
@@ -63,8 +92,31 @@ class DexcomOnePlusIosHostTest {
     }
 
     @Test
-    fun `there is no pre-soak driver to promote`() {
-        assertNull(host.promoteStagingInstance())
+    fun promoteHandsThePreSoakDriverTheProductionRole() {
+        val staging = host.stagingDriver()
+        host.promoteStagingInstance()
+        assertSame(staging, host.productionDriver())
+        assertNull(host.existingStagingDriver())
+    }
+
+    @Test
+    fun theStatusScreenShowsThePreSoakCardWhileTheSwitchIsOn() {
+        assertTrue(host.supportsStaging)
+        assertNull(host.logSharer)
+    }
+
+    @Test
+    fun `the start screen opens inside the plugin settings`() {
+        val asked = mutableListOf<NavigationRequest>()
+        host.openScreen(DexcomOnePlusHost.Screen.START) { asked += it }
+        host.openScreen(DexcomOnePlusHost.Screen.WARMUP) { asked += it }
+        assertEquals(
+            listOf<NavigationRequest>(
+                NavigationRequest.PluginPreferences("DexcomOnePlusPlugin", DexcomOnePlusIntentKey.Start.key),
+                NavigationRequest.PluginPreferences("DexcomOnePlusPlugin", DexcomOnePlusIntentKey.Warmup.key),
+            ),
+            asked,
+        )
     }
 
     // The screen entry itself is not asserted here. `screenItems` wires the shared start screen to

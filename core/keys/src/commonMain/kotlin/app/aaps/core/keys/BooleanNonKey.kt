@@ -54,4 +54,48 @@ enum class BooleanNonKey(
      * class default). The Glass home runs this migration with `withTopGridDefaultsMerged`.
      */
     GlassTopGridPillsMigrated("glass_top_grid_pills_migrated", false, exportable = false),
+
+    /**
+     * One-shot: set after the AIMI PK/PD learning pace migration ran once. The old PK/PD wizard always
+     * saved the NORMAL pace (0.5 h/day, 5 min/day). The migration moves exactly that stored pair to
+     * the FASTER default (2 h/day, 20 min/day) and keeps any other stored pace. Bookkeeping, not a
+     * setting.
+     *
+     * Exported on purpose (owner decision, step D1 of the AIMI settings plan): a backup made after the
+     * migration carries it, so restoring that backup on a new phone or a fresh install keeps a NORMAL
+     * pace the user picked on purpose. A backup made before the update does not carry it: on a new
+     * phone its old wizard pace 0.5/5.0 is moved to FASTER once, as intended. An import never clears
+     * the flag, so restoring an old backup on a phone that already ran the migration keeps its pace.
+     */
+    OApsAIMIPkpdPaceMigrated("aimi_pkpd_pace_migrated", false),
+
+    /**
+     * One-shot: set after the AIMI meal factor repair ran once (step T2, see
+     * `AimiMealFactorScaleRepair`). Bookkeeping, not a setting. Exported on purpose: a backup made
+     * after the repair carries it, so importing that backup keeps a low meal factor the user set by
+     * hand. A backup made before the repair does not carry it, so its broken values are repaired on
+     * import.
+     */
+    OApsAIMIMealFactorScaleRepaired("aimi_meal_factor_scale_repaired", false),
+
+    /**
+     * Set after the guided AIMI PK/PD setup wizard finished or was skipped. Bookkeeping, not a
+     * setting: it was a [BooleanKey] until step P3 and keeps its stored name, so the wizard does not
+     * come back after the update. Exported, so a restored backup does not show the wizard again.
+     */
+    OApsAIMIPkpdSetupWizardCompleted("key_aimi_pkpd_setup_wizard_completed", false),
+
+    /**
+     * Shows the IOB chart under the glucose chart on the Glass home (Tools → Personalize). A small phone
+     * can turn it off so the home fits on the screen without scrolling. The IOB stays in the status card.
+     */
+    GlassShowIobChart("glass_show_iob_chart", true, exportable = false),
+
+    /**
+     * The user stopped AAPS on this phone (Maintenance → Stop AAPS), for example to hand the pump and
+     * the sensor to another phone. While set, no pump command is sent, the loop does not run and the
+     * sensor drivers are stopped. Kept across restarts until the user resumes. Device state, so never
+     * exported: a stopped phone must not stop the phone that imports its settings.
+     */
+    AapsStoppedByUser("aaps_stopped_by_user", false, exportable = false),
 }

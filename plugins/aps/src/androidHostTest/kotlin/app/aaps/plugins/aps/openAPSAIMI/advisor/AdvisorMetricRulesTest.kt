@@ -43,7 +43,7 @@ class AdvisorMetricRulesTest : TestBase() {
         todayTdd = null,
     )
 
-    private fun prefs(maxSmb: Double = 2.0, lunchFactor: Double = 1.0) = AimiPrefsSnapshot(
+    private fun prefs(maxSmb: Double = 2.0, lunchFactor: Double = 100.0) = AimiPrefsSnapshot(
         maxSmb = maxSmb,
         lunchFactor = lunchFactor,
         unifiedReactivityFactor = 1.0,
@@ -133,24 +133,24 @@ class AdvisorMetricRulesTest : TestBase() {
         assertThat(recs[0].title).isEqualTo(ApsStrings.aimi_adv_rec_control_title)
     }
 
-    /**
-     * Pins the bracket fix. The original line was `(lunchFactor + 0.1 * 10.0).roundToInt() / 10.0`,
-     * which proposed 0.2 for a lunch factor of 1.0.
-     */
+    /** The lunch factor is percent (100 = neutral): one step is 10 points. */
     @Test
-    fun a_lunch_factor_of_one_proposes_one_point_one() {
-        val recs = rules(metrics(tir70_180 = 0.60), prefs(lunchFactor = 1.0))
+    fun a_lunch_factor_of_eighty_proposes_ninety() {
+        val recs = rules(metrics(tir70_180 = 0.60), prefs(lunchFactor = 80.0))
         val action = update(recs[0])
         assertThat(action).isNotNull()
         assertThat(action!!.key).isEqualTo(DoubleKey.OApsAIMILunchFactor)
-        assertThat(action.newValue).isEqualTo(1.1)
+        assertThat(action.newValue).isEqualTo(90.0)
     }
 
+    /** Since step T2 a suggestion never goes above 100 (neutral). */
     @Test
-    fun control_rule_leaves_a_lunch_factor_at_the_ceiling_alone() {
-        val recs = rules(metrics(tir70_180 = 0.60), prefs(lunchFactor = 1.2))
-        assertThat(recs).hasSize(1)
-        assertThat(recs[0].action).isNull()
+    fun control_rule_leaves_a_neutral_or_higher_lunch_factor_alone() {
+        for (lunchFactor in listOf(100.0, 115.0, 120.0)) {
+            val recs = rules(metrics(tir70_180 = 0.60), prefs(lunchFactor = lunchFactor))
+            assertThat(recs).hasSize(1)
+            assertThat(recs[0].action).isNull()
+        }
     }
 
     // ----- rule 3: hypers -----
@@ -215,7 +215,7 @@ class AdvisorMetricRulesTest : TestBase() {
 
     @Test
     fun control_action_takes_its_reason_from_the_resolver() {
-        val action = update(rules(metrics(tir70_180 = 0.60), prefs(lunchFactor = 1.0))[0])
+        val action = update(rules(metrics(tir70_180 = 0.60), prefs(lunchFactor = 50.0))[0])
         assertThat(action!!.reason).isEqualTo("aimi_adv_rec_control_action_reason")
     }
 

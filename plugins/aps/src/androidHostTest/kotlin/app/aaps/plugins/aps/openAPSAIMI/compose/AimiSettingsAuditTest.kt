@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.never
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -43,10 +44,10 @@ class AimiSettingsAuditTest {
     private val strings = object : AimiSettingsAuditStrings {
         override val changedByLoop: TextRef = TextRef.AndroidRes(1)
         override val changedBySlider: TextRef = TextRef.AndroidRes(2)
-        override val changedByPreset: TextRef = TextRef.AndroidRes(3)
         override val changedByUser: TextRef = TextRef.AndroidRes(4)
         override val yes: TextRef = TextRef.AndroidRes(5)
         override val no: TextRef = TextRef.AndroidRes(6)
+        override val notSet: TextRef = TextRef.AndroidRes(7)
     }
 
     init {
@@ -91,10 +92,8 @@ class AimiSettingsAuditTest {
     fun `the writer wording is right for each writer combination including USER plus LOOP`() {
         // LOOP only.
         whenever(preferences.getIfExists(BooleanKey.OApsAIMIPkpdPragmaticReliefEnabled)).thenReturn(false)
-        // SLIDER only.
-        whenever(preferences.getIfExists(BooleanKey.OApsAIMIT3cAdaptiveBasalEnabled)).thenReturn(false)
-        // PRESET only.
-        whenever(preferences.getIfExists(DoubleKey.OApsAIMIPkpdInitialDiaH)).thenReturn(8.0)
+        // SLIDER only: the PK/PD learning pace chips (step S2 removed the Control Center ladders).
+        whenever(preferences.getIfExists(DoubleKey.OApsAIMIPkpdMaxDiaChangePerDayH)).thenReturn(0.5)
         // USER only.
         whenever(preferences.getIfExists(BooleanKey.OApsAIMIMLtraining)).thenReturn(true)
         // USER and LOOP together: LOOP must still win the wording.
@@ -103,8 +102,7 @@ class AimiSettingsAuditTest {
         val rows = build().rows.associateBy { it.keyString }
 
         assertEquals(AimiSettingsAuditChangedBy.LOOP, rows.getValue(BooleanKey.OApsAIMIPkpdPragmaticReliefEnabled.key).changedBy)
-        assertEquals(AimiSettingsAuditChangedBy.SLIDER, rows.getValue(BooleanKey.OApsAIMIT3cAdaptiveBasalEnabled.key).changedBy)
-        assertEquals(AimiSettingsAuditChangedBy.PRESET, rows.getValue(DoubleKey.OApsAIMIPkpdInitialDiaH.key).changedBy)
+        assertEquals(AimiSettingsAuditChangedBy.SLIDER, rows.getValue(DoubleKey.OApsAIMIPkpdMaxDiaChangePerDayH.key).changedBy)
         assertEquals(AimiSettingsAuditChangedBy.USER, rows.getValue(BooleanKey.OApsAIMIMLtraining.key).changedBy)
         assertEquals(AimiSettingsAuditChangedBy.LOOP, rows.getValue(DoubleKey.AimiTubeHypoFloorMgdl.key).changedBy)
     }
@@ -117,7 +115,6 @@ class AimiSettingsAuditTest {
         whenever(preferences.getIfExists(DoubleKey.OApsAIMIweight)).thenReturn(83.0)
         whenever(preferences.getIfExists(IntKey.OApsAIMILunchinterval)).thenReturn(99)
         whenever(preferences.getIfExists(StringKey.OApsAIMIWCycleTrackingMode)).thenReturn("something")
-        whenever(preferences.getIfExists(AimiLongKey.LastPrebolusTime)).thenReturn(1_700_000_000_000L)
 
         val rows = build().rows.associateBy { it.keyString }
         listOf(
@@ -125,14 +122,45 @@ class AimiSettingsAuditTest {
             DoubleKey.OApsAIMIweight.key,
             IntKey.OApsAIMILunchinterval.key,
             StringKey.OApsAIMIWCycleTrackingMode.key,
-            AimiLongKey.LastPrebolusTime.key,
         ).forEach { rows.getValue(it).resetToDefault(preferences) }
 
         verify(preferences).put(BooleanKey.OApsAIMIMLtraining, BooleanKey.OApsAIMIMLtraining.defaultValue)
         verify(preferences).put(DoubleKey.OApsAIMIweight, DoubleKey.OApsAIMIweight.defaultValue)
         verify(preferences).put(IntKey.OApsAIMILunchinterval, IntKey.OApsAIMILunchinterval.defaultValue)
         verify(preferences).put(StringKey.OApsAIMIWCycleTrackingMode, StringKey.OApsAIMIWCycleTrackingMode.defaultValue)
-        verify(preferences).put(AimiLongKey.LastPrebolusTime, AimiLongKey.LastPrebolusTime.defaultValue)
+    }
+
+    @Test
+    fun `the reset of the night growth age and switch removes the stored value`() {
+        // Step D1: an age or a switch never stored means an adult, NGR off. Writing the age key
+        // default 14 would turn NGR on. Writing the switch key default (false since step D2) would
+        // keep NGR off later, even after a stored age under 18, while a switch never stored lets
+        // that age decide.
+        whenever(preferences.getIfExists(IntKey.OApsAIMINightGrowthAgeYears)).thenReturn(30)
+        whenever(preferences.getIfExists(BooleanKey.OApsAIMINightGrowthEnabled)).thenReturn(false)
+
+        val rows = build().rows.associateBy { it.keyString }
+        rows.getValue(IntKey.OApsAIMINightGrowthAgeYears.key).resetToDefault(preferences)
+        rows.getValue(BooleanKey.OApsAIMINightGrowthEnabled.key).resetToDefault(preferences)
+
+        verify(preferences).remove(IntKey.OApsAIMINightGrowthAgeYears)
+        verify(preferences).remove(BooleanKey.OApsAIMINightGrowthEnabled)
+        verify(preferences, never()).put(IntKey.OApsAIMINightGrowthAgeYears, IntKey.OApsAIMINightGrowthAgeYears.defaultValue)
+        verify(preferences, never()).put(BooleanKey.OApsAIMINightGrowthEnabled, BooleanKey.OApsAIMINightGrowthEnabled.defaultValue)
+    }
+
+    @Test
+    fun `a stored night growth age or switch equal to the key default still gets a row with not set as default`() {
+        // A stored 14 turns NGR on, nothing stored keeps it off. A stored false (the switch default
+        // since step D2) keeps NGR off with an age under 18, nothing stored lets the age turn it on.
+        // So a stored value equal to the key default is not the same as nothing stored.
+        whenever(preferences.getIfExists(IntKey.OApsAIMINightGrowthAgeYears)).thenReturn(IntKey.OApsAIMINightGrowthAgeYears.defaultValue)
+        whenever(preferences.getIfExists(BooleanKey.OApsAIMINightGrowthEnabled)).thenReturn(BooleanKey.OApsAIMINightGrowthEnabled.defaultValue)
+
+        val rows = build().rows.associateBy { it.keyString }
+
+        assertEquals(AimiValueDescriptor(valueResId = strings.notSet), rows.getValue(IntKey.OApsAIMINightGrowthAgeYears.key).defaultValue)
+        assertEquals(AimiValueDescriptor(valueResId = strings.notSet), rows.getValue(BooleanKey.OApsAIMINightGrowthEnabled.key).defaultValue)
     }
 
     @Test
@@ -192,25 +220,30 @@ class AimiSettingsAuditTest {
     }
 
     @Test
-    fun `a key only the loop writes is shown but offers no reset`() {
+    fun `internal state of the loop gets no row and so no reset`() {
+        // Step S3: the stored prebolus time is half of the 20-minute SMB spacing that survives a restart.
+        // A reset would tell the next tick no SMB was ever given, so it is internal state with no row.
         whenever(preferences.getIfExists(AimiLongKey.LastPrebolusTime)).thenReturn(1_700_000_000_000L)
-        whenever(preferences.getIfExists(BooleanKey.OApsAIMIMLtraining)).thenReturn(true)
+        whenever(preferences.getIfExists(DoubleKey.OApsAIMILastEstimatedCarbs)).thenReturn(45.0)
+        whenever(preferences.getIfExists(BooleanKey.OApsAIMIMealAdvisorTrigger)).thenReturn(true)
+        whenever(preferences.getIfExists(StringKey.OApsAIMIContextStorage)).thenReturn("[{}]")
 
-        val rows = build().rows.associateBy { it.keyString }
+        val keys = build().rows.map { it.keyString }.toSet()
 
-        assertTrue(rows.getValue(AimiLongKey.LastPrebolusTime.key).runtimeState)
-        assertFalse(rows.getValue(BooleanKey.OApsAIMIMLtraining.key).runtimeState)
+        listOf(AimiLongKey.LastPrebolusTime, DoubleKey.OApsAIMILastEstimatedCarbs, BooleanKey.OApsAIMIMealAdvisorTrigger, StringKey.OApsAIMIContextStorage)
+            .forEach { assertFalse(it.key in keys, "internal state shown: ${it.key}") }
+        assertTrue(keys.intersect(AimiSettingsManifest.INTERNAL_STATE).isEmpty(), "internal state shown: $keys")
     }
 
     @Test
     fun `the count line matches the rows`() {
         whenever(preferences.getIfExists(BooleanKey.OApsAIMIMLtraining)).thenReturn(true)
-        whenever(preferences.getIfExists(DoubleKey.OApsAIMIPkpdInitialDiaH)).thenReturn(8.0)
+        whenever(preferences.getIfExists(DoubleKey.OApsAIMIPkpdMaxDiaChangePerDayH)).thenReturn(0.5)
 
         val report = build()
 
         assertEquals(2, report.changedCount)
-        // Every manifest entry is in scope except the one BOOKKEEPING-only key (the setup wizard flag).
-        assertEquals(AimiSettingsManifest.entries.size - 1, report.scopedCount)
+        // Every manifest entry is in scope. The setup wizard flag is a non-preference key since step P3.
+        assertEquals(AimiSettingsManifest.entries.size, report.scopedCount)
     }
 }

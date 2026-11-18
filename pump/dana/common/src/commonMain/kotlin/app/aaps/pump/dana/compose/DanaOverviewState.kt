@@ -202,10 +202,11 @@ fun buildDanaOverviewUiState(
     // Actions
     val primaryActions = buildList {
         add(
+            // As soon as a pump is paired: after a first status read that failed, it is the way to try again.
             ScreenAction(
                 label = rh.gs(CoreUiStrings.refresh),
                 icon = Icons.Filled.Refresh,
-                visible = isInitialized,
+                visible = isConfigured,
                 onClick = onRefreshClick
             )
         )

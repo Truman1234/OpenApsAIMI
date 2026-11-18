@@ -5,10 +5,12 @@ import app.aaps.core.interfaces.concurrent.withLock
 import app.aaps.core.interfaces.pump.ble.session.BleAdapterState
 import app.aaps.core.interfaces.pump.ble.session.BleCentral
 import app.aaps.core.interfaces.pump.ble.session.BleCentralEvent
+import app.aaps.plugins.dexcomoneplus.OnePlusIosScanBus
 import app.aaps.plugins.dexcomoneplus.OnePlusLog
 import app.aaps.plugins.dexcomoneplus.OnePlusLogMarkers
 import app.aaps.plugins.dexcomoneplus.gatt.OnePlusBluetoothUuids
 import app.aaps.plugins.dexcomoneplus.identity.OnePlusAdvCandidate
+import app.aaps.plugins.dexcomoneplus.identity.OnePlusAdvSlot
 import app.aaps.plugins.dexcomoneplus.identity.OnePlusStoredSession
 import app.aaps.plugins.dexcomoneplus.onePlusIosElapsedMs
 import app.aaps.plugins.dexcomoneplus.onePlusSleep
@@ -49,9 +51,21 @@ class OnePlusBleScannerIos(
     private val central: BleCentral,
     sessionHint: OnePlusStoredSession? = null,
     /** Sensor slot owning this scanner (`prod` / `staging`) - logged so field traces are attributable. */
-    private val slot: String = OnePlusLogMarkers.SLOT_PRODUCTION,
+    internal val slot: String = OnePlusLogMarkers.SLOT_PRODUCTION,
     private val nowMs: () -> Long = ::onePlusIosElapsedMs,
     private val sleep: (Long) -> Boolean = ::onePlusSleep,
+    /**
+     * The shared scan, when this phone has more than one slot. Null keeps the old behaviour of
+     * talking to [central] directly, which is what the single-slot tests do.
+     */
+    private val scanBus: OnePlusIosScanBus? = null,
+    /**
+     * A screen scanner is thrown away when it stops. A driver's scanner is not: the next
+     * pre-connect wait uses the same object.
+     */
+    internal val isEphemeral: Boolean = false,
+    /** Called once an [ephemeral] scanner has stopped and holds no pre-connect wait. */
+    private val onRetired: (() -> Unit)? = null,
 ) : OnePlusBleScanner {
 
     private val lock = AapsLock()
@@ -62,6 +76,9 @@ class OnePlusBleScannerIos(
     private var radioOn = false
     private var pending: TargetWait? = null
     private val seen = mutableMapOf<String, OnePlusScanResult>()
+
+    /** Stelo transmitters already logged as refused. Guarded by [lock]. */
+    private val refusedStelo = mutableSetOf<String>()
 
     override fun startScan(listener: OnePlusScanListener) {
         val state = central.adapterState()
@@ -78,7 +95,7 @@ class OnePlusBleScannerIos(
         // The screen scans on the main thread: book the quota slot but never wait for one. The
         // reserve OnePlusScanBudget keeps is what makes that always affordable.
         OnePlusScanBudget.record(nowMs())
-        central.startScan()
+        demand(OnePlusIosScanBus.Mode.UNFILTERED)
         OnePlusLog.i("${OnePlusLogMarkers.SCAN}: [$slot] started")
     }
 
@@ -95,8 +112,9 @@ class OnePlusBleScannerIos(
             return
         }
         lock.withLock { radioOn = false }
-        central.stopScan()
+        demand(OnePlusIosScanBus.Mode.OFF)
         OnePlusLog.i("${OnePlusLogMarkers.SCAN}: [$slot] stopped")
+        if (isEphemeral) onRetired?.invoke()
     }
 
     override fun isScanning(): Boolean = lock.withLock { uiScanning }
@@ -120,8 +138,9 @@ class OnePlusBleScannerIos(
             // sensor already heard in the screen's scan would never be reported into this window.
             // Filtered by the Dexcom advertisement service: with the phone locked, iOS reports
             // nothing to a scan without a service filter, and this wait is what every reading
-            // after the first one goes through.
-            central.startScan(listOf(OnePlusBluetoothUuids.Advertisement))
+            // after the first one goes through on a stack that scans. The shared bus keeps this
+            // filter while any slot is waiting, so the other slot's screen cannot drop it.
+            demand(OnePlusIosScanBus.Mode.FILTERED)
             OnePlusLog.i(
                 "${OnePlusLogMarkers.SCAN}: [$slot] awaitTarget started " +
                     "id=***${wait.target.takeLast(5)} timeoutMs=$timeoutMs",
@@ -137,10 +156,12 @@ class OnePlusBleScannerIos(
             }
             if (!keepRadio) {
                 lock.withLock { radioOn = false }
-                central.stopScan()
+                demand(OnePlusIosScanBus.Mode.OFF)
+                if (isEphemeral) onRetired?.invoke()
             } else {
-                // The screen is still scanning: give it back its scan without a filter.
-                central.startScan()
+                // The screen is still scanning: give it back its scan without a filter, unless
+                // another slot is waiting on the filtered scan. The bus makes that choice.
+                demand(OnePlusIosScanBus.Mode.UNFILTERED)
             }
             OnePlusLog.i("${OnePlusLogMarkers.SCAN}: [$slot] awaitTarget stopped")
         }
@@ -210,8 +231,18 @@ class OnePlusBleScannerIos(
     private fun handle(event: BleCentralEvent.ScanResult) {
         val address = event.id
         val name = event.name
-        val result = OnePlusScanResult(address = address, name = name, rssi = event.rssi ?: RSSI_UNKNOWN)
-            .apply { seenElapsedMs = nowMs() }
+        // Before every other rule: a Stelo advertises the same FEBC service as a G7.
+        if (OnePlusAdvCandidate.isUnsupportedStelo(name)) {
+            noteRefusedStelo(address)
+            return
+        }
+        // CoreBluetooth hands the manufacturer data over with the company id in front.
+        val result = OnePlusScanResult(
+            address = address,
+            name = name,
+            rssi = event.rssi ?: RSSI_UNKNOWN,
+            phoneSlotHeld = OnePlusAdvSlot.phoneSlotHeldWithCompanyId(event.advertisementBytes),
+        ).apply { seenElapsedMs = nowMs() }
         offerToPendingWait(address, name, result)
         offerToScreen(address, name, event, result)
     }
@@ -223,6 +254,16 @@ class OnePlusBleScannerIos(
      * by its identifier, and any other G7-family transmitter heard here is the evidence that makes
      * a stale stored identifier recognisable.
      */
+    /** Logs a refused Stelo once per transmitter, so the scan log does not fill up with it. */
+    private fun noteRefusedStelo(address: String) {
+        if (lock.withLock { refusedStelo.add(address.uppercase()) }) {
+            OnePlusLog.i(
+                "${OnePlusLogMarkers.SCAN}: [$slot] Dexcom Stelo ***${address.takeLast(5)} refused: it reads only " +
+                    "every 15 minutes and is not made for insulin dosing",
+            )
+        }
+    }
+
     private fun offerToPendingWait(address: String, name: String?, result: OnePlusScanResult) {
         val wait = lock.withLock { pending } ?: return
         if (address.uppercase() == wait.target) {
@@ -256,15 +297,36 @@ class OnePlusBleScannerIos(
             val previous = seen.put(address, result)
             // The signal counts too, as on Android: the list is sorted by it, so a sensor that
             // came closer has to move up.
-            previous == null || previous.name != result.name || previous.rssi != result.rssi
+            previous == null || previous.name != result.name || previous.rssi != result.rssi ||
+                previous.phoneSlotHeld != result.phoneSlotHeld
         }
         if (!changed) return
-        val score = OnePlusAdvCandidate.rankScore(name, address, result.rssi, currentHint)
+        val score = OnePlusAdvCandidate.rankScore(name, address, result.rssi, currentHint, result.phoneSlotHeld)
         OnePlusLog.d(
             "${OnePlusLogMarkers.SCAN}: [$slot] device name=${name ?: "?"} rssi=${result.rssi} " +
-                "score=$score id=***${address.takeLast(5)}",
+                "slotHeld=${result.phoneSlotHeld ?: "?"} score=$score id=***${address.takeLast(5)}",
         )
         listener.onDevice(result)
+    }
+
+    /** Drops this scanner's demand on the shared scan. The radio calls it when a newer scanner takes the slot. */
+    internal fun releaseScanDemand() = demand(OnePlusIosScanBus.Mode.OFF)
+
+    /**
+     * Asks for [mode] on the shared bus when this scanner has one, and on [central] directly when
+     * it does not. [OnePlusIosScanBus.Mode.OFF] stops only this scanner's demand.
+     */
+    private fun demand(mode: OnePlusIosScanBus.Mode) {
+        val bus = scanBus
+        if (bus != null) {
+            if (mode == OnePlusIosScanBus.Mode.OFF) bus.release(this) else bus.request(this, mode)
+            return
+        }
+        when (mode) {
+            OnePlusIosScanBus.Mode.OFF        -> central.stopScan()
+            OnePlusIosScanBus.Mode.UNFILTERED -> central.startScan()
+            OnePlusIosScanBus.Mode.FILTERED   -> central.startScan(listOf(OnePlusBluetoothUuids.Advertisement))
+        }
     }
 
     /**

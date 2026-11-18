@@ -7,7 +7,6 @@ import app.aaps.core.interfaces.aps.IobTotal
 import app.aaps.core.interfaces.aps.MealData
 import app.aaps.core.interfaces.aps.OapsProfileAimi
 import app.aaps.core.interfaces.aps.RT
-import app.aaps.core.keys.BooleanKey
 import app.aaps.core.keys.DoubleKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.plugins.aps.openAPSAIMI.AsyncDataState
@@ -27,6 +26,7 @@ import app.aaps.plugins.aps.openAPSAIMI.pkpd.MealAggressionContext
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkPdIntegration
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkPdRuntime
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkpdBolusSample
+import app.aaps.plugins.aps.openAPSAIMI.pkpd.ProfileInsulin
 import app.aaps.plugins.aps.openAPSAIMI.valueOrNull
 
 /**
@@ -96,6 +96,8 @@ internal interface AimiSignalPrepPkpdCalls {
     fun eventMemory(): PatientEventMemory?
     /** Last declared meal note (up to 5 h back), `null` when none. Feeds the PK/PD curve learning gate only. */
     fun declaredMeal(): Therapy.DeclaredMeal?
+    /** Insulin of the running profile: seed, anchor and bounds of the PK/PD learner. */
+    fun profileInsulin(): ProfileInsulin?
     /** Keeps the original error log and writes the visible decision line. */
     fun logPkpdRuntimeFailure(error: Exception)
     fun setCachedPkpdRuntime(runtime: PkPdRuntime)
@@ -262,6 +264,7 @@ internal fun decideSignalPreparationPkpdRuntime(
             allowLearning = true,
             declaredMealAgeMin = declaredMeal?.ageMin,
             declaredMealHighCarb = declaredMeal?.highCarb == true,
+            profileInsulin = calls.profileInsulin(),
         )
     } catch (e: Exception) {
         calls.logPkpdRuntimeFailure(e)
@@ -271,9 +274,9 @@ internal fun decideSignalPreparationPkpdRuntime(
     var pkpdRuntime = pkpdRuntimeIn
     if (pkpdRuntimeTemp != null) {
         pkpdRuntime = pkpdRuntimeTemp
-        if (preferences.get(BooleanKey.OApsAIMIIntelligenceSingleLearnPath)) {
-            calls.setCachedPkpdRuntime(pkpdRuntimeTemp)
-        }
+        // One learning path per tick: this runtime (the only one that learns) is the one cached for the
+        // rest of the tick. It was the key `OApsAIMIIntelligenceSingleLearnPath` (default on) until step P3.
+        calls.setCachedPkpdRuntime(pkpdRuntimeTemp)
 
         consoleLog.add("📊 PKPD_LEARNER:")
         consoleLog.add("  │ DIA (learned): ${aimiFmt2(pkpdRuntime.params.diaHrs)}h")

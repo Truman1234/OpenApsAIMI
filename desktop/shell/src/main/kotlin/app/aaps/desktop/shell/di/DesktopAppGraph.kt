@@ -1,6 +1,7 @@
 package app.aaps.desktop.shell.di
 
 import app.aaps.core.interfaces.alerts.EatReminder
+import app.aaps.core.interfaces.alerts.LocalAlertUtils
 import app.aaps.core.interfaces.bgQualityCheck.BgQualityCheck
 import app.aaps.core.interfaces.clientcontrol.ClientControlActionDispatcher
 import app.aaps.core.interfaces.configuration.Config
@@ -47,8 +48,14 @@ import app.aaps.implementation.notifications.SnackbarNotificationFallback
 import app.aaps.implementation.plugin.PluginStore
 import app.aaps.plugins.aps.openAPSAIMI.OpenAPSAIMIPlugin
 import app.aaps.plugins.aps.openAPSAIMI.advisor.auditor.ui.AuditorReportOpener
+import app.aaps.plugins.aps.openAPSAIMI.context.AimiRemoteContextImpl
+import app.aaps.plugins.aps.openAPSAIMI.context.AimiRemoteContextOptionalBinding
 import app.aaps.plugins.automation.AutomationRuntime
 import app.aaps.plugins.configuration.setupwizard.SWDefinition
+import app.aaps.plugins.sync.nsclientV3.remotecontrol.RemoteControlPlugin
+import app.aaps.plugins.sync.nsclientV3.remotecontrol.RemoteControlViewModel
+import app.aaps.plugins.aps.openAPSAIMI.tpo.TpoBoostController
+import app.aaps.plugins.sync.tidepool.compose.TidepoolViewModel
 import app.aaps.shared.clientbindings.ClientGraphBindings
 import app.aaps.shared.clientbindings.ClientHistoryWindowGraph
 import app.aaps.ui.compose.history.HistoryScope
@@ -77,18 +84,13 @@ import java.io.File
  *
  * The shell depends on the same 26 modules `:ios:shell` does, so every plugin that registers itself
  * with `@ContributesBinding` is already in the graph, and the classes in `app.aaps.desktop.shell.platform`
- * answer the platform half. Measured at **1**, down from 32:
- *
- * **`Autotune`** needs its plugin ported out of androidMain: about 2,700 lines of arithmetic whose
- * only Android parts are `Calendar`/`TimeZone` and a file dump, but it computes basal, ISF and ICR,
- * so the date maths wants golden vectors rather than a quick swap.
+ * answer the platform half. Measured at **0**, down from 32. The last one was `Autotune`: its plugin
+ * is common code now, checked against golden files made by the Android code before the move, and the
+ * desktop supplies only where its files go (`DesktopAutotuneFileStore`, `~/AAPS/autotune`).
  *
  * Nightscout sync is done, websocket included. `SocketNsConnection` in `:shared:clientbindings` is
  * shared with iOS and carries the remote-control channel, so a command reaches this client as fast
  * as it reaches a phone. `DesktopNsLoadExecutor` still runs the REST round the plugin asks for.
- *
- * **Needs a port rather than an implementation:** `Autotune`, whose `AutotunePlugin` is arithmetic
- * over treatment history sitting in androidMain.
  *
  * Settings import and export is no longer on this list. `LocalImportExportPrefs` in `commonMain`
  * carries the whole flow, and desktop supplies only the file access - see `_docs/desktop_alignment.md`.
@@ -112,8 +114,37 @@ import java.io.File
  *
  * `AuditorReportOpener` is excluded for the same reason: it needs the AIMI notifier. Without the
  * plugin the Glass "Auditor report" tile is disabled, and the navigator gets no report to open.
+ *
+ * `AimiRemoteContextImpl` and its `AimiRemoteContextOptionalBinding` are excluded for the same
+ * reason: they are the AIMI context system, which needs the AIMI network and cache ports desktop does
+ * not have. Without them the AIMI Remote Control cannot
+ * send contexts, so `RemoteControlPlugin` and its `RemoteControlViewModel` are excluded too: desktop
+ * has no Remote Control entry, rather than one whose context buttons do nothing.
+ * `NsIncomingDataProcessor` then gets no context system and does not apply `AIMI_CONTEXT:` notes,
+ * which is right for a phone that runs no AIMI.
+ *
+ * `TidepoolViewModel` is excluded for the same reason. Tidepool is shared code since it came to iOS,
+ * and its screen model contributes itself here, but the login needs a browser API that each platform
+ * brings (AppAuth on Android, `ASWebAuthenticationSession` on iOS). Desktop has none, and does not
+ * register the Tidepool plugin, so it has no Tidepool screen rather than one whose login does nothing.
+ *
+ * `TpoBoostController` (the manual AIMI Boost) is excluded too: it is built on the AIMI TPO sessions,
+ * which need the AIMI storage and network ports above. `DesktopAimiBoostControl` takes its place and
+ * says "AIMI is not the active algorithm", so the Essential skin shows the Boost as unavailable.
  */
-@DependencyGraph(AppScope::class, excludes = [OpenAPSAIMIPlugin::class, AuditorReportOpener::class])
+@DependencyGraph(
+    AppScope::class,
+    excludes = [
+        OpenAPSAIMIPlugin::class,
+        AuditorReportOpener::class,
+        AimiRemoteContextImpl::class,
+        AimiRemoteContextOptionalBinding::class,
+        RemoteControlPlugin::class,
+        RemoteControlViewModel::class,
+        TidepoolViewModel::class,
+        TpoBoostController::class
+    ]
+)
 interface DesktopAppGraph : MetroViewModelMultibindings {
 
     // Everything AapsAppRoot takes.
@@ -139,6 +170,13 @@ interface DesktopAppGraph : MetroViewModelMultibindings {
     val configBuilder: ConfigBuilder
     // The periodic housekeeping shared with Android, and the scope the shell drives it on.
     val periodicMaintenance: PeriodicMaintenance
+
+    /**
+     * The local alarms, for one call Android makes and this shell has to make too:
+     * `preSnoozeAlarms` holds the stale-data alarm back for five minutes so the first Nightscout
+     * round can land before the database is judged out of date.
+     */
+    val localAlertUtils: LocalAlertUtils
     // Turns a snackbar into a notification when no screen is up to show it. Shared with Android.
     val snackbarNotificationFallback: SnackbarNotificationFallback
     val eatReminder: EatReminder

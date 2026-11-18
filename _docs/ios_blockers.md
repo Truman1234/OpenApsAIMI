@@ -351,7 +351,7 @@ wrong. What is actually left:
 
 | Missing binding | Whose | Note |
 |---|---|---|
-| `Autotune` | ours, stubbed | Still worth porting: it is portable Kotlin computation, not platform code. **The no-op this row warned about now exists** - `IosAutotune` is bound and does nothing. It is not reachable from the iOS UI today (autotune is not in the shared nav graph), so nothing silently lies yet, but it would the moment it is. Checked 2026-09-21. |
+| ~~`Autotune`~~ | done | `AutotunePlugin` is common code and registers itself on every platform; iOS supplies only `IosAutotuneFileStore` (`Documents/autotune`, zip written by `StoredZip`). `IosAutotune` is deleted. Compiled for iOS, not yet run on the simulator (2026-11-15). |
 | ~~`ExportPasswordDataStore`~~ | done | Shared `ExportPasswordDataStoreImpl` is in commonMain and the iOS half is `IosExportPasswordPlatform`. This section already says so further down ("`ExportPasswordDataStore` - iOS side done"); the table simply was not updated. Checked 2026-09-21. |
 | ~~`ImportExportPrefs`~~ | done | `LocalImportExportPrefs` in commonMain serves iOS and desktop; settings export and import were run end to end on the simulator, including Google Drive. A document picker is still missing, but that is a directory-chooser gap, not a missing binding. Checked 2026-09-21. |
 | ~~`IobCobCalculator`~~ | done | `IobCobCalculatorPlugin` is in `plugins/main/src/commonMain` now, and iOS builds it through `ClientHistoryWindowGraph` (shared with desktop). The "needs a home outside :app" problem is solved. Checked 2026-09-21. |
@@ -1083,7 +1083,8 @@ Both cost a false alarm today, so they are worth writing down even though neithe
 
 - `SerialIOThreadTest.testThreadLifecycle` (`:pump:dana:danar`, unit) failed one full gate run and passed
   the four runs after it, on a tree whose only changes were iOS files.
-- `EquilEmulatorActivationTest.activatedPod_readsCancelsAndTogglesMode` (instrumented, CI shard C)
+- `EquilEmulatorActivationTest.activatedPod_readsCancelsAndTogglesMode` (instrumented, CI shard C; the
+  class was removed 2026-11-08, its checks are in `EquilScenarioTest` and `EquilUiTest`)
   failed on a push whose only non-desktop change was a markdown file and a test moving between source
   sets. Build 41072 on `kmp` failed the DanaRS instrumented shard the same way, on an About-dialog
   commit.
@@ -1133,7 +1134,7 @@ UI to act on. The prompting lives in `ProtectionHost`, which is a different ques
 
 **The trap: moving the impl alone would make iOS worse, not better.** `IosProtectionCheck` currently
 grants everything, which is wrong but at least passable while iOS reaches no pump. The real impl
-publishes to `pendingRequest` / `pendingAuthRequest` and waits for a host to call back. `AapsAppRoot`
+publishes to `pendingAuthRequest` and waits for a host to call back. `AapsAppRoot`
 places `PasswordCheckHost` but **not** `ProtectionHost` - only `ComposeMainActivity` does. So on iOS
 the request would be published, nothing would render it, and the callback would never fire: every
 protected action would hang rather than be granted or refused. That is worse than either.

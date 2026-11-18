@@ -24,9 +24,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * [Preferences] that answers each key's default, except for the values a test puts in [doubles] or
- * [booleans]. A `put` of a double is recorded in [doublePuts] and, for a preference key, also stored
- * so the next `get` reads it back. Everything else is ignored.
+ * [Preferences] that answers each key's default, except for the values a test puts in [doubles], [ints],
+ * [booleans] or [longs]. A `put` of a double is recorded in [doublePuts] and, for a preference key,
+ * also stored so the next `get` reads it back. Longs and the booleans of keys that are not
+ * preferences ([nonPreferenceBooleans]) are stored too. Everything else is ignored.
  *
  * For shared tests: `commonTest` has no Mockito, so this is written out by hand once.
  */
@@ -38,14 +39,27 @@ internal class MapPreferences : Preferences {
     /** Every double written through [put], in order. */
     val doublePuts: MutableList<Pair<DoubleNonPreferenceKey, Double>> = mutableListOf()
 
+    /** Int values a test sets for preference keys. */
+    val ints: MutableMap<IntPreferenceKey, Int> = mutableMapOf()
+
+    /** Long values, kept by key so a `put` or `inc` can be read back. */
+    val longs: MutableMap<LongNonPreferenceKey, Long> = mutableMapOf()
+
+    /** Booleans of keys that are not preferences (one-shot flags), kept so a `put` can be read back. */
+    val nonPreferenceBooleans: MutableMap<BooleanNonPreferenceKey, Boolean> = mutableMapOf()
+
     override val simpleMode: Boolean = false
     override val apsMode: Boolean = true
     override val nsclientMode: Boolean = false
     override val pumpControlMode: Boolean = false
 
-    override fun get(key: BooleanNonPreferenceKey): Boolean = key.defaultValue
-    override fun getIfExists(key: BooleanNonPreferenceKey): Boolean = key.defaultValue
-    override fun put(key: BooleanNonPreferenceKey, value: Boolean) {}
+    override fun get(key: BooleanNonPreferenceKey): Boolean = nonPreferenceBooleans[key] ?: key.defaultValue
+    override fun getIfExists(key: BooleanNonPreferenceKey): Boolean = get(key)
+
+    /** Kept only for keys that are not preferences, so a test of a preference write sees no change. */
+    override fun put(key: BooleanNonPreferenceKey, value: Boolean) {
+        if (key !is BooleanPreferenceKey) nonPreferenceBooleans[key] = value
+    }
     override fun observe(key: BooleanNonPreferenceKey): StateFlow<Boolean> = MutableStateFlow(key.defaultValue)
     override fun get(key: BooleanPreferenceKey): Boolean = booleans[key] ?: key.defaultValue
     override fun get(key: BooleanComposedNonPreferenceKey, vararg arguments: Any): Boolean = key.defaultValue
@@ -67,7 +81,8 @@ internal class MapPreferences : Preferences {
         MutableStateFlow(key.defaultValue)
     override fun get(key: DoubleNonPreferenceKey): Double = key.defaultValue
     override fun get(key: DoublePreferenceKey): Double = doubles[key] ?: key.defaultValue
-    override fun getIfExists(key: DoublePreferenceKey): Double = doubles[key] ?: key.defaultValue
+    /** Null when the test never stored the key, like a real store that never saw it. */
+    override fun getIfExists(key: DoublePreferenceKey): Double? = doubles[key]
     override fun put(key: DoubleNonPreferenceKey, value: Double) {
         doublePuts += key to value
         if (key is DoublePreferenceKey) doubles[key] = value
@@ -91,13 +106,17 @@ internal class MapPreferences : Preferences {
     override fun get(key: IntComposedNonPreferenceKey, vararg arguments: Any): Int = key.defaultValue
     override fun observe(key: IntComposedNonPreferenceKey, vararg arguments: Any): StateFlow<Int> =
         MutableStateFlow(key.defaultValue)
-    override fun get(key: IntPreferenceKey): Int = key.defaultValue
-    override fun get(key: LongNonPreferenceKey): Long = key.defaultValue
-    override fun getIfExists(key: LongNonPreferenceKey): Long = key.defaultValue
-    override fun put(key: LongNonPreferenceKey, value: Long) {}
+    override fun get(key: IntPreferenceKey): Int = ints[key] ?: key.defaultValue
+    override fun get(key: LongNonPreferenceKey): Long = longs[key] ?: key.defaultValue
+    override fun getIfExists(key: LongNonPreferenceKey): Long? = longs[key]
+    override fun put(key: LongNonPreferenceKey, value: Long) {
+        longs[key] = value
+    }
     override fun observe(key: LongNonPreferenceKey): StateFlow<Long> = MutableStateFlow(key.defaultValue)
     override fun get(key: LongPreferenceKey): Long = key.defaultValue
-    override fun inc(key: LongNonPreferenceKey) {}
+    override fun inc(key: LongNonPreferenceKey) {
+        longs[key] = get(key) + 1
+    }
     override fun get(key: LongComposedNonPreferenceKey, vararg arguments: Any): Long = key.defaultValue
     override fun getIfExists(key: LongComposedNonPreferenceKey, vararg arguments: Any): Long = key.defaultValue
     override fun put(key: LongComposedNonPreferenceKey, vararg arguments: Any, value: Long) {}

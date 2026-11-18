@@ -137,6 +137,87 @@ class PreferenceMigrationsTest {
         assertThat(store.getAll()).isEmpty()
     }
 
+    /**
+     * AIMI step P3: PK/PD values that are no longer preferences. The peak branch values, the dominant
+     * branch and the two peak governor log lines are telemetry in memory now; the blend weights and
+     * three switches are constants. Their stored names are removed.
+     */
+    @Test fun `retired AIMI PK PD keys are removed`() = runTest {
+        val store = storeOf(
+            "aimi_pkpd_state_prior_peak" to 75.0,
+            "aimi_pkpd_state_physio_peak" to 1.0,
+            "aimi_pkpd_state_site_peak" to 2.0,
+            "aimi_pkpd_state_traj_peak" to 3.0,
+            "aimi_pkpd_state_effective_peak" to 70.0,
+            "aimi_pkpd_state_dominant_branch" to "PRIOR",
+            "aimi_pkpd_state_last_peak_gov_log" to "PEAK_GOV: x",
+            "aimi_pkpd_state_last_peak_gov_console_echoed" to "PEAK_GOV: x",
+            "aimi_peak_governor_learned_weight" to 0.55,
+            "aimi_dia_governor_learned_weight" to 0.45,
+            "key_aimi_intelligence_single_learn_path" to true,
+            "key_aimi_intelligence_kinetics_profiler" to true,
+            "key_aimi_pkpd_prediction_kinetics" to true
+        )
+
+        sut().migrate(store)
+
+        assertThat(store.getAll()).isEmpty()
+    }
+
+    /**
+     * AIMI steps S3 and D1: the keys nothing read were deleted. Their stored values go, the context API
+     * keys and the xDrip one minute switch among them; the kept keys stay.
+     */
+    @Test fun `deleted AIMI keys are removed and the kept ones stay`() = runTest {
+        val store = storeOf(
+            "aimi_context_llm_openai_key" to "sk-secret",
+            "aimi_context_llm_provider" to "OPENAI",
+            "key_oaps_aimi_logsize" to 25,
+            "key_use_AimiForceLimits" to true,
+            "key_use_Aimi_xdripOM" to true,
+            "OApsAIMILastEstimatedCarbs" to 40.0
+        )
+
+        sut().migrate(store)
+
+        assertThat(store.getAll()).containsExactly("OApsAIMILastEstimatedCarbs", 40.0)
+    }
+
+    /**
+     * AIMI step T2: [PreferenceMigrations.migrate] runs the meal factor repair. A value from the old
+     * 1.0-scale TPO goes back to the default, and the migration does not write the done flag.
+     */
+    @Test fun `migrate repairs an AIMI meal factor on the old TPO scale`() = runTest {
+        val store = storeOf("key_oaps_aimi_lunch_factor" to "1.15", "key_oaps_aimi_dinner_factor" to "2.5")
+
+        sut().migrate(store)
+
+        assertThat(store.getDouble("key_oaps_aimi_lunch_factor", 0.0)).isEqualTo(50.0)
+        assertThat(store.getAll()["key_oaps_aimi_dinner_factor"]).isEqualTo("2.5")
+        assertThat(store.contains("aimi_meal_factor_scale_repaired")).isFalse()
+    }
+
+    /** The learned state, the wizard flag and the governor switches keep their stored names and values. */
+    @Test fun `AIMI PK PD values that stay are kept`() = runTest {
+        val store = storeOf(
+            "aimi_pkpd_state_dia_h" to 6.5,
+            "aimi_pkpd_state_peak_min" to 68.0,
+            "key_aimi_pkpd_setup_wizard_completed" to true,
+            "key_aimi_peak_governor_enabled" to false,
+            "key_aimi_dia_governor_enabled" to false
+        )
+
+        sut().migrate(store)
+
+        assertThat(store.getAll().keys).containsExactly(
+            "aimi_pkpd_state_dia_h",
+            "aimi_pkpd_state_peak_min",
+            "key_aimi_pkpd_setup_wizard_completed",
+            "key_aimi_peak_governor_enabled",
+            "key_aimi_dia_governor_enabled"
+        )
+    }
+
     // ----- A migration may do more than move a key -----
 
     /**
@@ -310,6 +391,63 @@ class PreferenceMigrationsTest {
         assertThat(store.getString("smscommunicator_otp_password", "x")).isEmpty()
     }
 
+    // ----- SMS Communicator moved from GENERAL to SYNC -----
+
+    /**
+     * The 3.x name, exactly as an upgrade or an old backup brings it: the config builder rename turns
+     * it into the composed `GENERAL_` name first, and this migration then carries it to `SYNC_`.
+     */
+    @Test fun `an sms communicator enabled in 3 x stays enabled under the new type`() = runTest {
+        val store = storeOf("ConfigBuilder_GENERAL_SmsCommunicatorPlugin_Enabled" to true)
+
+        sut().migrate(store)
+
+        assertThat(store.getBoolean("ConfigBuilder_Enabled_SYNC_SmsCommunicatorPlugin", false)).isTrue()
+        assertThat(store.contains("ConfigBuilder_Enabled_GENERAL_SmsCommunicatorPlugin")).isFalse()
+        assertThat(store.contains("ConfigBuilder_GENERAL_SmsCommunicatorPlugin_Enabled")).isFalse()
+    }
+
+    @Test fun `an sms communicator disabled in 3 x stays disabled`() = runTest {
+        val store = storeOf("ConfigBuilder_Enabled_GENERAL_SmsCommunicatorPlugin" to false)
+
+        sut().migrate(store)
+
+        assertThat(store.getBoolean("ConfigBuilder_Enabled_SYNC_SmsCommunicatorPlugin", true)).isFalse()
+        assertThat(store.contains("ConfigBuilder_Enabled_GENERAL_SmsCommunicatorPlugin")).isFalse()
+    }
+
+    /** What this build stored wins: it is the user's own choice, and SMS is a remote control channel. */
+    @Test fun `a choice already stored under the new type is not overwritten`() = runTest {
+        val store = storeOf(
+            "ConfigBuilder_Enabled_GENERAL_SmsCommunicatorPlugin" to true,
+            "ConfigBuilder_Enabled_SYNC_SmsCommunicatorPlugin" to false
+        )
+
+        sut().migrate(store)
+
+        assertThat(store.getBoolean("ConfigBuilder_Enabled_SYNC_SmsCommunicatorPlugin", true)).isFalse()
+        assertThat(store.contains("ConfigBuilder_Enabled_GENERAL_SmsCommunicatorPlugin")).isFalse()
+    }
+
+    @Test fun `an unreadable sms communicator row is left in place rather than deleted`() = runTest {
+        val store = storeOf("ConfigBuilder_Enabled_GENERAL_SmsCommunicatorPlugin" to "sometimes")
+
+        sut().migrate(store)
+
+        assertThat(store.contains("ConfigBuilder_Enabled_SYNC_SmsCommunicatorPlugin")).isFalse()
+        assertThat(store.getAll()["ConfigBuilder_Enabled_GENERAL_SmsCommunicatorPlugin"]).isEqualTo("sometimes")
+    }
+
+    /** Every other plugin keeps its type, so no other GENERAL row may be touched. */
+    @Test fun `another general plugin is left where it is`() = runTest {
+        val store = storeOf("ConfigBuilder_Enabled_GENERAL_AutomationPlugin" to true)
+
+        sut().migrate(store)
+
+        assertThat(store.getBoolean("ConfigBuilder_Enabled_GENERAL_AutomationPlugin", false)).isTrue()
+        assertThat(store.contains("ConfigBuilder_Enabled_SYNC_AutomationPlugin")).isFalse()
+    }
+
     @Test fun `a dyn isf factor stored as text becomes a number`() = runTest {
         val store = storeOf("DynISFAdjust" to "120")
 
@@ -376,4 +514,96 @@ class PreferenceMigrationsTest {
         verify(profileUtil).convertToMgdlDetect(100.0)
     }
 
+    // ----- The dev_OAPSAIMI skin choice -----
+
+    private suspend fun homeAfterMigratingSkin(skin: String): String? {
+        val store = storeOf("skin" to skin)
+        sut().migrate(store)
+        assertThat(store.contains("skin")).isFalse()
+        return store.getAll()["dashboard_home_skin"] as String?
+    }
+
+    @Test fun `the dev default skin becomes the aimi dashboard`() = runTest {
+        assertThat(homeAfterMigratingSkin("app.aaps.plugins.main.skins.SkinMinimal")).isEqualTo("aimi_dashboard")
+        // DEV stored "" until its start-up sync wrote the class name; "" meant its first skin, SkinMinimal.
+        assertThat(homeAfterMigratingSkin("")).isEqualTo("aimi_dashboard")
+    }
+
+    @Test fun `the glass skin becomes the glass home`() = runTest {
+        assertThat(homeAfterMigratingSkin("app.aaps.plugins.main.skins.SkinGlass")).isEqualTo("glass")
+        // DEV also matched the simple class name.
+        assertThat(homeAfterMigratingSkin("SkinGlass")).isEqualTo("glass")
+    }
+
+    @Test fun `the removed view skins become the overview`() = runTest {
+        listOf("SkinClassic", "SkinButtonsOn", "SkinLargeDisplay", "SkinLowRes").forEach { skin ->
+            assertThat(homeAfterMigratingSkin("app.aaps.plugins.main.skins.$skin")).isEqualTo("overview")
+        }
+    }
+
+    @Test fun `a skin dev did not know falls back to the aimi dashboard as dev did`() = runTest {
+        assertThat(homeAfterMigratingSkin("app.aaps.plugins.main.skins.SkinThatNeverExisted")).isEqualTo("aimi_dashboard")
+    }
+
+    @Test fun `a home screen already chosen here is kept and the old skin is removed`() = runTest {
+        val store = storeOf("skin" to "app.aaps.plugins.main.skins.SkinGlass", "dashboard_home_skin" to "overview")
+
+        sut().migrate(store)
+
+        assertThat(store.getString("dashboard_home_skin", "")).isEqualTo("overview")
+        assertThat(store.contains("skin")).isFalse()
+    }
+
+    // ----- Rapid-fall drop size: old float key of dev_OAPSAIMI to the Int key in mg/dL -----
+
+    @Test fun `a rapid fall drop inside 15 to 60 is copied to the mgdl key once`() = runTest {
+        val store = storeOf("alert_rapid_fall_drop" to 25.0)
+
+        sut().migrate(store)
+
+        assertThat(store.getAll()["alert_rapid_fall_drop_mgdl"]).isEqualTo(25)
+        assertThat(store.contains("alert_rapid_fall_drop")).isFalse()
+
+        // A second run finds no old key, so the value the user sets later is never touched.
+        store.putInt("alert_rapid_fall_drop_mgdl", 40)
+        sut().migrate(store)
+        assertThat(store.getAll()["alert_rapid_fall_drop_mgdl"]).isEqualTo(40)
+    }
+
+    @Test fun `a rapid fall drop read from a backup file as text is copied`() = runTest {
+        val store = storeOf("alert_rapid_fall_drop" to "60.0")
+
+        sut().migrate(store)
+
+        assertThat(store.getAll()["alert_rapid_fall_drop_mgdl"]).isEqualTo(60)
+    }
+
+    @Test fun `a rapid fall drop outside 15 to 60 is dropped and the default applies`() = runTest {
+        listOf(450.0, 14.9, 60.1, 1.5).forEach { old ->
+            val store = storeOf("alert_rapid_fall_drop" to old)
+
+            sut().migrate(store)
+
+            assertThat(store.contains("alert_rapid_fall_drop_mgdl")).isFalse()
+            assertThat(store.contains("alert_rapid_fall_drop")).isFalse()
+        }
+    }
+
+    @Test fun `a rapid fall drop already set on the new key is not overwritten`() = runTest {
+        val store = storeOf("alert_rapid_fall_drop" to 25.0, "alert_rapid_fall_drop_mgdl" to 45)
+
+        sut().migrate(store)
+
+        assertThat(store.getAll()["alert_rapid_fall_drop_mgdl"]).isEqualTo(45)
+        assertThat(store.contains("alert_rapid_fall_drop")).isFalse()
+    }
+
+    @Test fun `a rapid fall drop that is not a number is left in place`() = runTest {
+        val store = storeOf("alert_rapid_fall_drop" to "abc")
+
+        sut().migrate(store)
+
+        assertThat(store.contains("alert_rapid_fall_drop_mgdl")).isFalse()
+        assertThat(store.getAll()["alert_rapid_fall_drop"]).isEqualTo("abc")
+    }
 }

@@ -9,6 +9,7 @@ import app.aaps.plugins.aps.openAPSAIMI.advisor.oref.OrefPersonalSignalGate
 import app.aaps.plugins.aps.openAPSAIMI.model.*
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkpdSmbTailDamping
 import kotlin.math.min
+import kotlin.math.round
 import kotlin.math.max
 
 /**
@@ -78,52 +79,16 @@ class PkpdAdvisor {
         // Never run hypo + hyper blocks together: same knob would get contradictory +0.5 / -0.5 DIA recommendations.
         if (mode == PkpdMode.HYPER_DOMINANT) {
 
-            // A) DIA too long? Only suggest if well above the lower bound.
-            if (pkpd.initialDiaH > pkpd.boundsDiaMinH + 1.0) { // was +0.5
-                val newDia = max(pkpd.boundsDiaMinH, pkpd.initialDiaH - 0.5)
-                val explanation = rh.gs(ApsStrings.aimi_pkpd_hyper_dia, pkpd.initialDiaH.toString(), newDia.toString())
-                val action = AimiAction.PreferenceUpdate(
-                    key = app.aaps.core.keys.DoubleKey.OApsAIMIPkpdInitialDiaH,
-                    newValue = newDia,
-                    reason = explanation,
-                    domain = AimiDomain.Pkpd,
-                    priority = AimiPriority.Medium
-                )
-                suggestions += AimiRecommendation(
-                    title = ApsStrings.aimi_pkpd_title_dia,
-                    description = ApsStrings.aimi_pkpd_hyper_dia,
-                    priority = AimiPriority.Medium,
-                    domain = AimiDomain.Pkpd,
-                    action = action,
-                    descriptionArgs = listOf(pkpd.initialDiaH.toString(), newDia.toString())
-                )
-            }
-
-            // B) Peak too late? Only suggest if well above the lower bound.
-            if (pkpd.initialPeakMin > pkpd.boundsPeakMinMin + 10) { // was +5
-                val newPeak = max(pkpd.boundsPeakMinMin, pkpd.initialPeakMin - 5.0)
-                val explanation = rh.gs(ApsStrings.aimi_pkpd_hyper_peak, newPeak.toString())
-                val action = AimiAction.PreferenceUpdate(
-                    key = app.aaps.core.keys.DoubleKey.OApsAIMIPkpdInitialPeakMin,
-                    newValue = newPeak,
-                    reason = explanation,
-                    domain = AimiDomain.Pkpd,
-                    priority = AimiPriority.Medium
-                )
-                suggestions += AimiRecommendation(
-                    title = ApsStrings.aimi_pkpd_title_peak,
-                    description = ApsStrings.aimi_pkpd_hyper_peak,
-                    priority = AimiPriority.Medium,
-                    domain = AimiDomain.Pkpd,
-                    action = action,
-                    descriptionArgs = listOf(newPeak.toString())
-                )
-            }
+            // The DIA and peak rules that wrote OApsAIMIPkpdInitialDiaH / OApsAIMIPkpdInitialPeakMin
+            // were removed: those keys never changed dosing, and the learner now starts from the
+            // profile insulin.
 
             // C) ISF Fusion too restrictive?
             if (pkpd.isfFusionMaxFactor < 1.4) {
                 val newFactor = min(2.0, pkpd.isfFusionMaxFactor + 0.1)
-                val explanation = rh.gs(ApsStrings.aimi_pkpd_hyper_isf)
+                // The text shows the one-step value that is written (step A1), not the 2.0 cap.
+                val newFactorText = displayValue(newFactor)
+                val explanation = rh.gs(ApsStrings.aimi_pkpd_hyper_isf, newFactorText)
                 val action = AimiAction.PreferenceUpdate(
                     key = app.aaps.core.keys.DoubleKey.OApsAIMIIsfFusionMaxFactor,
                     newValue = newFactor,
@@ -137,7 +102,7 @@ class PkpdAdvisor {
                     priority = AimiPriority.Medium,
                     domain = AimiDomain.Pkpd,
                     action = action,
-                    descriptionArgs = listOf(newFactor.toString())
+                    descriptionArgs = listOf(newFactorText)
                 )
             }
 
@@ -147,7 +112,7 @@ class PkpdAdvisor {
             if (effectiveDampingHyper < PkpdSmbTailDamping.DAMPING_LIGHT - 0.02 && timeBelow70 < 0.035) {
                 val newDamping = PkpdSmbTailDamping.clampForAdvisor(effectiveDampingHyper + 0.08)
                 if (newDamping > effectiveDampingHyper + 0.01) {
-                    val explanation = rh.gs(ApsStrings.aimi_pkpd_hyper_damping_reduce, effectiveDampingHyper.toString(), newDamping.toString())
+                    val explanation = rh.gs(ApsStrings.aimi_pkpd_hyper_damping_reduce, displayValue(effectiveDampingHyper), displayValue(newDamping))
                     val action = AimiAction.PreferenceUpdate(
                         key = app.aaps.core.keys.DoubleKey.OApsAIMISmbTailDamping,
                         newValue = newDamping,
@@ -161,7 +126,7 @@ class PkpdAdvisor {
                         priority = AimiPriority.Medium,
                         domain = AimiDomain.Pkpd,
                         action = action,
-                        descriptionArgs = listOf(effectiveDampingHyper.toString(), newDamping.toString())
+                        descriptionArgs = listOf(displayValue(effectiveDampingHyper), displayValue(newDamping))
                     )
                 }
             }
@@ -171,47 +136,7 @@ class PkpdAdvisor {
         // Default threshold 7% <70. When OREF marks hypo priority and data are usable, allow ~5.5% + corroboration.
         if (mode == PkpdMode.HYPO_DOMINANT) {
 
-            // A) DIA too short? Only suggest if well below the upper bound.
-            if (pkpd.initialDiaH < pkpd.boundsDiaMaxH - 1.0) { // was -0.5
-                val newDia = min(pkpd.boundsDiaMaxH, pkpd.initialDiaH + 0.5)
-                val explanation = rh.gs(ApsStrings.aimi_pkpd_hypo_dia, pkpd.initialDiaH.toString(), newDia.toString())
-                val action = AimiAction.PreferenceUpdate(
-                    key = app.aaps.core.keys.DoubleKey.OApsAIMIPkpdInitialDiaH,
-                    newValue = newDia,
-                    reason = explanation,
-                    domain = AimiDomain.Pkpd,
-                    priority = AimiPriority.Critical
-                )
-                suggestions += AimiRecommendation(
-                    title = ApsStrings.aimi_pkpd_title_dia,
-                    description = ApsStrings.aimi_pkpd_hypo_dia,
-                    priority = AimiPriority.Critical,
-                    domain = AimiDomain.Pkpd,
-                    action = action,
-                    descriptionArgs = listOf(pkpd.initialDiaH.toString(), newDia.toString())
-                )
-            }
-
-            // B) Peak too early? Only suggest if well below the upper bound.
-            if (pkpd.initialPeakMin < pkpd.boundsPeakMinMax - 10) { // was -5
-                val newPeak = min(pkpd.boundsPeakMinMax, pkpd.initialPeakMin + 5.0)
-                val explanation = rh.gs(ApsStrings.aimi_pkpd_hypo_peak, newPeak.toString())
-                val action = AimiAction.PreferenceUpdate(
-                    key = app.aaps.core.keys.DoubleKey.OApsAIMIPkpdInitialPeakMin,
-                    newValue = newPeak,
-                    reason = explanation,
-                    domain = AimiDomain.Pkpd,
-                    priority = AimiPriority.Critical
-                )
-                suggestions += AimiRecommendation(
-                    title = ApsStrings.aimi_pkpd_title_peak,
-                    description = ApsStrings.aimi_pkpd_hypo_peak,
-                    priority = AimiPriority.Critical,
-                    domain = AimiDomain.Pkpd,
-                    action = action,
-                    descriptionArgs = listOf(newPeak.toString())
-                )
-            }
+            // The DIA and peak rules were removed here too (see the hyper block).
 
             // C) Tail damping too weak for the hypo pattern?
             // Stored pref is a multiplicative FLOOR (lower = stronger damping): strengthening the guard means LOWERING the floor.
@@ -219,7 +144,9 @@ class PkpdAdvisor {
             if (effectiveDampingHypo > PkpdSmbTailDamping.DAMPING_STRONG + 0.05) {
                 val newDamping = PkpdSmbTailDamping.clampForAdvisor(effectiveDampingHypo - 0.1)
                 if (newDamping < effectiveDampingHypo - 0.01) {
-                    val explanation = rh.gs(ApsStrings.aimi_pkpd_hypo_damping)
+                    // The reason carries the new floor; before step A1 it showed the raw placeholder.
+                    val newDampingText = displayValue(newDamping)
+                    val explanation = rh.gs(ApsStrings.aimi_pkpd_hypo_damping, newDampingText)
                     val action = AimiAction.PreferenceUpdate(
                         key = app.aaps.core.keys.DoubleKey.OApsAIMISmbTailDamping,
                         newValue = newDamping,
@@ -233,7 +160,7 @@ class PkpdAdvisor {
                         priority = AimiPriority.Critical,
                         domain = AimiDomain.Pkpd,
                         action = action,
-                        descriptionArgs = listOf(newDamping.toString())
+                        descriptionArgs = listOf(newDampingText)
                     )
                 }
             }
@@ -242,7 +169,7 @@ class PkpdAdvisor {
             if (pkpd.isfFusionMaxFactor > 1.35) {
                 val newFactor = max(1.0, pkpd.isfFusionMaxFactor - 0.1)
                 if (newFactor < pkpd.isfFusionMaxFactor - 0.01) {
-                    val explanation = rh.gs(ApsStrings.aimi_pkpd_hypo_isf_reduce, pkpd.isfFusionMaxFactor.toString(), newFactor.toString())
+                    val explanation = rh.gs(ApsStrings.aimi_pkpd_hypo_isf_reduce, displayValue(pkpd.isfFusionMaxFactor), displayValue(newFactor))
                     val action = AimiAction.PreferenceUpdate(
                         key = app.aaps.core.keys.DoubleKey.OApsAIMIIsfFusionMaxFactor,
                         newValue = newFactor,
@@ -256,7 +183,7 @@ class PkpdAdvisor {
                         priority = AimiPriority.High,
                         domain = AimiDomain.Pkpd,
                         action = action,
-                        descriptionArgs = listOf(pkpd.isfFusionMaxFactor.toString(), newFactor.toString())
+                        descriptionArgs = listOf(displayValue(pkpd.isfFusionMaxFactor), displayValue(newFactor))
                     )
                 }
             }
@@ -270,6 +197,12 @@ class PkpdAdvisor {
     /**
      * When hypo and hyper triggers both fire, pick one dominant context so we never recommend opposite steps for the same parameter.
      */
+    /**
+     * [value] for a proposal text, with at most two decimals: 1.1 + 0.1 is 1.2000000000000002 as a
+     * double. Only the text is rounded; the proposal writes [value] itself.
+     */
+    private fun displayValue(value: Double): String = (round(value * 100.0) / 100.0).toString()
+
     private fun resolvePkpdMode(
         hypoTrigger: Boolean,
         hyperTrigger: Boolean,

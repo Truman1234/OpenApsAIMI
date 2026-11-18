@@ -1,10 +1,19 @@
 package app.aaps.ui.compose.dashboard
 
-/** Shared persisted choice for the home renderer. Unknown/future values retain safe Overview behavior. */
+/**
+ * Shared persisted choice for the home renderer, stored in `StringKey.GeneralDashboardSkin`.
+ *
+ * [AIMI_DASHBOARD] is the AIMI Compose dashboard of `dev_OAPSAIMI` (the `SkinMinimal` home) and the
+ * default of a new install. A stored value that this build does not know keeps the safe Overview.
+ */
 enum class DashboardHomeSelection(val preferenceValue: String) {
     OVERVIEW("overview"),
+    AIMI_DASHBOARD("aimi_dashboard"),
     DASHBOARD_V2("dashboard_v2"),
-    GLASS("glass");
+    GLASS("glass"),
+
+    /** One living glucose shape, details on touch, gestures for the manual Boost (`dashboard/essential`). */
+    ESSENTIAL("essential");
 
     companion object {
         fun resolve(value: String): DashboardHomeSelection =

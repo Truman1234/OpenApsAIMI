@@ -1,8 +1,10 @@
 package app.aaps.pump.medtrum.ios
 
 import app.aaps.core.data.plugin.PluginType
+import app.aaps.core.data.pump.defs.PumpType
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
+import app.aaps.core.interfaces.notifications.NotificationId
 import app.aaps.core.interfaces.notifications.NotificationManager
 import app.aaps.core.interfaces.pump.ble.ScannedDevice
 import app.aaps.core.interfaces.plugin.PluginBase
@@ -15,9 +17,16 @@ import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.interfaces.PreferenceItem
 import app.aaps.core.keys.interfaces.TextRef
 import app.aaps.core.keys.interfaces.withCompose
+import app.aaps.core.keys.interfaces.withEntriesProvider
 import app.aaps.core.ui.compose.ComposeScreenContent
 import app.aaps.core.ui.compose.preference.PreferenceSubScreenDef
+import app.aaps.pump.medtrum.MedtrumInsulinLimits
 import app.aaps.pump.medtrum.MedtrumStrings
+import app.aaps.pump.medtrum.MedtrumUserSettings
+import app.aaps.pump.medtrum.keys.MedtrumBooleanKey
+import app.aaps.pump.medtrum.keys.MedtrumIntKey
+import app.aaps.pump.medtrum.keys.MedtrumStringKey
+import app.aaps.pump.medtrum.watchMedtrumUserSettings
 import app.aaps.pump.medtrum.compose.MedtrumPumpPickerScreen
 import app.aaps.pump.medtrum.util.MedtrumDeviceName
 import androidx.compose.runtime.Composable
@@ -32,11 +41,17 @@ import app.aaps.core.interfaces.rx.bus.RxBus
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.pump.medtrum.compose.patch.MedtrumPatchWizardModel
 import app.aaps.pump.medtrum.compose.patch.MedtrumPatchWizardScreen
+import app.aaps.pump.medtrum.MedtrumHandover
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import app.aaps.core.interfaces.pump.Medtrum
 import app.aaps.core.interfaces.pump.PumpEnactResult
+import app.aaps.core.interfaces.maintenance.DeviceHandover
+import app.aaps.core.interfaces.maintenance.HandoverFields
 import kotlinx.coroutines.runBlocking
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
@@ -95,13 +110,13 @@ class IosMedtrumPlugin(
 ) : PumpPluginBase(
     // The pump screen of the overview. Built when it is opened, so building the plugin builds no UI.
     pluginDescription = medtrumIosPluginDescription().composeContent { plugin -> (plugin as IosMedtrumPlugin).overviewContent() },
-    ownPreferences = MedtrumIosIntentKey.entries,
+    ownPreferences = MedtrumIosIntentKey.entries + MedtrumStringKey.entries + MedtrumIntKey.entries + IOS_MEDTRUM_BOOLEAN_KEYS,
     aapsLogger = aapsLogger,
     rh = rh,
     preferences = preferences,
     commandQueue = commandQueue,
     notificationManager = notificationManager
-), Pump by host.driver, Medtrum {
+), Pump by host.driver, Medtrum, DeviceHandover {
 
     // The queue's Medtrum commands (clear alarms, update time, load events, user settings). They are
     // blocking calls in the shared interface and run on the queue's own thread, never on the main one.
@@ -113,19 +128,50 @@ class IosMedtrumPlugin(
     /** The patch is taken off with the patch wizard, which asks the person to confirm. */
     override fun deactivate(): PumpEnactResult = host.driver.refuse("Deactivate the patch with Change Patch")
 
+    init {
+        // The driver has loaded the stored patch state by now. The pump settings come from the
+        // preferences, the same keys and defaults as on Android, so they win over what was stored.
+        loadUserSettings()
+    }
+
+    /** The collectors that follow the pump settings, or null while the plugin is stopped. */
+    private var settingsWatch: Job? = null
+
+    /** Android `MedtrumPump.loadUserSettingsFromSP`: copies the pump settings into the driver state. */
+    private fun loadUserSettings() {
+        MedtrumUserSettings.from(preferences).applyTo(host.state)
+    }
 
     /**
-     * The settings screen of this plugin: one entry, the pump chooser.
+     * Android `MedtrumService`: a changed pump setting goes to the patch through the queue, and the
+     * person is told when that fails while a patch is running.
+     */
+    private suspend fun sendUserSettingsToPatch() {
+        val result = commandQueue.setUserOptions()
+        if (isInitialized() && !result.success) {
+            notificationManager.post(NotificationId.PUMP_SETTINGS_FAILED, MedtrumStrings.pump_setting_failed)
+        }
+    }
+
+    // getPreferenceScreenContent() sets the insulin limits of the pump model, like on Android. That
+    // must not happen just because someone asks whether there is a screen.
+    override fun hasPreferences(): Boolean = true
+
+    /**
+     * The settings screen of this plugin: the pump settings of the Android screen, then the pump
+     * chooser and the patch change.
      *
-     * It opens through [withCompose] rather than an Activity, which is how every shared screen
-     * reaches iOS. The screen is shared code - Android could show the very same one - and the only
-     * iPhone part is the discovery session behind it.
+     * The pump settings are the same keys, defaults and limits as on Android. "Scan on connection
+     * error" is left out: the iPhone transport always scans next to its direct connect, so that
+     * switch would change nothing here.
+     *
+     * The two screens open through [withCompose] rather than an Activity, which is how every shared
+     * screen reaches iOS. The only iPhone part is the discovery session behind the chooser.
      */
     override fun getPreferenceScreenContent(): PreferenceItem = PreferenceSubScreenDef(
         key = "medtrum_ios_settings",
-        title = TextRef.Literal(MEDTRUM_IOS_PLUGIN_NAME),
-        summary = MedtrumStrings.medtrum_pick_pump_summary,
-        items = listOf(
+        title = MedtrumStrings.medtrum_pump_setting,
+        items = medtrumIosSettingItems(model(), preferences) + listOf(
             MedtrumIosIntentKey.PickPump.withCompose(
                 ComposeScreenContent { onBack ->
                     val pumps by host.discovery.pumps.collectAsState()
@@ -223,13 +269,66 @@ class IosMedtrumPlugin(
         aapsLogger.debug(LTag.PUMP, "IosMedtrumPlugin onStart()")
         host.openRadio()
         host.startExpiryWarningCheck()
+        // A setting changed while the plugin was stopped is read here.
+        loadUserSettings()
+        settingsWatch?.cancel()
+        val watch = SupervisorJob()
+        settingsWatch = watch
+        watchMedtrumUserSettings(
+            preferences = preferences,
+            scope = CoroutineScope(Dispatchers.Default + watch),
+            aapsLogger = aapsLogger,
+            reload = ::loadUserSettings,
+            sendToPatch = ::sendUserSettingsToPatch
+        )
+    }
+
+    // Transfer to another phone, see [MedtrumHandover]. The same id as the Android driver, so a patch
+    // started there can go on here and the other way round.
+
+    override val handoverId: String = MedtrumHandover.ID
+
+    override suspend fun exportHandover(): HandoverFields? = MedtrumHandover.export(host.state)
+
+    override suspend fun importHandover(fields: HandoverFields): Boolean {
+        val serialHex = MedtrumHandover.import(fields, host.state) ?: return false
+        // Kept the way the scan step keeps them, so a restart finds the same patch.
+        host.store.save(host.state)
+        host.store.savePumpSerial(serialHex)
+        aapsLogger.info(LTag.PUMP, "Medtrum: pairing taken over from another phone, patch ${host.state.patchId}, state ${host.state.pumpState}")
+        return true
     }
 
     override suspend fun onStop() {
         aapsLogger.debug(LTag.PUMP, "IosMedtrumPlugin onStop()")
+        settingsWatch?.cancel()
+        settingsWatch = null
         host.shutdown()
         super.onStop()
     }
+}
+
+/**
+ * The on/off pump settings an iPhone offers: all of Android's except "Scan on connection error",
+ * which the iPhone transport does not need (it always scans).
+ */
+internal val IOS_MEDTRUM_BOOLEAN_KEYS: List<MedtrumBooleanKey> =
+    MedtrumBooleanKey.entries - MedtrumBooleanKey.MedtrumScanOnConnectionErrors
+
+/**
+ * The pump setting entries of the iPhone screen, in the order of the Android screen. Sets the
+ * insulin limits of [pumpType] first, like Android `MedtrumPlugin.getPreferenceScreenContent`.
+ */
+internal fun medtrumIosSettingItems(pumpType: PumpType, preferences: Preferences): List<PreferenceItem> {
+    MedtrumInsulinLimits.applyFor(pumpType, preferences)
+    return listOf(
+        MedtrumStringKey.MedtrumAlarmSettings.withEntriesProvider(provider = { MedtrumInsulinLimits.alarmEntries(pumpType) }),
+        MedtrumBooleanKey.MedtrumWarningNotification,
+        MedtrumBooleanKey.MedtrumPatchExpiration,
+        MedtrumIntKey.MedtrumPumpExpiryWarningHours,
+        MedtrumIntKey.MedtrumHourlyMaxInsulin,
+        MedtrumIntKey.MedtrumDailyMaxInsulin
+    )
 }
 
 /** The pump brand, so it is not translated. */

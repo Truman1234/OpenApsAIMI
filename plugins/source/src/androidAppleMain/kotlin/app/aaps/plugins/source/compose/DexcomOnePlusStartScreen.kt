@@ -56,6 +56,8 @@ import app.aaps.core.ui.compose.stringResource
 import app.aaps.plugins.dexcomoneplus.OnePlusCgmDriver
 import app.aaps.plugins.dexcomoneplus.OnePlusCgmDriverReal
 import app.aaps.plugins.dexcomoneplus.OnePlusCgmDrivers
+import app.aaps.plugins.dexcomoneplus.OnePlusCompetingApp
+import app.aaps.plugins.dexcomoneplus.OnePlusCompetingApps
 import app.aaps.plugins.dexcomoneplus.identity.OnePlusAdvCandidate
 import app.aaps.plugins.dexcomoneplus.identity.OnePlusGs1ApplicatorParser
 import app.aaps.plugins.dexcomoneplus.identity.OnePlusSensorIdentity
@@ -84,10 +86,18 @@ import kotlinx.coroutines.launch
 @Composable
 fun DexcomOnePlusStartScreen(
     host: DexcomOnePlusHost,
+    /**
+     * The slot this visit starts, chosen by the button that opened the screen ("Start / new sensor"
+     * or "Start a pre-soak sensor"). The other slot is shown but disabled, so a production sensor
+     * cannot be started from the pre-soak button by accident, nor the other way round.
+     */
+    initialSlot: SensorSlot = SensorSlot.PRODUCTION,
     permissions: OnePlusBlePermissionGate,
     onBack: () -> Unit,
     onEnsureDriver: () -> OnePlusCgmDriver,
     onActivatePlugin: () -> Unit,
+    /** True while the plugin is stopped: Connect then says so and starts nothing. */
+    isPluginStopped: () -> Boolean,
     onStarted: (SensorSlot) -> Unit,
     /** STAGING only: the user started this sensor now — anchors the pre-soak clock on its MAC. */
     onBeginStaging: (String) -> Boolean,
@@ -101,13 +111,19 @@ fun DexcomOnePlusStartScreen(
      * Called with (MAC of the started sensor, MAC stored before this start).
      */
     onSensorSessionStarted: (String, String?) -> Unit,
+    /**
+     * Reads the applicator barcode with the camera, or null on a phone where the app cannot. Null
+     * leaves the scan button out, so the code is typed.
+     */
+    applicatorScanner: OnePlusApplicatorScanner?,
 ) {
     val window = rememberCgmWindow()
     val scope = rememberCoroutineScope()
     // Which slot the guided flow starts. PRODUCTION keeps the existing behaviour (activates the
     // plugin + feeds the loop after warm-up). STAGING pre-soaks a second sensor collect-only — it
     // never touches the AAPS active BG source until promoted from the status screen.
-    var slot by remember { mutableStateOf(SensorSlot.PRODUCTION) }
+    // A phone with one sensor slot has no pre-soak: it always starts production.
+    var slot by remember { mutableStateOf(if (onStagingDriver == null) SensorSlot.PRODUCTION else initialSlot) }
     // EVERY store read below follows the selected slot. Reading the production store while starting a
     // STAGING sensor pre-filled the old sensor's code and MAC and ranked the scan with the old
     // sensor's fingerprint, so a pre-soak silently re-adopted the sensor already in use (field log
@@ -115,6 +131,9 @@ fun DexcomOnePlusStartScreen(
     val sensorStore = remember(slot) { host.slotStore(OnePlusCgmDrivers.storeNamespace(slot)) }
     val storedSession = remember(slot) { sensorStore.load() }
     val scanner = remember { host.screenScanner() }
+    // Other apps that fight with us for the sensor. Looked up once per visit, and logged there.
+    // Null on a phone that cannot list its apps (iPhone): the card is then absent, not "none found".
+    val competingApps = remember { host.installedApps?.let { OnePlusCompetingApps.installed(it) }.orEmpty() }
     val focusManager = LocalFocusManager.current
 
     var applicatorInput by remember { mutableStateOf("") }
@@ -172,6 +191,7 @@ fun DexcomOnePlusStartScreen(
     val serialNone = stringResource(SourceStrings.dexcom_oneplus_applicator_serial_none)
     val newSensorCodeWarning = stringResource(SourceStrings.dexcom_oneplus_new_sensor_code_warning)
     val stagingIsProduction = stringResource(SourceStrings.dexcom_oneplus_staging_is_production)
+    val pluginStopped = stringResource(SourceStrings.dexcom_oneplus_plugin_stopped)
     var connectRequested by remember { mutableStateOf(false) }
 
     // Guided-flow progress for the stepper: Prepare → Code → Connect → Warm-up.
@@ -199,6 +219,10 @@ fun DexcomOnePlusStartScreen(
     // user with a selected device and no way to validate it — and the slot store still holding the
     // PREVIOUS sensor's MAC.
     val onConnectClick: () -> Unit = onConnectClick@{
+        if (isPluginStopped()) {
+            errorText = pluginStopped
+            return@onConnectClick
+        }
         val identity = parsedIdentity
             ?: OnePlusGs1ApplicatorParser.parse(applicatorInput)
         if (identity == null) {
@@ -395,12 +419,14 @@ fun DexcomOnePlusStartScreen(
                         slot = slot,
                         onSlotChange = { slot = it; errorText = null },
                         slotChoiceOffered = onStagingDriver != null,
+                        competingApps = competingApps,
                         permissions = permissions,
                         applicatorInput = applicatorInput,
                         parsedIdentity = parsedIdentity,
                         errorText = errorText,
                         serialNone = serialNone,
                         storedMac = storedSession?.lastMac,
+                        applicatorScanner = applicatorScanner,
                         onApplicatorChange = { text ->
                             applicatorInput = text
                             parsedIdentity = OnePlusGs1ApplicatorParser.parse(text)
@@ -453,12 +479,14 @@ fun DexcomOnePlusStartScreen(
                             slot = slot,
                             onSlotChange = { slot = it; errorText = null },
                             slotChoiceOffered = onStagingDriver != null,
+                            competingApps = competingApps,
                             permissions = permissions,
                             applicatorInput = applicatorInput,
                             parsedIdentity = parsedIdentity,
                             errorText = errorText,
                             serialNone = serialNone,
                             storedMac = storedSession?.lastMac,
+                            applicatorScanner = applicatorScanner,
                             onApplicatorChange = { text ->
                                 applicatorInput = text
                                 parsedIdentity = OnePlusGs1ApplicatorParser.parse(text)
@@ -554,14 +582,17 @@ private fun ColumnScope.FormPane(
     slot: SensorSlot,
     onSlotChange: (SensorSlot) -> Unit,
     slotChoiceOffered: Boolean,
+    competingApps: List<OnePlusCompetingApp>,
     permissions: OnePlusBlePermissionGate,
     applicatorInput: String,
     parsedIdentity: OnePlusSensorIdentity?,
     errorText: String?,
     serialNone: String,
     storedMac: String?,
+    applicatorScanner: OnePlusApplicatorScanner?,
     onApplicatorChange: (String) -> Unit,
 ) {
+    var scanning by remember { mutableStateOf(false) }
     CgmStepper(
         currentStep = currentStep,
         labels = listOf(
@@ -585,6 +616,8 @@ private fun ColumnScope.FormPane(
             SegmentedButton(
                 selected = slot == SensorSlot.PRODUCTION,
                 onClick = { onSlotChange(SensorSlot.PRODUCTION) },
+                // Locked on the slot the opening button asked for (see `initialSlot`).
+                enabled = slot == SensorSlot.PRODUCTION,
                 shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
             ) {
                 Text(stringResource(SourceStrings.dexcom_oneplus_slot_production_short))
@@ -592,12 +625,15 @@ private fun ColumnScope.FormPane(
             SegmentedButton(
                 selected = slot == SensorSlot.STAGING,
                 onClick = { onSlotChange(SensorSlot.STAGING) },
+                enabled = slot == SensorSlot.STAGING,
                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
             ) {
                 Text(stringResource(SourceStrings.dexcom_oneplus_slot_staging_short))
             }
         }
     }
+
+    if (competingApps.isNotEmpty()) CompetingAppsCard(competingApps)
 
     if (!permissions.granted()) {
         Button(
@@ -632,6 +668,21 @@ private fun ColumnScope.FormPane(
             minLines = 2,
             isError = errorText != null && parsedIdentity == null,
         )
+        applicatorScanner?.let { scanner ->
+            OutlinedButton(onClick = { scanning = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(SourceStrings.dexcom_oneplus_applicator_scan))
+            }
+            if (scanning) {
+                OnePlusApplicatorScanDialog(
+                    scanner = scanner,
+                    onCode = { code ->
+                        scanning = false
+                        onApplicatorChange(code)
+                    },
+                    onDismiss = { scanning = false },
+                )
+            }
+        }
         storedMac?.let { mac ->
             Text(
                 text = stringResource(SourceStrings.dexcom_oneplus_last_mac_hint, mac),
@@ -642,6 +693,29 @@ private fun ColumnScope.FormPane(
     }
 
     if (window.isTwoPane) HelpSection(slot = slot, slotChoiceOffered = slotChoiceOffered)
+}
+
+/**
+ * Warns that another app on this phone may take the sensor from us.
+ *
+ * Open, not folded: it is about this phone, right now, and it explains a refusal before it happens.
+ * One line per app, so no list of names is joined in code.
+ */
+@Composable
+private fun CompetingAppsCard(apps: List<OnePlusCompetingApp>) {
+    CgmCard(tone = CgmCardTone.Warning) {
+        CgmCardHeader(stringResource(SourceStrings.dexcom_oneplus_competing_apps_title))
+        Text(
+            text = stringResource(SourceStrings.dexcom_oneplus_competing_apps_message),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        apps.forEach { app ->
+            Text(
+                text = app.label,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
 }
 
 /**
@@ -762,6 +836,7 @@ private fun LazyListScope.deviceItems(
                 device = device,
                 selected = selectedAddress == device.address,
                 lastUsed = storedMac?.equals(device.address, ignoreCase = true) == true,
+                slotHeld = DexcomOnePlusStartRules.showsSlotHeld(device, storedMac),
                 onClick = { onDeviceClick(device) },
             )
         }
@@ -773,6 +848,7 @@ private fun DeviceRow(
     device: OnePlusScanResult,
     selected: Boolean,
     lastUsed: Boolean,
+    slotHeld: Boolean,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(AapsSpacing.large)
@@ -817,6 +893,15 @@ private fun DeviceRow(
                     text = stringResource(SourceStrings.dexcom_oneplus_scan_last_used),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            // Ranked below the free sensors already; this says why, so the user does not pick it
+            // by mistake and get a refusal.
+            if (slotHeld) {
+                Text(
+                    text = stringResource(SourceStrings.dexcom_oneplus_scan_slot_held),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
         }

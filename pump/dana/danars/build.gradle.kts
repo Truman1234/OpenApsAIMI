@@ -61,6 +61,8 @@ kotlin {
                 implementation(libs.org.skyscreamer.jsonassert)
                 implementation(libs.kotlinx.coroutines.test)
                 implementation(libs.org.json.android)
+                // The shared Bluetooth transport contract runs on Robolectric, a JUnit 4 runner.
+                implementation(libs.org.robolectric)
                 runtimeOnly(libs.org.junit.vintage.engine)
                 runtimeOnly(libs.org.junit.platform.launcher)
             }

@@ -3,12 +3,12 @@ package app.aaps.plugins.aps.openAPSAIMI.compose
 import app.aaps.core.keys.interfaces.BooleanPreferenceKey
 import app.aaps.core.keys.interfaces.DoublePreferenceKey
 import app.aaps.core.keys.interfaces.IntPreferenceKey
-import app.aaps.core.keys.interfaces.LongNonPreferenceKey
 import app.aaps.core.keys.interfaces.NonPreferenceKey
 import app.aaps.core.keys.interfaces.PreferenceKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.interfaces.StringPreferenceKey
 import app.aaps.core.keys.interfaces.TextRef
+import app.aaps.plugins.aps.openAPSAIMI.NightGrowthActivation
 import kotlin.math.abs
 
 /**
@@ -24,14 +24,19 @@ import kotlin.math.abs
  */
 /**
  * Who changed a setting, in display order. The localized label comes from
- * [AimiSettingsAuditStrings.label], because the strings live in Android resources.
+ * `AimiSettingsAuditChangedBy.label(strings)`, so a test can pass its own text.
  */
 internal enum class AimiSettingsAuditChangedBy {
     LOOP,
     SLIDER,
-    PRESET,
     USER,
 }
+
+/** A value as the audit screen shows it: a plain text, or a string such as yes / no. */
+internal data class AimiValueDescriptor(
+    val valueText: String? = null,
+    val valueResId: TextRef? = null,
+)
 
 /**
  * One AIMI setting whose stored value is not what the app ships.
@@ -76,15 +81,9 @@ internal data class AimiSettingsAuditRow(
      */
     val storedValueIgnored: Boolean,
     /**
-     * True when the loop is the only writer, so the stored value is runtime state, not a setting.
-     *
-     * Such a row is shown, because seeing it is the point of this screen, but it offers no reset:
-     * the loop would write it again on the next tick, and for `AimiLongKey.LastPrebolusTime` the
-     * reset would be harmful — that stored time is the half of the 20-minute SMB spacing that
-     * survives a restart, and zeroing it tells the next tick no SMB was ever given.
+     * Writes the key's own shipped default back to [Preferences]. For the night growth age and switch
+     * it removes the stored value instead, because for them "never stored" is the default behaviour.
      */
-    val runtimeState: Boolean,
-    /** Writes the key's own shipped default back to [Preferences]. */
     val resetToDefault: (Preferences) -> Unit,
 ) {
     init {
@@ -116,10 +115,11 @@ internal data class AimiSettingsAuditReport(
  * Compose, no Android view code. The screen only renders what [build] returns, which is what lets
  * `AimiSettingsAuditTest` cover it without a device.
  *
- * A key the wizard sets for itself and the person never sees ([AimiSettingsWriter.BOOKKEEPING]
- * alone, today only `OApsAIMIPkpdSetupWizardCompleted`) is left out: it needs no screen anywhere,
- * including this one. Every other entry is in scope — including a key no settings screen lets the
- * person reach today ([AimiSettingsManifest.REACHABILITY_DEBT]). The reset button here is the one
+ * Every entry is in scope — including a key no settings screen lets the person reach today
+ * ([AimiSettingsManifest.REACHABILITY_DEBT]). Bookkeeping flags such as "the PK/PD wizard has run"
+ * and every internal state key ([AimiSettingsManifest.INTERNAL_STATE]: the learned PK/PD state, the
+ * loop and meal advisor state) have no entry, so they are
+ * never shown here. The reset button here is the one
  * way to correct such a key from inside the app, which is exactly why it belongs on this screen.
  */
 internal object AimiSettingsAudit {
@@ -128,7 +128,7 @@ internal object AimiSettingsAudit {
     private const val DOUBLE_SAME_VALUE_EPSILON = 0.0001
 
     fun build(preferences: Preferences, strings: AimiSettingsAuditStrings): AimiSettingsAuditReport {
-        val scoped = AimiSettingsManifest.entries.filterNot { it.writers == setOf(AimiSettingsWriter.BOOKKEEPING) }
+        val scoped = AimiSettingsManifest.entries
         val rows = scoped.mapNotNull { entry -> rowFor(preferences, entry, strings) }
         return AimiSettingsAuditReport(rows = rows, scopedCount = scoped.size)
     }
@@ -150,7 +150,6 @@ internal object AimiSettingsAudit {
             defaultValue = if (entry.secret) null else diff.default,
             isSet = diff.isSet,
             storedValueIgnored = diff.ignored,
-            runtimeState = entry.writers == setOf(AimiSettingsWriter.LOOP),
             resetToDefault = diff.reset,
         )
     }
@@ -158,11 +157,13 @@ internal object AimiSettingsAudit {
     private fun changedByOf(writers: Set<AimiSettingsWriter>): AimiSettingsAuditChangedBy = when {
         AimiSettingsWriter.LOOP in writers   -> AimiSettingsAuditChangedBy.LOOP
         AimiSettingsWriter.SLIDER in writers -> AimiSettingsAuditChangedBy.SLIDER
-        AimiSettingsWriter.PRESET in writers -> AimiSettingsAuditChangedBy.PRESET
         else                                 -> AimiSettingsAuditChangedBy.USER
     }
 
-    /** One key's comparison result. Never built for a key whose stored value matches its default. */
+    /**
+     * One key's comparison result. Never built for a key whose stored value matches its default, except
+     * the keys of [NightGrowthActivation.STORED_OR_NOT_KEYS] (see `storedOrNotDiff`).
+     */
     private class Diff(
         val stored: AimiValueDescriptor,
         val default: AimiValueDescriptor,
@@ -179,7 +180,15 @@ internal object AimiSettingsAudit {
     ): Diff? = when (key) {
         is BooleanPreferenceKey -> {
             val stored = preferences.getIfExists(key)
-            if (stored == null || stored == key.defaultValue) null
+            if (key in NightGrowthActivation.STORED_OR_NOT_KEYS) {
+                storedOrNotDiff(
+                    stored = stored,
+                    storedDescriptor = booleanDescriptor(stored ?: false, strings),
+                    key = key,
+                    ignored = preferences.get(key) != stored,
+                    strings = strings,
+                )
+            } else if (stored == null || stored == key.defaultValue) null
             else Diff(
                 stored = booleanDescriptor(stored, strings),
                 default = booleanDescriptor(key.defaultValue, strings),
@@ -203,7 +212,15 @@ internal object AimiSettingsAudit {
 
         is IntPreferenceKey     -> {
             val stored = preferences.getIfExists(key)
-            if (stored == null || stored == key.defaultValue) null
+            if (key in NightGrowthActivation.STORED_OR_NOT_KEYS) {
+                storedOrNotDiff(
+                    stored = stored,
+                    storedDescriptor = AimiValueDescriptor(valueText = stored.toString()),
+                    key = key,
+                    ignored = preferences.get(key) != stored,
+                    strings = strings,
+                )
+            } else if (stored == null || stored == key.defaultValue) null
             else Diff(
                 stored = AimiValueDescriptor(valueText = stored.toString()),
                 default = AimiValueDescriptor(valueText = key.defaultValue.toString()),
@@ -225,20 +242,31 @@ internal object AimiSettingsAudit {
             )
         }
 
-        is LongNonPreferenceKey -> {
-            val stored = preferences.getIfExists(key)
-            if (stored == null || stored == key.defaultValue) null
-            else Diff(
-                stored = AimiValueDescriptor(valueText = stored.toString()),
-                default = AimiValueDescriptor(valueText = key.defaultValue.toString()),
-                isSet = true,
-                ignored = preferences.get(key) != stored,
-                reset = { prefs -> prefs.put(key, key.defaultValue) },
-            )
-        }
-
         else                    -> null
     }
+
+    /**
+     * The row of a key where "never stored" is its own state ([NightGrowthActivation.STORED_OR_NOT_KEYS]).
+     * A stored value equal to the key default still changes what the loop does (a stored age 14 turns
+     * night growth support on, nothing stored means an adult and off). So the row shows for any stored
+     * value, the default column says "not set", and the reset removes the stored value instead of
+     * writing the key default.
+     */
+    private fun storedOrNotDiff(
+        stored: Any?,
+        storedDescriptor: AimiValueDescriptor,
+        key: NonPreferenceKey,
+        ignored: Boolean,
+        strings: AimiSettingsAuditStrings,
+    ): Diff? =
+        if (stored == null) null
+        else Diff(
+            stored = storedDescriptor,
+            default = AimiValueDescriptor(valueResId = strings.notSet),
+            isSet = true,
+            ignored = ignored,
+            reset = { prefs -> prefs.remove(key) },
+        )
 
     /**
      * Two values differ by more than [DOUBLE_SAME_VALUE_EPSILON] but the shared formatter rounds to
@@ -246,8 +274,8 @@ internal object AimiSettingsAudit {
      * audit. When that happens, both columns fall back to full precision.
      */
     private fun doubleText(value: Double, other: Double): String {
-        val formatted = formatControlCenterDoubleValue(value, unit = null)
-        return if (formatted == formatControlCenterDoubleValue(other, unit = null)) value.toString() else formatted
+        val formatted = formatAimiNumber(value, unit = null)
+        return if (formatted == formatAimiNumber(other, unit = null)) value.toString() else formatted
     }
 
     private fun booleanDescriptor(value: Boolean, strings: AimiSettingsAuditStrings): AimiValueDescriptor =

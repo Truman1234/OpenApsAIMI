@@ -420,7 +420,8 @@ enum class IntKey(
      * mmol/L), which is right for a glucose level but wrong for a small difference: 30 mg/dL was shown
      * as 540, and a typed 25 was stored as 450, so the alarm could never fire. The key string ends in
      * `_mgdl` because the old `alert_rapid_fall_drop` holds a float, which an int read cannot load,
-     * and its value was already wrong. The old value is ignored and the default applies.
+     * and its value was often wrong. `PreferenceMigrations` copies the old value once, and only when
+     * it is inside 15-60 mg/dL; any other old value is dropped and the default applies.
      */
     AlertRapidFallDrop(
         key = "alert_rapid_fall_drop_mgdl",
@@ -439,6 +440,166 @@ enum class IntKey(
         max = 30,
         title = KeysStrings.pref_title_alert_rapid_fall_window,
         dependency = BooleanKey.AlertRapidFall,
+        unitType = UnitType.MIN
+    ),
+    /** Rise rate alarm: how much glucose must rise within [AlertRapidRiseWindow]. A difference, so mg/dL always, like [AlertRapidFallDrop]. */
+    AlertRapidRiseAmount(
+        key = "alert_rapid_rise_mgdl",
+        defaultValue = 30,
+        min = 15,
+        max = 60,
+        title = KeysStrings.pref_title_alert_rapid_rise_amount,
+        summary = KeysStrings.pref_summary_alert_rapid_rise_amount,
+        dependency = BooleanKey.AlertRapidRise,
+        unitType = UnitType.MGDL
+    ),
+    AlertRapidRiseWindow(
+        key = "alert_rapid_rise_window",
+        defaultValue = 15,
+        min = 5,
+        max = 30,
+        title = KeysStrings.pref_title_alert_rapid_rise_window,
+        dependency = BooleanKey.AlertRapidRise,
+        unitType = UnitType.MIN
+    ),
+    /** High alarm: how long glucose must stay high before the first alarm. 0 = at once. */
+    AlertHyperDelay(
+        key = "alert_cgm_high_delay_minutes",
+        defaultValue = 0,
+        min = 0,
+        max = 240,
+        title = KeysStrings.pref_title_alert_delay_first,
+        summary = KeysStrings.pref_summary_alert_delay_first,
+        dependency = BooleanKey.AlertHyper,
+        unitType = UnitType.MIN
+    ),
+    AlertCgmExpiringLeadHours(
+        key = "alert_cgm_expiring_lead_hours",
+        defaultValue = 12,
+        min = 1,
+        max = 48,
+        title = KeysStrings.pref_title_alert_cgm_expiring_lead,
+        dependency = BooleanKey.AlertCgmSensorExpiring,
+        unitType = UnitType.HOURS
+    ),
+    AlertCgmSignalLostMinutes(
+        key = "alert_cgm_signal_lost_minutes",
+        defaultValue = 10,
+        min = 5,
+        max = 60,
+        title = KeysStrings.pref_title_alert_cgm_signal_lost_delay,
+        dependency = BooleanKey.AlertCgmSignalLost,
+        unitType = UnitType.MIN
+    ),
+    AlertCgmSensorIssueMinutes(
+        key = "alert_cgm_sensor_issue_minutes",
+        defaultValue = 20,
+        min = 0,
+        max = 60,
+        title = KeysStrings.pref_title_alert_cgm_sensor_issue_delay,
+        dependency = BooleanKey.AlertCgmSensorIssue,
+        unitType = UnitType.MIN
+    ),
+    // Repeat after "Acknowledge": the alarm stays quiet this long, then goes off again if its cause is
+    // still there. 0 = not again until the cause has gone. Urgent low always comes back, within 30 min.
+    AlertUrgentLowRepeat(
+        key = "alert_cgm_urgent_low_repeat_minutes",
+        defaultValue = 30,
+        min = 5,
+        max = 30,
+        title = KeysStrings.pref_title_alert_repeat,
+        summary = KeysStrings.pref_summary_alert_repeat_urgent_low,
+        dependency = BooleanKey.AlertUrgentLow,
+        unitType = UnitType.MIN
+    ),
+    AlertUrgentLowSoonRepeat(
+        key = "alert_cgm_urgent_low_soon_repeat_minutes",
+        defaultValue = 30,
+        min = 0,
+        max = 240,
+        title = KeysStrings.pref_title_alert_repeat,
+        summary = KeysStrings.pref_summary_alert_repeat,
+        dependency = BooleanKey.AlertUrgentLowSoon,
+        unitType = UnitType.MIN
+    ),
+    AlertHypoRepeat(
+        key = "alert_cgm_low_repeat_minutes",
+        defaultValue = 15,
+        min = 0,
+        max = 240,
+        title = KeysStrings.pref_title_alert_repeat,
+        summary = KeysStrings.pref_summary_alert_repeat,
+        dependency = BooleanKey.AlertHypo,
+        unitType = UnitType.MIN
+    ),
+    AlertRapidFallRepeat(
+        key = "alert_cgm_fall_rate_repeat_minutes",
+        defaultValue = 15,
+        min = 0,
+        max = 240,
+        title = KeysStrings.pref_title_alert_repeat,
+        summary = KeysStrings.pref_summary_alert_repeat,
+        dependency = BooleanKey.AlertRapidFall,
+        unitType = UnitType.MIN
+    ),
+    AlertHyperRepeat(
+        key = "alert_cgm_high_repeat_minutes",
+        defaultValue = 30,
+        min = 0,
+        max = 240,
+        title = KeysStrings.pref_title_alert_repeat,
+        summary = KeysStrings.pref_summary_alert_repeat,
+        dependency = BooleanKey.AlertHyper,
+        unitType = UnitType.MIN
+    ),
+    AlertRapidRiseRepeat(
+        key = "alert_cgm_rise_rate_repeat_minutes",
+        defaultValue = 30,
+        min = 0,
+        max = 240,
+        title = KeysStrings.pref_title_alert_repeat,
+        summary = KeysStrings.pref_summary_alert_repeat,
+        dependency = BooleanKey.AlertRapidRise,
+        unitType = UnitType.MIN
+    ),
+    AlertCgmSensorFailedRepeat(
+        key = "alert_cgm_sensor_failed_repeat_minutes",
+        defaultValue = 0,
+        min = 0,
+        max = 240,
+        title = KeysStrings.pref_title_alert_repeat,
+        summary = KeysStrings.pref_summary_alert_repeat,
+        dependency = BooleanKey.AlertCgmSensorFailed,
+        unitType = UnitType.MIN
+    ),
+    AlertCgmSensorExpiredRepeat(
+        key = "alert_cgm_sensor_expired_repeat_minutes",
+        defaultValue = 0,
+        min = 0,
+        max = 240,
+        title = KeysStrings.pref_title_alert_repeat,
+        summary = KeysStrings.pref_summary_alert_repeat,
+        dependency = BooleanKey.AlertCgmSensorExpired,
+        unitType = UnitType.MIN
+    ),
+    AlertCgmSignalLostRepeat(
+        key = "alert_cgm_signal_lost_repeat_minutes",
+        defaultValue = 30,
+        min = 0,
+        max = 240,
+        title = KeysStrings.pref_title_alert_repeat,
+        summary = KeysStrings.pref_summary_alert_repeat,
+        dependency = BooleanKey.AlertCgmSignalLost,
+        unitType = UnitType.MIN
+    ),
+    AlertCgmSensorIssueRepeat(
+        key = "alert_cgm_sensor_issue_repeat_minutes",
+        defaultValue = 30,
+        min = 0,
+        max = 240,
+        title = KeysStrings.pref_title_alert_repeat,
+        summary = KeysStrings.pref_summary_alert_repeat,
+        dependency = BooleanKey.AlertCgmSensorIssue,
         unitType = UnitType.MIN
     ),
 
@@ -486,19 +647,9 @@ enum class IntKey(
     OApsAIMIBFinterval("key_oaps_aimi_BF_interval", 3, 1, 20, defaultedBySM = true, title = KeysStrings.pref_title_oaps_aimi_b_finterval),
     OApsAIMISleepinterval("key_oaps_aimi_sleep_interval", 3, 1, 20, defaultedBySM = true, title = KeysStrings.pref_title_oaps_aimi_sleepinterval),
     //OApsAIMIautodriveISF("key_oaps_aimi_autodriveISF",5,1,500),
-    OApsAIMIAutodriveTarget("key_oaps_aimi_autodriveTarget",70,1,160, title = KeysStrings.pref_title_oaps_aimi_autodrive_target),
-    OApsAIMIAutodriveBG("key_oaps_aimi_autodriveBG",90,1,160, title = KeysStrings.pref_title_oaps_aimi_autodrive_bg),
     OApsAIMIWCycleAvgLength("key_wcycle_avg_length", 28, 20, 90, title = KeysStrings.pref_title_oaps_aimi_w_cycle_avg_length),
     OApsAIMINightGrowthAgeYears("key_oaps_aimi_ngr_age_years", 14, 1, 25, title = KeysStrings.pref_title_oaps_aimi_night_growth_age_years),
-    OApsAIMINightGrowthMinDurationMin("key_oaps_aimi_ngr_min_duration", 30, 5, 240, title = KeysStrings.pref_title_oaps_aimi_night_growth_min_duration_min),
-    OApsAIMINightGrowthMinEventualOverTarget("key_oaps_aimi_ngr_min_eventual_over_target", 15, 0, 120, title = KeysStrings.pref_title_oaps_aimi_night_growth_min_eventual_over_target),
-    OApsAIMINightGrowthDecayMinutes("key_oaps_aimi_ngr_decay_minutes", 20, 0, 120, title = KeysStrings.pref_title_oaps_aimi_night_growth_decay_minutes),
-    OApsAIMIlogsize("key_oaps_aimi_logsize",25,1,50, title = KeysStrings.pref_title_oaps_aimi_logsize),
     // --- AIMI Adaptive Basal ---
-    OApsAIMIKickerStartMin(key = "OApsAIMIKickerStartMin", defaultValue = 10, min = 5, max = 30, title = KeysStrings.pref_title_oaps_aimi_kicker_start_min), // first plateau kick length (min)
-    OApsAIMIKickerMaxMin(key = "OApsAIMIKickerMaxMin", defaultValue = 30, min = 10, max = 60, title = KeysStrings.pref_title_oaps_aimi_kicker_max_min), // max plateau kick length (min)
-    OApsAIMIZeroResumeMin(key = "OApsAIMIZeroResumeMin", defaultValue = 10, min = 5, max = 30, title = KeysStrings.pref_title_oaps_aimi_zero_resume_min), // delay before micro resume (minutes at 0)
-    OApsAIMIZeroResumeMax(key = "OApsAIMIZeroResumeMax", defaultValue = 30, min = 10, max = 60, title = KeysStrings.pref_title_oaps_aimi_zero_resume_max), // max micro resume length
     /** Seconds without loop_tick_end after a tick pulse; used by the loop blackbox watchdog (60–600). */
     OApsAIMIIntratickStallSeconds("key_aimi_intratick_stall_seconds", 180, 60, 600, title = KeysStrings.pref_title_oaps_aimi_intratick_stall_seconds),
     // --- AI Decision Auditor ---
@@ -506,7 +657,13 @@ enum class IntKey(
     AimiAuditorTimeoutSeconds("aimi_auditor_timeout_seconds", 120, 30, 300, title = KeysStrings.pref_title_aimi_auditor_timeout_seconds), // API timeout (seconds)
     AimiAuditorMinConfidence("aimi_auditor_min_confidence", 65, 50, 95, title = KeysStrings.pref_title_aimi_auditor_min_confidence), // Min confidence % to apply modulation
     // 🌸 Endometriosis & Cycle Management (MTR)
-    AimiEndometriosisFlareDuration("aimi_endo_flare_duration", 4, 1, 24, title = KeysStrings.pref_title_aimi_endometriosis_flare_duration),
+    /** How long a declared pain flare acts before it ends by itself (`EndometriosisFlareClock`). */
+    AimiEndometriosisFlareDuration(
+        "aimi_endo_flare_duration", 4, 1, 24,
+        title = KeysStrings.pref_title_aimi_endometriosis_flare_duration,
+        summary = KeysStrings.pref_summary_aimi_endometriosis_flare_duration,
+        unitType = UnitType.HOURS,
+    ),
     // 🌀 Adaptive Kernel Bank (Cosine Gate)
     AimiCosineGateMaxPeakShift("aimi_cosine_gate_max_shift", 15, 0, 60, title = KeysStrings.pref_title_aimi_cosine_gate_max_peak_shift),
     // Emergency SOS (Hypo) — SMS-only advanced manager

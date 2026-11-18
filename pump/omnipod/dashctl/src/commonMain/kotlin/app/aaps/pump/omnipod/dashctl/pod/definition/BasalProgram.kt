@@ -17,14 +17,31 @@ class BasalProgram(
 
     fun hasZeroUnitSegments() = segments.any { it.basalRateInHundredthUnitsPerHour == 0 }
 
-    fun rateAt(date: Long): Double {
-        val ldt = Instant.fromEpochMilliseconds(date).toLocalDateTime(TimeZone.currentSystemDefault())
+    fun rateAt(date: Long): Double = rateAt(date, TimeZone.currentSystemDefault())
+
+    /**
+     * [rateAt] read in [timeZone]. Android `rateAt` always reads the default time zone; the basal drift
+     * (`DashBasalDrift.integrateExpectedDelivery`) passes the phone time zone, so its tests can set it.
+     */
+    fun rateAt(date: Long, timeZone: TimeZone): Double {
+        val ldt = Instant.fromEpochMilliseconds(date).toLocalDateTime(timeZone)
         val hourOfDay = ldt.hour
         val minuteOfHour = ldt.minute
         val slotIndex = hourOfDay * 2 + minuteOfHour.div(30)
         val slot = segments.find { it.startSlotIndex <= slotIndex && slotIndex < it.endSlotIndex }
         return (slot?.basalRateInHundredthUnitsPerHour ?: 0).toDouble() / 100
     }
+
+    /**
+     * Android `BasalProgram.hourlyRates` (#2454): the insulin of each hour of the day from midnight, in
+     * U/h, the mean rate of its two half-hour slots. Hour values only, like the running profile in
+     * AAPS. A profile with hourly rates gives back its rates as the pod got them.
+     */
+    fun hourlyRates(): List<Double> =
+        (0 until 24).map { hour -> (rateInHundredthsAtSlot(2 * hour) + rateInHundredthsAtSlot(2 * hour + 1)) / 200.0 }
+
+    private fun rateInHundredthsAtSlot(slotIndex: Int): Int =
+        segments.find { it.startSlotIndex <= slotIndex && slotIndex < it.endSlotIndex }?.basalRateInHundredthUnitsPerHour ?: 0
 
     class Segment(
         val startSlotIndex: Short,

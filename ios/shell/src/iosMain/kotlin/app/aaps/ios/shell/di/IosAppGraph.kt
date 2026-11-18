@@ -2,6 +2,7 @@ package app.aaps.ios.shell.di
 
 import app.aaps.core.interfaces.alerts.EatReminder
 import app.aaps.core.interfaces.aps.AimiAuditorReport
+import app.aaps.core.interfaces.alerts.LocalAlertUtils
 import app.aaps.core.interfaces.bgQualityCheck.BgQualityCheck
 import app.aaps.core.interfaces.clientcontrol.ClientControlActionDispatcher
 import app.aaps.core.interfaces.configuration.Config
@@ -40,6 +41,7 @@ import app.aaps.core.interfaces.ui.UiRestart
 import app.aaps.core.interfaces.ui.UrlOpener
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.core.interfaces.utils.DecimalFormatter
+import app.aaps.core.interfaces.utils.fabric.CrashReporter
 import app.aaps.core.interfaces.utils.fabric.FabricPrivacy
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.interfaces.VisibilityContext
@@ -98,14 +100,19 @@ import kotlinx.coroutines.CoroutineScope
  * honour its ports, because a plugin that is wired up and half fed would dose an iPhone
  * differently from an Android phone.
  *
- * All seven ports now have a real iOS side: `AimiStepsLifecycle` over HealthKit,
- * `AimiPhysioLifecycle`, `AimiTrainingScheduler`, `AimiStorageStatusSource`, `AimiAuditorNotifier`,
- * `AimiPlatformPreferenceItems` and `AimiTickCaptureHook`. `AimiStorage` and
- * `HormonitorStudyExporterProvider` are in `IosAimiPlatformBindings`.
+ * Every platform port of the plugin has a real iOS side, contributed to `AppScope` by its own
+ * `Ios*` class: `AimiStepsLifecycle` (HealthKit), `AimiPhysioLifecycle`, `AimiTrainingScheduler`,
+ * `AimiStorageStatusSource`, `AimiAuditorNotifier`, `AimiPlatformPreferenceItems`,
+ * `AimiPlatformActions` (since step S4: the profile screen link of the Essentials page, through
+ * `PendingNavigation`, which `AapsAppHost` collects) and `AimiTickCaptureHook`. The same eight are the
+ * `PLATFORM_PORT_FIELDS` of the Android `AimiPlatformPortsWiredTest`; add a new port to both.
+ * `AimiStorage` and `HormonitorStudyExporterProvider` are in `IosAimiPlatformBindings`; the HealthKit
+ * physio sources in `IosAimiPhysioBindings`; `AimiKeyValueCache` is `IosAimiKeyValueCache`.
  *
  * The phone is a master (`IosConfig`), so these plugins really reach a pump and a sensor: the iOS
- * Medtrum driver (`IosMedtrumPlugin`) and the Dexcom ONE+ / G7 driver (`DexcomOnePlusPlugin`) are
- * contributed to the plugin map below, beside `VirtualPumpPlugin` and `NSClientSourcePlugin`.
+ * Medtrum driver (`IosMedtrumPlugin`), the Omnipod Dash driver (`IosOmnipodDashPlugin`, from
+ * `:pump:omnipod:dashctl`) and the Dexcom ONE+ / G7 driver (`DexcomOnePlusPlugin`) are contributed to
+ * the plugin map below, beside `VirtualPumpPlugin` and `NSClientSourcePlugin`.
  */
 @DependencyGraph(AppScope::class)
 interface IosAppGraph : MetroViewModelMultibindings {
@@ -113,6 +120,13 @@ interface IosAppGraph : MetroViewModelMultibindings {
     // Everything AapsAppRoot needs.
     val config: Config
     val preferences: Preferences
+
+    /**
+     * Exposed so startup can read the reporting opt-out through [FabricPrivacy.fabricEnabled] and
+     * push it into Crashlytics, rather than through [preferences], which answers the shared default
+     * for this Simple-Mode-defaulted key. The AIMI engine graph uses it too.
+     */
+    val fabricPrivacy: FabricPrivacy
 
     /** Collected by the composition root, which rebuilds when it moves. */
     val uiRestart: UiRestart
@@ -180,13 +194,6 @@ interface IosAppGraph : MetroViewModelMultibindings {
     val tirCalculator: TirCalculator
 
     /**
-     * Analytics/crash-reporting privacy gate. The iOS implementation logs locally
-     * only (no Firebase upload); see `FabricPrivacyImpl` for the rationale.
-     * Exposed for the AIMI engine graph.
-     */
-    val fabricPrivacy: FabricPrivacy
-
-    /**
      * The plugin registry itself, not just the [ActivePlugin] view of it.
      *
      * `PluginStore.plugins` is a `lateinit` that something has to fill at start up - `MainApp` does
@@ -235,6 +242,14 @@ interface IosAppGraph : MetroViewModelMultibindings {
     val automationRuntime: AutomationRuntime
     // The periodic housekeeping shared with Android, and the scope the shell drives it on.
     val periodicMaintenance: PeriodicMaintenance
+
+    /**
+     * The local alarms, for one call Android makes and this shell has to make too:
+     * `preSnoozeAlarms` holds the stale-data alarm back for five minutes so the first Nightscout
+     * round can land before the database is judged out of date.
+     */
+    val localAlertUtils: LocalAlertUtils
+
     // Turns a snackbar into a notification when no screen is up to show it. Shared with Android.
     val snackbarNotificationFallback: SnackbarNotificationFallback
     val eatReminder: EatReminder
@@ -315,7 +330,13 @@ interface IosAppGraph : MetroViewModelMultibindings {
              * So it arrives here instead. Until it did, iOS had a placeholder that returned null and
              * the client simply never connected, while desktop worked.
              */
-            @Provides nsSocketFactory: NsSocketFactory
+            @Provides nsSocketFactory: NsSocketFactory,
+            /**
+             * Firebase Crashlytics, handed in for the same reason as the socket: the implementation
+             * is a Swift class on the Firebase Apple SDK, and a Swift class cannot carry a Kotlin
+             * annotation. `FabricPrivacyImpl` takes it and reports through it.
+             */
+            @Provides crashReporter: CrashReporter
         ): IosAppGraph
     }
 }

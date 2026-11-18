@@ -1,6 +1,8 @@
 package app.aaps.plugins.aps.openAPSAIMI.tpo
 
+import app.aaps.core.interfaces.concurrent.AapsLock
 import app.aaps.core.interfaces.concurrent.aapsIoDispatcher
+import app.aaps.core.interfaces.concurrent.withLock
 
 import app.aaps.plugins.aps.openAPSAIMI.aimiWallClockMs
 import app.aaps.plugins.aps.openAPSAIMI.ports.AimiTpo
@@ -13,7 +15,7 @@ import app.aaps.plugins.aps.openAPSAIMI.advisor.AiCoachingService
 import app.aaps.plugins.aps.openAPSAIMI.advisor.data.AdvisorHistoryRepository
 import app.aaps.plugins.aps.openAPSAIMI.compose.AimiAutonomyMode
 import app.aaps.plugins.aps.openAPSAIMI.compose.authorityRank
-import app.aaps.plugins.aps.openAPSAIMI.compose.readAimiControlCenterDraft
+import app.aaps.plugins.aps.openAPSAIMI.compose.autonomyModeFromAutodrive
 import app.aaps.plugins.aps.openAPSAIMI.patient.PatientStateSnapshot
 import app.aaps.plugins.aps.openAPSAIMI.safety.CorrectionAggressionGate
 import app.aaps.plugins.aps.openAPSAIMI.utils.AimiKeyValueCache
@@ -51,6 +53,21 @@ class TpoOrchestrator @Inject constructor(
     @Volatile
     private var llmValidationInFlight: Boolean = false
 
+    /**
+     * One writer of the session at a time: the loop tick, and the manual Boost started from a screen on
+     * another thread.
+     */
+    private val sessionLock = AapsLock()
+
+    /** What the last tick saw, for the manual Boost guards. Kept even when automatic TPO is off. */
+    @Volatile
+    internal var lastBoostTick: TpoBoostTick? = null
+        private set
+
+    /** How long the current proposal has lasted. A session starts only once it is confirmed. */
+    @Volatile
+    private var signalStreak = TpoSignalStreak()
+
     override fun consumePrefsChangedThisTick(): Boolean {
         val changed = prefsChangedThisTick
         prefsChangedThisTick = false
@@ -59,7 +76,39 @@ class TpoOrchestrator @Inject constructor(
 
     fun currentSession(): TpoSessionDocument? = sessionManager.currentSession()
 
-    fun revertNow(): Boolean {
+    /**
+     * Start the manual Boost. The caller (`TpoBoostController`) has checked the guards.
+     *
+     * A protective session that is running ends first and gives its values back, so [buildPlan] reads the
+     * user's own values. A Boost that is already running is never started twice.
+     *
+     * @return the session, or null when a Boost already runs or there is nothing to change
+     */
+    internal fun startManualBoost(nowMs: Long, buildPlan: () -> TpoApplyPlan): TpoSessionDocument? = sessionLock.withLock {
+        val active = sessionManager.currentSession()
+        if (active != null && (active.status == TpoSessionStatus.ACTIVE || active.status == TpoSessionStatus.PENDING_LLM)) {
+            if (active.packId == TpoPackId.MANUAL_BOOST) return null
+            sessionManager.supersedeActiveSession(preferences, historyRepo, nowMs)
+            prefsChangedThisTick = true
+            notifySessionEnded(TpoEndReason.SUPERSEDED)
+            aapsLogger.info(LTag.APS, "TPO ${active.packId.name} replaced by a manual boost")
+        }
+        val plan = buildPlan()
+        if (plan.changes.isEmpty()) return null
+        val session = sessionManager.startSession(plan, preferences, nowMs, llmResult = null, historyRepo = historyRepo, ttlMs = TpoBoostPlan.TTL_MS)
+        prefsChangedThisTick = true
+        notifySessionStarted(session)
+        aapsLogger.info(LTag.APS, "TPO manual boost started, ${plan.changes.size} keys")
+        session
+    }
+
+    /** True while a manual Boost runs, so the dosing keeps the target at 80 mg/dL at most. */
+    override fun manualBoostActive(nowMs: Long): Boolean {
+        val session = sessionManager.currentSession() ?: return false
+        return session.packId == TpoPackId.MANUAL_BOOST && session.status == TpoSessionStatus.ACTIVE && session.expiresAtMs > nowMs
+    }
+
+    fun revertNow(): Boolean = sessionLock.withLock {
         val changed = sessionManager.revertNow(preferences, historyRepo, aimiWallClockMs())
         if (changed) {
             prefsChangedThisTick = true
@@ -68,7 +117,7 @@ class TpoOrchestrator @Inject constructor(
         return changed
     }
 
-    override fun onTickStart(nowMs: Long): Boolean {
+    override fun onTickStart(nowMs: Long): Boolean = sessionLock.withLock {
         // Always expire/revert active sessions even when TPO master switch is off.
         val changed = sessionManager.expireIfNeeded(nowMs, preferences, historyRepo)
         if (changed) {
@@ -87,10 +136,27 @@ class TpoOrchestrator @Inject constructor(
         deltaMgdl5m: Double,
         cobGrams: Double,
         minBgLookback75m: Double,
+        declaredMealEpisode: Boolean,
         nowMs: Long,
-    ): Boolean {
+    ): Boolean = sessionLock.withLock {
+        lastBoostTick = TpoBoostTick(
+            nowMs = nowMs,
+            bgMgdl = bgMgdl,
+            deltaMgdl5m = deltaMgdl5m,
+            minBgLookback75m = minBgLookback75m,
+            reboundGuardActive = correctionAggressionDecision?.tier == CorrectionAggressionGate.Tier.REBOUND_GUARD,
+        )
+        // A real low ends a running Boost, whatever the automatic TPO switch says. Nothing else does.
+        if (manualBoostActive(nowMs) && TpoBoostEligibility.shouldEndForLow(bgMgdl)) {
+            if (sessionManager.revertNow(preferences, historyRepo, nowMs)) {
+                prefsChangedThisTick = true
+                notifySessionEnded(TpoEndReason.LOW_GLUCOSE)
+                aapsLogger.info(LTag.APS, "TPO manual boost ended: glucose $bgMgdl mg/dL")
+                return true
+            }
+        }
         if (!isTpoEnabled()) return false
-        if (!hasRequiredAutonomy()) return false
+        if (!autonomyAllowsSession(preferences)) return false
 
         val input = TpoTickInput(
             nowMs = nowMs,
@@ -109,6 +175,7 @@ class TpoOrchestrator @Inject constructor(
             eventMemory = patientState.eventMemory,
             reboundGuardActive = correctionAggressionDecision?.tier == CorrectionAggressionGate.Tier.REBOUND_GUARD,
             dawnEndogenousDrive = patientState.endogenousGlucoseDrive,
+            declaredMealEpisode = declaredMealEpisode,
         )
 
         val ledger = TpoEpisodeLedger.update(persistence.loadLedger(), input)
@@ -123,10 +190,15 @@ class TpoOrchestrator @Inject constructor(
             }?.packId,
             lastRevertAtMsByPack = persistence.loadLastRevertAtMsByPack(),
         )
+        signalStreak = signalStreak.observe(evaluation.proposal?.packId, nowMs)
         val proposal = evaluation.proposal ?: run {
             if (evaluation.blockedReason != null && evaluation.blockedReason != "no_trigger") {
                 aapsLogger.debug(LTag.APS, "TPO blocked: ${evaluation.blockedReason}")
             }
+            return false
+        }
+        if (!signalStreak.isConfirmed(nowMs)) {
+            aapsLogger.debug(LTag.APS, "TPO waiting: ${proposal.packId.name} seen for ${(nowMs - signalStreak.firstSeenMs) / 60_000L} min")
             return false
         }
 
@@ -219,8 +291,15 @@ class TpoOrchestrator @Inject constructor(
 
     private fun isTpoEnabled(): Boolean = preferences.get(BooleanKey.OApsAIMITpoEnabled)
 
-    private fun hasRequiredAutonomy(): Boolean {
-        val draft = readAimiControlCenterDraft(preferences)
-        return draft.autonomyMode.authorityRank() >= AimiAutonomyMode.AssistedApplication.authorityRank()
+    companion object {
+
+        /**
+         * TPO may start a session only when Autodrive has at least the "assisted" authority: the
+         * hyper trajectory release, the authoritative switch or the recursive belief authority, each
+         * with Autodrive on. It reads the real switches (step S2: the Control Center draft that it
+         * read before is gone; the mapping is the same).
+         */
+        internal fun autonomyAllowsSession(preferences: Preferences): Boolean =
+            autonomyModeFromAutodrive(preferences).authorityRank() >= AimiAutonomyMode.AssistedApplication.authorityRank()
     }
 }

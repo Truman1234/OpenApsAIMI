@@ -76,10 +76,13 @@ import app.aaps.plugins.sync.nsclientV3.clientcontrol.compose.AuthorizedClientsS
 import app.aaps.plugins.sync.nsclientV3.clientcontrol.compose.PairWithMasterScreen
 import app.aaps.plugins.sync.nsclientV3.clientcontrol.compose.ScanMasterQrScreen
 import app.aaps.ui.compose.calibrationDialog.CalibrationDialogScreen
+import app.aaps.ui.compose.eversenseCalibrationDialog.EversenseCalibrationDialogScreen
 import app.aaps.ui.compose.carbsDialog.CarbsDialogScreen
 import app.aaps.ui.compose.careDialog.CareDialogScreen
 import app.aaps.ui.compose.configuration.ConfigurationScreen
 import app.aaps.ui.compose.configuration.ConfigurationViewModel
+import app.aaps.ui.compose.dashboard.aimi.AimiAdaptationStatusRoute
+import app.aaps.ui.compose.dashboard.aimi.AimiAdjustmentDetailsScreen
 import app.aaps.ui.compose.dashboard.glass.GlassBasalDetailScreen
 import app.aaps.ui.compose.dashboard.glass.GlassBatteryDetailScreen
 import app.aaps.ui.compose.dashboard.glass.GlassCannulaDetailScreen
@@ -100,6 +103,7 @@ import app.aaps.ui.compose.insulinManagement.InsulinManagementViewModel
 import app.aaps.ui.compose.maintenance.ImportSettingsScreen
 import app.aaps.ui.compose.maintenance.ImportSource
 import app.aaps.ui.compose.maintenance.ImportViewModel
+import app.aaps.ui.compose.manual.UserManualScreen
 import app.aaps.ui.compose.overview.chips.ChipsViewModel
 import app.aaps.ui.compose.preferences.AllPreferencesScreen
 import app.aaps.ui.compose.preferences.PreferenceScreenView
@@ -375,6 +379,12 @@ fun NavGraphBuilder.appNavGraph(
         )
     }
 
+    composable(route = AppRoute.EversenseCalibrationDialog.route) {
+        EversenseCalibrationDialogScreen(
+            onNavigateBack = { navController.safePopBackStack() }
+        )
+    }
+
     composable(route = AppRoute.TempBasalDialog.route) {
         TempBasalDialogScreen(
             onNavigateBack = { navController.safePopBackStack() },
@@ -410,10 +420,7 @@ fun NavGraphBuilder.appNavGraph(
     ) {
         WizardDialogScreen(
             wizardSettingsDef = builtInSearchables.wizardSettings,
-            onNavigateBack = { navController.safePopBackStack() },
-            onShowDeliveryError = { comment ->
-                onShowDeliveryError(comment, CoreUiStrings.treatmentdeliveryerror)
-            }
+            onNavigateBack = { navController.safePopBackStack() }
         )
     }
 
@@ -431,7 +438,16 @@ fun NavGraphBuilder.appNavGraph(
             viewModel = importViewModel,
             prefFileList = prefFileList,
             rxBus = rxBus,
-            onClose = { navController.safePopBackStack() }
+            onClose = { navController.safePopBackStack() },
+            // The import marks the wizard processed (prepareImportedSettings): the imported settings replace
+            // it. Going back into it restarted it at Welcome after the import's UI rebuild, and the user had
+            // to skip 18 steps that would now change what was just restored. So it goes too, as in 3.x, where
+            // the import restarted the app and the wizard did not open again.
+            onApplied = {
+                if (navController.previousBackStackEntry?.destination?.route == AppRoute.SetupWizard.route)
+                    navController.popBackStack(AppRoute.SetupWizard.route, inclusive = true)
+                else navController.safePopBackStack()
+            }
         )
     }
 
@@ -632,6 +648,15 @@ fun NavGraphBuilder.appNavGraph(
         )
     }
 
+    // AIMI dashboard information screens. Display only, no protection.
+    composable(AppRoute.AimiAdaptationStatus.route) {
+        AimiAdaptationStatusRoute(onBack = { navController.safePopBackStack() })
+    }
+
+    composable(AppRoute.AimiAdjustmentDetails.route) {
+        AimiAdjustmentDetailsScreen(onBack = { navController.safePopBackStack() })
+    }
+
     composable(AppRoute.ProfileHelper.route) {
         ProfileHelperScreen(
             viewModel = profileHelperViewModel,
@@ -644,6 +669,10 @@ fun NavGraphBuilder.appNavGraph(
             title = stringResource(MainStrings.nav_history_browser),
             onNavigateBack = { navController.safePopBackStack() }
         )
+    }
+
+    composable(AppRoute.UserManual.route) {
+        UserManualScreen(onNavigateBack = { navController.safePopBackStack() })
     }
 
     composable(AppRoute.Preferences.route) {

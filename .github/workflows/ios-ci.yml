@@ -224,6 +224,7 @@ jobs:
             :core:data:compileKotlinIosArm64 :core:data:compileKotlinIosSimulatorArm64 \
             :core:nssdk:compileKotlinIosArm64 :core:nssdk:compileKotlinIosSimulatorArm64 \
             :core:keys:compileKotlinIosArm64 :core:keys:compileKotlinIosSimulatorArm64 \
+            :core:interfaces:compileKotlinIosArm64 :core:interfaces:compileKotlinIosSimulatorArm64 \
             :plugins:aps:linkDebugTestIosArm64 \
             :plugins:sync:compileKotlinIosArm64 :plugins:sync:compileKotlinIosSimulatorArm64 \
             | tee compile.log
@@ -234,7 +235,7 @@ jobs:
       # into no-ops. Assert the work happened rather than that nothing complained.
       - name: Assert the Apple compiles really ran
         run: |
-          if grep -E "Task :core:(data|nssdk|keys):compileKotlinIos(Arm64|SimulatorArm64) (SKIPPED|NO-SOURCE)" compile.log; then
+          if grep -E "Task :core:(data|nssdk|keys|interfaces):compileKotlinIos(Arm64|SimulatorArm64) (SKIPPED|NO-SOURCE)" compile.log; then
             echo "::error::An iOS compile task was skipped instead of executed."
             exit 1
           fi
@@ -263,9 +264,12 @@ jobs:
       # The part that only exists here. commonTest runs through Kotlin/Native against the real
       # NSNumberFormatter and NSTimeZone, which is what no other host can do.
       #
-      # Only :core:data has commonTest today, so it is the one module asserted below. The other two
-      # are still run: if either grows shared tests later they start executing here with no change to
-      # this file, and until then they are simply NO-SOURCE.
+      # Modules with no shared tests yet are still listed: if one grows them later it starts
+      # executing here with no change to this file, and until then it is simply NO-SOURCE.
+      #
+      # `:core:keys` is in that state today. `:core:interfaces`, `:plugins:aps` and
+      # `:plugins:automation` were NOT - they had 26 Apple-only tests between them that ran on no
+      # machine at all, which is what the unlisted check at the end of this job now prevents.
       - name: Run the shared tests on the iOS simulator
         # GitHub's macOS runners are UTC, and at UTC every assertion in SystemTimeZoneTest passes
         # trivially - the offset is zero whatever unit it is in, so a seconds-instead-of-milliseconds
@@ -284,6 +288,10 @@ jobs:
             :implementation:iosSimulatorArm64Test :ios:shell:iosSimulatorArm64Test \
             :plugins:aps:iosSimulatorArm64Test \
             :plugins:sync:iosSimulatorArm64Test \
+            :plugins:automation:iosSimulatorArm64Test \
+            :plugins:source:iosSimulatorArm64Test \
+            :plugins:dexcom_oneplus:iosSimulatorArm64Test \
+            :pump:medtrum:iosSimulatorArm64Test \
             | tee test.log
 
       # Every module that HAS iOS tests is checked by name. A module added to the run above but not
@@ -321,10 +329,50 @@ jobs:
           check ":core:objects" core/objects
           check ":plugins:aps" plugins/aps
           check ":plugins:sync" plugins/sync
+          check ":plugins:automation" plugins/automation
+          check ":plugins:source" plugins/source
+          check ":plugins:dexcom_oneplus" plugins/dexcom_oneplus
+          check ":pump:medtrum" pump/medtrum
+          exit $fail
+
+      # The list above is written by hand, which is how three modules came to be missed: a module
+      # gains an `iosTest` source set and nobody remembers this file. This step needs no list. It
+      # finds every module that HAS Apple-only tests and insists each one produced results, so the
+      # next module to grow an `iosTest` fails here until it is added above, instead of passing
+      # quietly for months.
+      - name: Assert no module with Apple-only tests was left out
+        run: |
+          fail=0
+          for src in $(find . -maxdepth 4 -type d -name iosTest -not -path "*/build/*" | sed 's|^\./||'); do
+            dir="${src%/src/iosTest}"
+            # An empty source-set directory still exists for some modules - only populated ones count.
+            if [ -z "$(find "$src" -name '*.kt' 2>/dev/null | head -1)" ]; then continue; fi
+            FOUND=$(find "$dir/build/test-results/iosSimulatorArm64Test" -name "TEST-*.xml" 2>/dev/null | wc -l)
+            if [ "$FOUND" -le 0 ]; then
+              echo "::error::$dir has iosTest sources but produced no iOS test results. Add :$(echo "$dir" | tr '/' ':'):iosSimulatorArm64Test to the run step and a check() line above."
+              fail=1
+            fi
+          done
           exit $fail
 
       - name: Prove the simulator test binary links only the source TFLite archive
         run: plugins/aps/src/tfliteParity/check-uam24-linked.sh simulator
+
+      # The steps above compile only Kotlin. The Swift app files (AapsApp.swift, the Connect IQ
+      # bridge) were compiled only by ios-testflight.yml, so a broken Swift commit stayed green here
+      # until someone tried to ship. Build the app itself, unsigned. Use the device destination: the
+      # generic simulator one also builds x86_64, and the TFLite archive here is arm64 only, so it
+      # fails at the link for a reason that is not in the code. AAPS2 shares every source file.
+      - name: Build the iOS app (Swift)
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/app/AAPS.xcodeproj \
+            -scheme AAPS \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee xcodebuild.log
 
       - name: Upload test results
         if: always()
@@ -337,4 +385,8 @@ jobs:
             ios/shell/build/test-results/iosSimulatorArm64Test/**
             plugins/aps/build/test-results/iosSimulatorArm64Test/**
             plugins/sync/build/test-results/iosSimulatorArm64Test/**
+            plugins/automation/build/test-results/iosSimulatorArm64Test/**
+            plugins/source/build/test-results/iosSimulatorArm64Test/**
+            plugins/dexcom_oneplus/build/test-results/iosSimulatorArm64Test/**
+            pump/medtrum/build/test-results/iosSimulatorArm64Test/**
           if-no-files-found: warn

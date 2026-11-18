@@ -153,6 +153,9 @@ class Libre3CgmDriverReal(
     /** True when a sensor with a PIN is stored for this instance's slot. */
     fun hasStoredSensor(): Boolean = store?.isReadyForBle() == true
 
+    /** True after [shutdown]: this instance can never run again, the registry builds a new one. */
+    fun isShutDown(): Boolean = bleExecutor.isShutdown
+
     override fun addWatcher(watcher: Libre3GlucoseWatcher) {
         if (!watchers.contains(watcher)) watchers.add(watcher)
     }
@@ -463,6 +466,9 @@ class Libre3CgmDriverReal(
         if (!fromGlucoseChannel) {
             if (plaintext.size != Libre3PatchStatusParser.PLAINTEXT_SIZE) return
             val status = Libre3PatchStatusParser.parse(plaintext)
+            // Every health message goes to the watchers, for the sensor alarms. Before this they only
+            // heard an error text, so a fault or an end the sensor reports by itself raised no alarm.
+            watchers.forEach { it.onPatchStatus(status) }
             if (status.hasSensorError()) {
                 watchers.forEach { it.onError("the sensor reports a problem: ${status.sensorError}", false) }
             }

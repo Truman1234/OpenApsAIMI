@@ -27,8 +27,8 @@ import platform.UIKit.UIDevice
  * builds one kind only: the **master** phone, the same role as the Android `full` flavour. It runs
  * the loop, talks to the pump and the sensor, and writes and uploads the therapy records.
  *
- * The Xcode targets are still called AAPSClient and AAPSClient2. That name comes from the first
- * iOS port, which was a follower. It does not decide the role any more; this class does.
+ * The bundle ids are still `app.aaps.client` and `app.aaps.client2`, a name from the first iOS port,
+ * which was a follower. They do not decide the role; this class does.
  *
  * This is a real implementation, not a stand-in. Getting [APS] or [PUMPDRIVERS] wrong here would
  * make shared code offer features the app cannot perform.
@@ -83,11 +83,13 @@ class IosConfig(
     /** Anything that is not a release build is treated as a debug one, which is the safe way round. */
     override val DEBUG: Boolean = BUILD_TYPE != "release"
 
-    // Filled by the build on Android. iOS has no equivalent wired up yet, and saying so plainly is
-    // better than inventing a commit hash.
-    override val HEAD: String = "unknown"
-    override val COMMITTED: Boolean = true
-    override val REMOTE: String = "unknown"
+    // Filled by the build, the same three facts Android has sent since 2019: which commit, which
+    // repository, and whether the tree was clean. Together they are what tells a crash report from
+    // upstream apart from one out of a fork. A build with no git says "NoGitSystemAvailable" and
+    // reports not-committed, rather than inventing a commit or claiming a clean tree.
+    override val HEAD: String = GeneratedBuildInfo.HEAD
+    override val COMMITTED: Boolean = GeneratedBuildInfo.COMMITTED
+    override val REMOTE: String = GeneratedBuildInfo.REMOTE
 
     override val currentDeviceModelString: String =
         UIDevice.currentDevice.let { "${it.model} ${it.systemName} ${it.systemVersion}" }
@@ -112,7 +114,17 @@ class IosConfig(
             ?: "AAPS"
     )
 
-    private val _initProgressFlow = MutableStateFlow(InitProgress(done = true))
+    /**
+     * Not done at the start. `IosAppStartup` calls [initCompleted] once `ConfigBuilder.initialize` has
+     * elected a plugin in each category. Before that, a fresh install has no pump at all, and reading
+     * the active pump throws "No pump selected". `appInitialized` is what background work waits on, as
+     * on Android. This used to start at `done = true`, so nothing waited: the home widget calculated
+     * the IOB during the election and the app died on its very first launch.
+     *
+     * The first screen is composed only after the election, so it never sees `done = false` and no
+     * splash is shown.
+     */
+    private val _initProgressFlow = MutableStateFlow(InitProgress(done = false))
     override val initProgressFlow: StateFlow<InitProgress> = _initProgressFlow.asStateFlow()
 
     private val _initSnackbarFlow = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -122,8 +134,8 @@ class IosConfig(
     // and what the start-up progress wants. The one field that must survive is the reconfigure depth:
     // it belongs to whoever opened the window, not to init progress, and clobbering it here would
     // close a window that `whileReconfiguring` still believes is open - reopening the app to readers
-    // in the middle of an import. It matters more on iOS than anywhere else, because iOS starts at
-    // `done = true` and has no start-up sequence that would put the state right again afterwards.
+    // in the middle of an import. It matters more on iOS than anywhere else, because iOS marks start
+    // up done only once, early, and has no later start-up step that would put the state right again.
     override fun updateInitProgress(step: String, current: Int, total: Int) {
         _initProgressFlow.update { InitProgress(step = step, current = current, total = total, reconfiguringDepth = it.reconfiguringDepth) }
     }

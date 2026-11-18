@@ -16,13 +16,18 @@ import app.aaps.plugins.dexcomoneplus.scan.OnePlusBleScannerStub
 import app.aaps.plugins.dexcomoneplus.scan.OnePlusScanBudget
 import app.aaps.plugins.dexcomoneplus.scan.OnePlusScanListener
 import app.aaps.plugins.dexcomoneplus.scan.OnePlusScanResult
+import app.aaps.plugins.dexcomoneplus.session.OnePlusAuthRefusalLedger
+import app.aaps.plugins.dexcomoneplus.session.OnePlusAuthRefusalPolicy
+import app.aaps.plugins.dexcomoneplus.session.OnePlusAuthRefusals
 import app.aaps.plugins.dexcomoneplus.session.OnePlusBleSession
 import app.aaps.plugins.dexcomoneplus.session.OnePlusMacArbiter
 import app.aaps.plugins.dexcomoneplus.session.OnePlusBleSessionSkeleton
+import app.aaps.plugins.dexcomoneplus.session.OnePlusCalibrationGate
 import app.aaps.plugins.dexcomoneplus.session.OnePlusCalibrationQueue
 import app.aaps.plugins.dexcomoneplus.session.OnePlusConnectPrep
 import app.aaps.plugins.dexcomoneplus.session.OnePlusSessionAuthKeks
 import app.aaps.plugins.dexcomoneplus.session.OnePlusSessionStart
+import app.aaps.plugins.dexcomoneplus.warmup.OnePlusWarmupClock
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -59,9 +64,21 @@ internal object OnePlusCgmDriverResumePolicy {
  *   concurrently without sharing identity / MAC / KEKS key / ingest markers. **A second instance
  *   is Android only today**: an iPhone gets one Bluetooth scan for the whole app, so two slots
  *   would take the radio from each other. See `OnePlusIosPlatform`.
+ * @param displaySlot the sensor slot this driver asks for. [OnePlusDisplaySlot.PHONE] is the phone
+ *   and every existing caller. [OnePlusDisplaySlot.WATCH] is the light watch mode of
+ *   direct-to-watch on Wear OS: it reads in the sensor's watch slot with its own key, uses the
+ *   generic radio profile instead of the phone maker's one, never starts a sensor session and never
+ *   calibrates. The phone stays the master of the sensor. Its readings are tagged with this slot, so
+ *   the ingest can refuse them, see [OnePlusDisplaySlot.mayFeedLoop].
  */
 @OptIn(ExperimentalAtomicApi::class)
-class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
+class OnePlusCgmDriverReal(
+    storeNamespace: String? = null,
+    val displaySlot: OnePlusDisplaySlot = OnePlusDisplaySlot.PHONE,
+) : OnePlusCgmDriver {
+
+    /** True for the light watch mode, see [displaySlot]. */
+    private val watchMode: Boolean get() = displaySlot != OnePlusDisplaySlot.PHONE
 
     /**
      * Which preferences file this instance's sessions read and write.
@@ -167,7 +184,44 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
     @Volatile
     private var lastCalibrationResult: OnePlusCalibrationOutcome? = null
 
+    /**
+     * Newest reading of this instance's sensor, for the checks run again right before a value is
+     * written ([calibrationSendCheck]). Kept across radio windows: a value is written at the start
+     * of a window, before that window's own reading. Forgotten when the sensor changes.
+     */
+    @Volatile
+    private var lastReading: OnePlusGlucoseSample? = null
+
+    /**
+     * The checks of [OnePlusCalibrationGate] at send time, on this driver's live warm-up phase and
+     * last reading: the sensor may have gone back to warm-up, or glucose may change fast now.
+     */
+    private fun calibrationSendCheck(glucoseMgdl: Int, bloodAtMs: Long, nowMs: Long): OnePlusCalibrationGate.Refusal? =
+        OnePlusCalibrationGate.check(glucoseMgdl, bloodAtMs, nowMs, warmupState().phase, lastReading)
+
+    /**
+     * Drop the waiting value, if any, because the sensor or its session changed: a new sensor, a
+     * new pairing, a restarted session, a promotion, a new identity, a disconnect or a shutdown.
+     * A value confirmed for one sensor must never be written to the next one. Nothing was written,
+     * so it is reported as [OnePlusCalibrationOutcome.NotSent] and the user may enter it again.
+     */
+    private fun dropPendingCalibration(why: String) {
+        if (calibrationQueue.take() == null) return
+        lastCalibrationResult = OnePlusCalibrationOutcome.NotSent(OnePlusCalibrationOutcome.NotSent.Reason.SENSOR_CHANGED)
+        OnePlusLog.w("${OnePlusLogMarkers.SESSION}: [$slot] calibration dropped before the write — $why")
+    }
+
+    /** A waiting value failed the checks at send time and was dropped before any write. */
+    private fun onCalibrationNotSent(reason: OnePlusCalibrationOutcome.NotSent.Reason) {
+        lastCalibrationResult = OnePlusCalibrationOutcome.NotSent(reason)
+        OnePlusLog.i("${OnePlusLogMarkers.SESSION}: [$slot] calibration outcome = $lastCalibrationResult")
+    }
+
     override fun offerCalibration(glucoseMgdl: Int, bloodAtMs: Long): Boolean {
+        if (watchMode) {
+            OnePlusLog.w("${OnePlusLogMarkers.SESSION}: [$slot] calibration refused — the watch never calibrates")
+            return false
+        }
         if (storeNamespace != null) {
             OnePlusLog.w(
                 "${OnePlusLogMarkers.SESSION}: [$slot] calibration refused — a pre-soak sensor is never calibrated",
@@ -239,7 +293,8 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
         val store = storeFor(platform, storeNamespace)
         sensorStore = store
         scanner = platform.scanner(hint = store.load(), slot = slot)
-        profile = DeviceProfileRegistry.resolve()
+        // The OEM profiles are tuned for phones. A watch takes the generic one.
+        profile = if (watchMode) DeviceProfileRegistry.GenericFallback else DeviceProfileRegistry.resolve()
     }
 
     private fun storeFor(platform: OnePlusPlatform, namespace: String?): OnePlusSensorStore =
@@ -256,11 +311,17 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
      * call instead of keeping it in a local (see `createSession`).
      */
     fun rebindStore(namespace: String?) {
+        // A promotion: from here on this instance feeds the loop. Start with an empty queue.
+        dropPendingCalibration("promotion")
+        lastReading = null
         storeNamespace = namespace
         platform?.let { sensorStore = storeFor(it, namespace) }
     }
 
     fun saveIdentity(identity: OnePlusSensorIdentity) {
+        // Only the start screen calls this, right before a new connect: a new sensor or a new code.
+        dropPendingCalibration("new sensor identity")
+        lastReading = null
         sensorStore?.saveIdentity(identity)
         scanner.updateSessionHint(sensorStore?.load())
     }
@@ -272,6 +333,11 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
      * under its own running link (see [rebindStore]).
      */
     fun savedSharedKey(): ByteArray? = sensorStore?.load()?.sharedKey
+
+    /** Warm-up length the sensor of this slot reported (0x52), or the default while it is unknown. */
+    private fun sensorWarmupMs(): Long =
+        runCatching { sensorStore?.loadSensorInfo()?.warmupMs }.getOrNull()?.takeIf { it > 0L }
+            ?: OnePlusWarmupClock.DEFAULT_WARMUP_MS
 
     /**
      * Let go of a session that has ended on its own, so the reconnect watchdog can start a new one.
@@ -315,6 +381,26 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
         store?.clearSharedKey()
         scanner.updateSessionHint(store?.load())
     }
+
+    private val refusalPolicy = OnePlusAuthRefusalPolicy()
+
+    /**
+     * The refusal count of the slot this instance owns **right now**, read and written through the
+     * live [sensorStore] for the same reason as [savedSharedKey]: a promotion rebinds the store
+     * under a running link.
+     */
+    private val refusalLedger = object : OnePlusAuthRefusalLedger {
+        override fun load(): OnePlusAuthRefusals = sensorStore?.loadAuthRefusals() ?: OnePlusAuthRefusals()
+
+        override fun save(refusals: OnePlusAuthRefusals) {
+            sensorStore?.saveAuthRefusals(refusals)
+        }
+    }
+
+    /** True when the stored sensor refused us so often that only the user may start it again. */
+    private fun refusedTooOften(address: String): Boolean =
+        refusalPolicy.decide(refusalLedger.load(), address, Clock.System.now().toEpochMilliseconds()) ==
+            OnePlusAuthRefusalPolicy.Decision.Locked
 
     override fun addWatcher(watcher: OnePlusGlucoseWatcher) {
         watchersLock.withLock {
@@ -372,6 +458,19 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
             executor = bleExecutor
         }
         previousSession?.stop("superseded")
+        // A new pairing is a new sensor, or a new session on it.
+        dropPendingCalibration("new pairing")
+        lastReading = null
+        // The user pressed Connect. Another code or another sensor starts the refusal count again;
+        // the same pair gets one more try, still not sooner than the pause. See OnePlusAuthRefusalPolicy.
+        val previousPin = sensorStore?.load()?.identity?.pin
+        refusalLedger.save(
+            refusalPolicy.afterUserStart(
+                refusals = refusalLedger.load(),
+                address = deviceAddress,
+                codeChanged = previousPin == null || previousPin != pairingCode,
+            ),
+        )
         sensorStore?.saveIdentity(
             OnePlusSensorIdentity(
                 pin = pairingCode,
@@ -440,6 +539,14 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
             return false
         }
         val deviceAddress = stored?.lastMac ?: return false
+        // Never on our own after the sensor refused us too often: the next refusal could lock it.
+        if (refusedTooOften(deviceAddress)) {
+            OnePlusLog.w(
+                "${OnePlusLogMarkers.SESSION}: [$slot] auto-resume skipped — the sensor refused us " +
+                    "${refusalLedger.load().count} times in a row; the user has to start it again",
+            )
+            return false
+        }
         // The path that reproduced the collision on every plugin start for an install whose two
         // stores already held the same MAC. Claim before queueing anything.
         if (!OnePlusMacArbiter.claim(deviceAddress, arbiterOwner)) {
@@ -467,6 +574,8 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
             pendingAdvSightingElapsedMs = 0L
             scanner.updateSessionHint(stored)
         }
+        // A restarted session: a value confirmed for the session that ended does not carry over.
+        dropPendingCalibration("session restart")
         OnePlusLog.i(
             "${OnePlusLogMarkers.SESSION}: [$slot] auto-resume queued mac=***${deviceAddress.takeLast(5)} " +
                 "savedKey=true newStart=false",
@@ -538,6 +647,7 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
             session.also { session = null }
         }
         previousSession?.stop("disconnect")
+        dropPendingCalibration("disconnect")
         OnePlusMacArbiter.release(arbiterOwner)
     }
 
@@ -560,6 +670,7 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
             previousSession?.stop("shutdown")
         } catch (_: Throwable) {
         }
+        dropPendingCalibration("shutdown")
         watchersLock.withLock { watchers.clear() }
         previousExecutor.shutdownNow()
         OnePlusMacArbiter.release(arbiterOwner)
@@ -586,8 +697,29 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
         }
     }
 
-    override fun warmupState(): OnePlusWarmupState =
-        session?.warmupState() ?: OnePlusWarmupState(phase = OnePlusWarmupState.Phase.IDLE)
+    /**
+     * With no session, a sensor that refused us too often still says so, also after a restart:
+     * otherwise the screens would show "idle" and the user would not know why nothing comes in.
+     */
+    override fun warmupState(): OnePlusWarmupState {
+        session?.let { return it.warmupState() }
+        // A status read must never throw: a store that cannot be read only hides the refusal note.
+        // The count names its own sensor, and a Connect to another sensor clears it, so the stored
+        // session does not have to be read here.
+        val locked = try {
+            val refusedMac = refusalLedger.load().address
+            refusedMac != null && refusedTooOften(refusedMac)
+        } catch (_: Throwable) {
+            false
+        }
+        if (locked) {
+            return OnePlusWarmupState(
+                phase = OnePlusWarmupState.Phase.FAILED,
+                message = OnePlusAuthRefusalPolicy.MESSAGE_LOCKED,
+            )
+        }
+        return OnePlusWarmupState(phase = OnePlusWarmupState.Phase.IDLE)
+    }
 
     override fun isSessionUp(): Boolean = session?.isUp() == true
 
@@ -600,7 +732,7 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
         currentGatt = gatt
         // The lease may have been taken while this session was being built.
         if (radioBackOff) gatt.setLowPower(true)
-        val auth = OnePlusSessionAuthKeks(gatt)
+        val auth = OnePlusSessionAuthKeks(gatt, displaySlot = displaySlot)
         val created = OnePlusBleSessionSkeleton(
             gatt = gatt,
             auth = auth,
@@ -622,11 +754,14 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
             },
             onGlucose = { sample ->
                 ifCurrentOperation(generation) {
-                    watchersSnapshot().forEach { it.onGlucose(sample) }
+                    if (sample.timestampMs > (lastReading?.timestampMs ?: Long.MIN_VALUE)) lastReading = sample
+                    val tagged = sample.copy(displaySlot = displaySlot)
+                    watchersSnapshot().forEach { it.onGlucose(tagged) }
                 }
             },
-            // Auto-resume always passes false; only an explicit new-sensor connect may start.
-            requestNewSensorStart = requestNewSensorStart,
+            // Auto-resume always passes false; only an explicit new-sensor connect may start. The
+            // watch never starts a sensor: the phone is the master of the sensor's session.
+            requestNewSensorStart = requestNewSensorStart && !watchMode,
             beforeConnect = { address, attempt, scanMs -> prepareConnect(address, attempt, scanMs) },
             // Read `sensorStore` on every call, never through a captured local: a promotion calls
             // [rebindStore] under a LIVE link, and that link then runs for the rest of the session.
@@ -652,6 +787,20 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
             calibrationQueue = calibrationQueue,
             onCalibrationResult = { reply -> onCalibrationAnswered(reply) },
             onCalibrationState = { state, matchesSent -> onCalibrationState(state, matchesSent) },
+            calibrationSendCheck = { glucoseMgdl, bloodAtMs, nowMs -> calibrationSendCheck(glucoseMgdl, bloodAtMs, nowMs) },
+            onCalibrationNotSent = { reason -> onCalibrationNotSent(reason) },
+            refusalLedger = refusalLedger,
+            refusalPolicy = refusalPolicy,
+            // Read `sensorStore` on every call, like savedSharedKeyProvider: a promotion rebinds it.
+            // The watch only reads the sensor; the phone asks.
+            askSensorInfo = { !watchMode && runCatching { sensorStore?.shouldAskSensorInfo() == true }.getOrDefault(false) },
+            onSensorInfoAsked = { runCatching { sensorStore?.noteSensorInfoAsked() } },
+            onSensorInfo = { info ->
+                ifCurrentOperation(generation) {
+                    runCatching { sensorStore?.saveSensorInfo(info) }
+                }
+            },
+            warmupMs = { sensorWarmupMs() },
         )
         return created
     }
@@ -697,6 +846,10 @@ class OnePlusCgmDriverReal(storeNamespace: String? = null) : OnePlusCgmDriver {
             )
             return OnePlusConnectPrep(advFresh = true)
         }
+
+        // iPhone: no scan before a connect. A scan window ends when iOS suspends the app; the GATT
+        // client asks iOS to hold the connect instead, and iOS keeps that one while the app sleeps.
+        if (profile.holdsPendingConnect) return OnePlusConnectPrep(pendingConnect = true)
 
         // A long window costs the same single scan registration as a short one but hears the ADV the
         // moment it arrives, so the persistent wait overrides the profile value here.

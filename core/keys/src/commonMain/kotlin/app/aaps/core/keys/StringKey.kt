@@ -18,9 +18,9 @@ enum class StringKey(
     override val preferenceType: PreferenceType = PreferenceType.TEXT_FIELD,
     private val entriesRefs: Map<String, TextRef> = emptyMap(),
     /**
-     * Entry labels that are not a resource in this module. Only the units preference needs this:
-     * "mg/dL" and "mmol/L" read the same in every language, and the `units_*` strings themselves
-     * now live in `:core:ui`, which this module cannot depend on.
+     * Entry labels that are not a resource and are the same in every language: "mg/dL" and "mmol/L"
+     * (the `units_*` strings live in `:core:ui`, which this module cannot depend on), and the language
+     * names. They follow the [entriesRefs] entries in the list.
      */
     private val entriesLiterals: Map<String, String> = emptyMap(),
     override val defaultedBySM: Boolean = false,
@@ -48,35 +48,39 @@ enum class StringKey(
     GeneralLanguage(
         key = "language",
         defaultValue = "default",
-        title = KeysStrings.pref_title_language,
+        // Not translated on purpose: a user who selected a language they cannot read must still be able
+        // to find this setting and their own language. Each language is written in that language.
+        title = TextRef.Literal("Language"),
         preferenceType = PreferenceType.LIST,
-        entriesRefs = mapOf(
-            "default" to KeysStrings.lang_default,
-            "en" to KeysStrings.lang_en,
-            "af" to KeysStrings.lang_af,
-            "bg" to KeysStrings.lang_bg,
-            "cs" to KeysStrings.lang_cs,
-            "de" to KeysStrings.lang_de,
-            "dk" to KeysStrings.lang_dk,
-            "fr" to KeysStrings.lang_fr,
-            "nl" to KeysStrings.lang_nl,
-            "es" to KeysStrings.lang_es,
-            "el" to KeysStrings.lang_el,
-            "ga" to KeysStrings.lang_ga,
-            "it" to KeysStrings.lang_it,
-            "ko" to KeysStrings.lang_ko,
-            "lt" to KeysStrings.lang_lt,
-            "nb" to KeysStrings.lang_nb,
-            "pl" to KeysStrings.lang_pl,
-            "pt" to KeysStrings.lang_pt,
-            "pt_BR" to KeysStrings.lang_pt_br,
-            "ro" to KeysStrings.lang_ro,
-            "ru" to KeysStrings.lang_ru,
-            "sk" to KeysStrings.lang_sk,
-            "sv" to KeysStrings.lang_sv,
-            "tr" to KeysStrings.lang_tr,
-            "zh_TW" to KeysStrings.lang_zh_tw,
-            "zh_CN" to KeysStrings.lang_zh_cn
+        entriesRefs = mapOf("default" to KeysStrings.lang_default),
+        // English first, then the Latin script in alphabetical order, then the other scripts
+        entriesLiterals = mapOf(
+            "en" to "English",
+            "af" to "Afrikaans",
+            "cs" to "Čeština",
+            "dk" to "Dansk",
+            "de" to "Deutsch",
+            "es" to "Español",
+            "fr" to "Français",
+            "ga" to "Gaeilge",
+            "it" to "Italiano",
+            "lt" to "Lietuvių",
+            "nl" to "Nederlands",
+            "nb" to "Norsk bokmål",
+            "pl" to "Polski",
+            "pt" to "Português",
+            "pt_BR" to "Português (Brasil)",
+            "ro" to "Română",
+            "sk" to "Slovenčina",
+            "sv" to "Svenska",
+            "tr" to "Türkçe",
+            "el" to "Ελληνικά",
+            "bg" to "Български",
+            "ru" to "Русский",
+            "he" to "עברית",
+            "ko" to "한국어",
+            "zh_TW" to "繁體中文",
+            "zh_CN" to "简体中文"
         ),
         defaultedBySM = true,
         // Android 12 has no app languages: AAPS follows the phone there
@@ -108,13 +112,46 @@ enum class StringKey(
     ),
     GeneralDashboardSkin(
         key = "dashboard_home_skin",
-        defaultValue = "overview",
+        // The AIMI dashboard is the home screen of a new install, as on dev_OAPSAIMI (SkinMinimal).
+        defaultValue = "aimi_dashboard",
         title = KeysStrings.pref_title_dashboard_home_skin,
         preferenceType = PreferenceType.LIST,
         entriesRefs = mapOf(
             "overview" to KeysStrings.pref_dashboard_home_overview,
+            "aimi_dashboard" to KeysStrings.pref_dashboard_home_aimi,
             "dashboard_v2" to KeysStrings.pref_dashboard_home_v2,
             "glass" to KeysStrings.pref_dashboard_home_glass,
+            "essential" to KeysStrings.pref_dashboard_home_essential,
+        ),
+    ),
+
+    // Look of the BG graph on the home screen. Same names, values and defaults as on dev_OAPSAIMI.
+    OverviewVicoBgReadingTint(
+        key = "overview_vico_bg_reading_tint",
+        defaultValue = "theme",
+        title = KeysStrings.pref_title_vico_bg_reading_tint,
+        summary = KeysStrings.pref_summary_vico_bg_reading_tint,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = mapOf(
+            "theme" to KeysStrings.pref_vico_tint_theme,
+            "mauve" to KeysStrings.pref_vico_tint_mauve,
+            "ocean" to KeysStrings.pref_vico_tint_ocean,
+            "amber" to KeysStrings.pref_vico_tint_amber,
+            "rose" to KeysStrings.pref_vico_tint_rose,
+        ),
+    ),
+    OverviewVicoChartBackdrop(
+        key = "overview_vico_chart_backdrop",
+        defaultValue = "theme",
+        title = KeysStrings.pref_title_vico_chart_backdrop,
+        summary = KeysStrings.pref_summary_vico_chart_backdrop,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = mapOf(
+            "theme" to KeysStrings.pref_vico_backdrop_theme,
+            "deep" to KeysStrings.pref_vico_backdrop_deep,
+            "warm" to KeysStrings.pref_vico_backdrop_warm,
+            "cool" to KeysStrings.pref_vico_backdrop_cool,
+            "muted" to KeysStrings.pref_vico_backdrop_muted,
         ),
     ),
 
@@ -252,17 +289,9 @@ enum class StringKey(
     /** Last tuning context selected in AIMI Profile Advisor (AimiTuningContext enum name). */
     AimiTuningContextSelection("aimi_tuning_context_selection", "AUTO_BALANCE", title = KeysStrings.pref_title_aimi_tuning_context_selection),
     AimiAuditorMode("aimi_auditor_mode", "AUDIT_ONLY", preferenceType = PreferenceType.LIST, title = KeysStrings.pref_title_aimi_auditor_mode), // resolved via withEntries in plugin
-    // Context Module (dedicated provider for flexibility)
-    ContextLLMProvider("aimi_context_llm_provider", "OPENAI", title = KeysStrings.pref_title_context_llm_provider),
-    ContextLLMOpenAIKey("aimi_context_llm_openai_key", "", isPassword = true, title = KeysStrings.pref_title_context_llm_open_ai_key),
-    ContextLLMGeminiKey("aimi_context_llm_gemini_key", "", isPassword = true, title = KeysStrings.pref_title_context_llm_gemini_key),
-    ContextLLMDeepSeekKey("aimi_context_llm_deepseek_key", "", isPassword = true, title = KeysStrings.pref_title_context_llm_deep_seek_key),
-    ContextLLMClaudeKey("aimi_context_llm_claude_key", "", isPassword = true, title = KeysStrings.pref_title_context_llm_claude_key),
+    // Context module (its AI provider and API keys were deleted in AIMI step S3: the AI Advisor keys are used)
     ContextMode("aimi_context_mode", "BALANCED", title = KeysStrings.pref_title_context_mode), // CONSERVATIVE, BALANCED, AGGRESSIVE
-    OApsAIMIUnstableModeState("key_oaps_aimi_mode_state", "", title = KeysStrings.pref_title_oaps_aimi_unstable_mode_state),
     OApsAIMIContextStorage("aimi_context_storage", "", title = KeysStrings.pref_title_oaps_aimi_context_storage),
-    // 🏥 AIMI Physiological Assistant (MTR)
-    AimiPhysioLLMProvider("aimi_physio_llm_provider", "gpt4", title = KeysStrings.pref_title_aimi_physio_llm_provider),
     // 🦋 Thyroid / Basedow Module (MTR)
     OApsAIMIThyroidMode("key_aimi_thyroid_mode", "MANUAL", preferenceType = PreferenceType.LIST, title = KeysStrings.pref_title_oaps_aimi_thyroid_mode),
     OApsAIMIThyroidManualStatus("key_aimi_thyroid_manual_status", "EUTHYROID", preferenceType = PreferenceType.LIST, title = KeysStrings.pref_title_oaps_aimi_thyroid_manual_status),
@@ -316,8 +345,126 @@ enum class StringKey(
         ),
     ),
 
+    // Sound of each CGM alarm: "default" (the AAPS sound, which follows the low glucose / other alarms
+    // melody choice above), "none" (notification only), or a Trio sound (see core/ui/SOUNDS.md). The
+    // value of a Trio sound is its file name. Urgent low has no "none".
+    AlertUrgentLowSound(
+        key = "alert_cgm_urgent_low_sound",
+        defaultValue = "default",
+        title = KeysStrings.pref_title_alert_cgm_sound,
+        summary = KeysStrings.pref_summary_alert_cgm_sound,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = cgmAlarmSoundEntries("ulg", allowNone = false),
+        dependency = BooleanKey.AlertUrgentLow,
+    ),
+    AlertUrgentLowSoonSound(
+        key = "alert_cgm_urgent_low_soon_sound",
+        defaultValue = "default",
+        title = KeysStrings.pref_title_alert_cgm_sound,
+        summary = KeysStrings.pref_summary_alert_cgm_sound,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = cgmAlarmSoundEntries("lgs", allowNone = true),
+        dependency = BooleanKey.AlertUrgentLowSoon,
+    ),
+    AlertHypoSound(
+        key = "alert_cgm_low_sound",
+        defaultValue = "default",
+        title = KeysStrings.pref_title_alert_cgm_sound,
+        summary = KeysStrings.pref_summary_alert_cgm_sound,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = cgmAlarmSoundEntries("lg", allowNone = true),
+        dependency = BooleanKey.AlertHypo,
+    ),
+    AlertRapidFallSound(
+        key = "alert_cgm_fall_rate_sound",
+        defaultValue = "default",
+        title = KeysStrings.pref_title_alert_cgm_sound,
+        summary = KeysStrings.pref_summary_alert_cgm_sound,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = cgmAlarmSoundEntries("lgs", allowNone = true),
+        dependency = BooleanKey.AlertRapidFall,
+    ),
+    AlertHyperSound(
+        key = "alert_cgm_high_sound",
+        defaultValue = "none",
+        title = KeysStrings.pref_title_alert_cgm_sound,
+        summary = KeysStrings.pref_summary_alert_cgm_sound,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = cgmAlarmSoundEntries("hg", allowNone = true),
+        dependency = BooleanKey.AlertHyper,
+    ),
+    AlertRapidRiseSound(
+        key = "alert_cgm_rise_rate_sound",
+        defaultValue = "none",
+        title = KeysStrings.pref_title_alert_cgm_sound,
+        summary = KeysStrings.pref_summary_alert_cgm_sound,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = cgmAlarmSoundEntries("hg", allowNone = true),
+        dependency = BooleanKey.AlertRapidRise,
+    ),
+    AlertCgmSensorFailedSound(
+        key = "alert_cgm_sensor_failed_sound",
+        defaultValue = "default",
+        title = KeysStrings.pref_title_alert_cgm_sound,
+        summary = KeysStrings.pref_summary_alert_cgm_sound,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = cgmAlarmSoundEntries("dcr", allowNone = true),
+        dependency = BooleanKey.AlertCgmSensorFailed,
+    ),
+    AlertCgmSensorExpiredSound(
+        key = "alert_cgm_sensor_ended_sound",
+        defaultValue = "default",
+        title = KeysStrings.pref_title_alert_cgm_sound,
+        summary = KeysStrings.pref_summary_alert_cgm_sound,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = cgmAlarmSoundEntries("dts", allowNone = true),
+        dependency = BooleanKey.AlertCgmSensorExpired,
+    ),
+    AlertCgmSignalLostSound(
+        key = "alert_cgm_signal_loss_sound",
+        defaultValue = "none",
+        title = KeysStrings.pref_title_alert_cgm_sound,
+        summary = KeysStrings.pref_summary_alert_cgm_sound,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = cgmAlarmSoundEntries("dts", allowNone = true),
+        dependency = BooleanKey.AlertCgmSignalLost,
+    ),
+    AlertCgmSensorIssueSound(
+        key = "alert_cgm_sensor_issue_sound",
+        defaultValue = "none",
+        title = KeysStrings.pref_title_alert_cgm_sound,
+        summary = KeysStrings.pref_summary_alert_cgm_sound,
+        preferenceType = PreferenceType.LIST,
+        entriesRefs = cgmAlarmSoundEntries("dts", allowNone = true),
+        dependency = BooleanKey.AlertCgmSensorIssue,
+    ),
+
     ;
 
     override val entries: Map<String, TextRef> =
         entriesRefs + entriesLiterals.mapValues { TextRef.Literal(it.value) }
+}
+
+/**
+ * The sound choices of one CGM alarm: the AAPS sound, no sound (unless [allowNone] is false), the six
+ * Trio sounds made for [trioSet] (acoustic and electronic, mild to harsh), then the eight Trio tones.
+ * The value of a Trio sound is its file name in `core/ui/res/raw`, which `AlarmSound.fileName` holds.
+ */
+private fun cgmAlarmSoundEntries(trioSet: String, allowNone: Boolean): Map<String, TextRef> = buildMap {
+    put("default", KeysStrings.alert_sound_default)
+    if (allowNone) put("none", KeysStrings.alert_sound_none)
+    put("trio_acoustic_${trioSet}_mild", KeysStrings.alert_sound_trio_acoustic_mild)
+    put("trio_acoustic_${trioSet}_medium", KeysStrings.alert_sound_trio_acoustic_medium)
+    put("trio_acoustic_${trioSet}_harsh", KeysStrings.alert_sound_trio_acoustic_harsh)
+    put("trio_electronic_${trioSet}_mild", KeysStrings.alert_sound_trio_electronic_mild)
+    put("trio_electronic_${trioSet}_medium", KeysStrings.alert_sound_trio_electronic_medium)
+    put("trio_electronic_${trioSet}_harsh", KeysStrings.alert_sound_trio_electronic_harsh)
+    put("trio_tone_glass_bell", KeysStrings.alert_sound_trio_glass_bell)
+    put("trio_tone_harp", KeysStrings.alert_sound_trio_harp)
+    put("trio_tone_meow", KeysStrings.alert_sound_trio_meow)
+    put("trio_tone_saw_wave", KeysStrings.alert_sound_trio_saw_wave)
+    put("trio_tone_hard_saw_wave", KeysStrings.alert_sound_trio_hard_saw_wave)
+    put("trio_tone_sine_wave", KeysStrings.alert_sound_trio_sine_wave)
+    put("trio_tone_open_can", KeysStrings.alert_sound_trio_open_can)
+    put("trio_tone_open_wrapper", KeysStrings.alert_sound_trio_open_wrapper)
 }

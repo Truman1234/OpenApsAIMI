@@ -37,6 +37,25 @@
     <!-- To receive data from Aidex -->
     <uses-permission android:name="com.microtechmd.cgms.aidex.permissions.RECEIVE_BG_ESTIMATE" />
 
+    <!-- Health Connect, read only, for the AIMI physiological assistant. Must match
+         AIMIHealthConnectPermissions: Health Connect refuses, with no dialog, a permission that is
+         asked for but not declared here. -->
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_SKIN_TEMPERATURE" />
+    <uses-permission android:name="android.permission.health.READ_BASAL_BODY_TEMPERATURE" />
+
+    <!-- Lets the app see whether Health Connect is installed (Android 13 and older). -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+        <intent>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+        </intent>
+    </queries>
+
     <application
         android:name="app.aaps.MainApp"
         android:allowBackup="false"
@@ -104,6 +123,11 @@
         <!-- "Hypo treated" action on the low glucose alarm notification: holds the alarm 20 min. -->
         <receiver
             android:name="app.aaps.implementation.androidNotification.HypoTreatedReceiver"
+            android:exported="false" />
+
+        <!-- "Acknowledge" action on a CGM alarm notification: quiet for the repeat time of the alarm. -->
+        <receiver
+            android:name="app.aaps.implementation.androidNotification.CgmAlarmAcknowledgeReceiver"
             android:exported="false" />
 
         <!-- "Time to eat" timer: its alarm (setAlarmClock) and the Stop / +5 min notification buttons. -->
@@ -201,6 +225,31 @@
             android:name="org.apache.http.legacy"
             android:required="false" />
 
+        <!-- Health Connect shows its permission dialog only to an app with an Activity for this
+             intent, the "why we need it" page. Without it "Grant access" is refused at once. -->
+        <activity
+            android:name="app.aaps.plugins.aps.openAPSAIMI.physio.AimiHealthConnectPermissionActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+                <category android:name="androidx.health.category.HEALTH_PERMISSIONS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- The same page, for the "Manage access" link of Android 14 and newer. -->
+        <activity-alias
+            android:name="app.aaps.plugins.aps.openAPSAIMI.physio.AimiHealthConnectPermissionUsage"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:targetActivity="app.aaps.plugins.aps.openAPSAIMI.physio.AimiHealthConnectPermissionActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
         <!-- WorkManager on-demand initialization: remove the default initializer so MainApp's
              Configuration.Provider (with MetroWorkerFactory) is used instead. -->
         <provider
@@ -213,6 +262,20 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <!-- Glance sends a tap through one of these activities when the click sits in a list, and
+             they throw "List adapter activity trampoline invoked without specifying target intent"
+             when the intent that reaches them carries no target. The throw is in the library's own
+             onCreate, so the app cannot catch it, and it killed AAPS for users who tapped a widget
+             (Crashlytics, 4.0.0). Our widgets have no list: a tap starts ComposeMainActivity
+             directly, checked on the emulator for every widget, so these activities only sit here
+             waiting to crash. -->
+        <activity
+            android:name="androidx.glance.appwidget.action.ActionTrampolineActivity"
+            tools:node="remove" />
+        <activity
+            android:name="androidx.glance.appwidget.action.InvisibleActionTrampolineActivity"
+            tools:node="remove" />
 
     </application>
 

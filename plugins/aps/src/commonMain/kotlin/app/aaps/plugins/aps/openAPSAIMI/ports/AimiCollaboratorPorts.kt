@@ -38,8 +38,9 @@ import app.aaps.plugins.aps.openAPSAIMI.safety.CorrectionAggressionGate
  *
  * Each port has exactly one Android implementation in `androidMain` (AuditorOrchestrator,
  * TpoOrchestrator, AimiSmbComparator, AndroidAimiEmergencySos, ContextLLMClient,
- * HealthContextRepository, AIMIPhysioDataRepositoryMTR, AndroidAimiBehaviorProfileSource).
- * iOS has no implementations yet.
+ * HealthContextRepository, AIMIPhysioDataRepositoryMTR). iOS has no implementations yet.
+ * `AimiBehaviorProfileSource` is the exception: its one implementation,
+ * `NeutralAimiBehaviorProfileSource`, is in commonMain and serves both platforms.
  */
 
 /**
@@ -119,6 +120,9 @@ interface AimiTpo {
     /** Expires or reverts an active session. Runs even when the TPO master switch is off. */
     fun onTickStart(nowMs: Long): Boolean
 
+    /** True while the user's manual Boost runs: the dosing then keeps its target at 80 mg/dL at most. */
+    fun manualBoostActive(nowMs: Long): Boolean
+
     /** Offers the tick's patient state to the session logic. `true` when something changed. */
     fun onPatientStateReady(
         patientState: PatientStateSnapshot,
@@ -129,6 +133,7 @@ interface AimiTpo {
         deltaMgdl5m: Double,
         cobGrams: Double,
         minBgLookback75m: Double,
+        declaredMealEpisode: Boolean,
         nowMs: Long,
     ): Boolean
 }
@@ -233,11 +238,11 @@ interface AimiPhysioSource {
 
 
 /**
- * Reads the AIMI Control Center's resolved authority profile for one tick.
+ * Gives the behaviour profile dosing uses for one tick.
  *
- * The read path - preferences to draft to snapshot, with two runtime history readers along the way -
- * stays in androidMain, so this is a port rather than a moved function. `AimiBehaviorRuntimeProfile`
- * and `AimiAutonomyMode` are plain data in commonMain; only how they get built from disk is Android.
+ * The app binds `NeutralAimiBehaviorProfileSource`, which gives the fixed neutral levels (step C1
+ * of the settings plan) with the autonomy mode from the real Autodrive switches (step T2). It stays
+ * a port so tests can give another profile.
  */
 interface AimiBehaviorProfileSource {
 

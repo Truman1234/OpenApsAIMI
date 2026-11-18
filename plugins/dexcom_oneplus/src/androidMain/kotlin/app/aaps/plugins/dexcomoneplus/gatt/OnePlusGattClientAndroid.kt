@@ -63,6 +63,18 @@ class OnePlusGattClientAndroid(
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val readyLatch = AtomicReferenceLatch()
+
+    /**
+     * What the radio back-off of a pump setup wants (see [setLowPower]). Kept even while no link exists,
+     * so a back-off asked before the connect is applied when the link comes up instead of being lost.
+     */
+    @Volatile private var lowPowerWanted = false
+
+    /** BALANCED requests sent on the current link by [OnePlusLinkParameterPolicy]; reset in connect(). */
+    @Volatile private var normalRequestsThisLink = 0
+
+    /** GATT status of the last STATE_DISCONNECTED of the current link; null after connect() starts. */
+    @Volatile private var lastLinkDownStatus: Int? = null
     /** Tagged Auth/ExtraData frames for KEKS (Ob1 routes by UUID). */
     private val keksQueue = LinkedBlockingQueue<TaggedKeksNotify>(32)
     private val controlQueue = LinkedBlockingQueue<ByteArray>(32)
@@ -137,6 +149,8 @@ class OnePlusGattClientAndroid(
                     } catch (_: Throwable) {
                     }
                 }
+                // A back-off asked before this link existed: apply it now (it used to be dropped).
+                if (lowPowerWanted) requestPriority(g, BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER, "low power (back-off)")
                 // Juggluco: wait out BOND_BONDING before discoverServices.
                 val bond = g.device?.bondState ?: BluetoothDevice.BOND_NONE
                 if (bond == BluetoothDevice.BOND_BONDING) {
@@ -153,6 +167,7 @@ class OnePlusGattClientAndroid(
                         OnePlusAudioLinkState.describe(appContext, bluetoothManager.adapter),
                 )
                 connected = false
+                lastLinkDownStatus = status
                 readyLatch.fail("disconnected status=$status")
                 completePendingOp(BluetoothGatt.GATT_FAILURE)
                 poisonNotifyQueues()
@@ -167,6 +182,26 @@ class OnePlusGattClientAndroid(
                 return
             }
             g.discoverServices()
+        }
+
+        /**
+         * Android reports the parameters of the link after every change. Not in the public SDK (hidden
+         * since API 26), so it has no `override`; Android still calls it, because it is the same method
+         * of [BluetoothGattCallback].
+         *
+         * Always logged, so the parameters are visible without an HCI snoop log. When the sensor's own
+         * preferred parameters gave the link a peripheral latency, ask for Android's normal ones; a
+         * normal link is left alone. See [OnePlusLinkParameterPolicy].
+         */
+        @Suppress("unused")
+        fun onConnectionUpdated(g: BluetoothGatt, interval: Int, latency: Int, timeout: Int, status: Int) {
+            if (!isCurrentGatt(g)) return
+            OnePlusLog.i("${OnePlusLogMarkers.SESSION}: link params ${OnePlusLinkParameterPolicy.describe(interval, latency, timeout, status)}")
+            if (status != BluetoothGatt.GATT_SUCCESS) return
+            if (OnePlusLinkParameterPolicy.requestNormalAfterUpdate(latency, lowPowerWanted, normalRequestsThisLink)) {
+                normalRequestsThisLink++
+                requestPriority(g, BluetoothGatt.CONNECTION_PRIORITY_BALANCED, "normal (latency $latency)")
+            }
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
@@ -278,6 +313,8 @@ class OnePlusGattClientAndroid(
         controlQueue.clear()
         backfillQueue.clear()
         readyLatch.reset()
+        lastLinkDownStatus = null
+        normalRequestsThisLink = 0
         cccdPhase = CccdPhase.NONE
         pendingPostReadyMtu = false
         pendingOpLatch.reset()
@@ -313,7 +350,7 @@ class OnePlusGattClientAndroid(
             remote.connectGatt(appContext, autoConnect, callback)
         }
         val timeout = if (autoConnect) {
-            profile.connectTimeoutMs.coerceAtLeast(60_000L)
+            maxOf(profile.connectTimeoutMs, profile.autoConnectTimeoutMs)
         } else {
             profile.connectTimeoutMs
         }
@@ -338,23 +375,34 @@ class OnePlusGattClientAndroid(
     }
 
     override fun disconnect() {
+        // Ends a connect that is still waiting, so stop() does not hang for the whole autoConnect
+        // wait (up to [OemDeviceProfile.autoConnectTimeoutMs]). connect() resets the latch first,
+        // so this cannot fail a later connect.
+        readyLatch.fail("disconnect requested")
         disconnectInternal(poisonQueues = true)
     }
+
+    override fun lastLinkDownStatus(): Int? = lastLinkDownStatus
 
     override fun isConnected(): Boolean = connected && gatt != null
 
     override fun setLowPower(enabled: Boolean) {
+        lowPowerWanted = enabled
         val g = gatt ?: return
         val priority = if (enabled) {
             BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER
         } else {
             BluetoothGatt.CONNECTION_PRIORITY_BALANCED
         }
+        requestPriority(g, priority, "low power=$enabled")
+    }
+
+    private fun requestPriority(g: BluetoothGatt, priority: Int, why: String) {
         try {
             val asked = g.requestConnectionPriority(priority)
-            OnePlusLog.i("${OnePlusLogMarkers.SESSION}: link low power=$enabled asked=$asked")
+            OnePlusLog.i("${OnePlusLogMarkers.SESSION}: link priority $why asked=$asked")
         } catch (e: Throwable) {
-            OnePlusLog.w("${OnePlusLogMarkers.SESSION}: link low power=$enabled failed, ${e.javaClass.simpleName}")
+            OnePlusLog.w("${OnePlusLogMarkers.SESSION}: link priority $why failed, ${e.javaClass.simpleName}")
         }
     }
 
