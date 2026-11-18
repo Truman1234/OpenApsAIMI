@@ -67,7 +67,8 @@ class AimiDkaCoordinator(
             // raised to the floor, otherwise the loop could leave insulin at zero for hours.
             val proposed = rt.rate ?: i.runningTempRateUph.takeIf { i.runningTempMinutes > 0 }
             if (proposed != null) {
-                val f = SemaglutideBasalFloor.apply(proposed, i.scheduledBasalUph, i.bgMgdl, rt.eventualBG, cfg, i.maxBasalUph)
+                val dkaActive = dka.risk != DkaRisk.NONE
+                val f = SemaglutideBasalFloor.apply(proposed, i.scheduledBasalUph, i.bgMgdl, rt.eventualBG, cfg, i.maxBasalUph, dkaActive)
                 if (f.applied) {
                     rt.rate = f.rateUph
                     if ((rt.duration ?: 0) <= 0) rt.duration = 30
@@ -114,11 +115,18 @@ class AimiDkaCoordinator(
         )
     }
 
-    private fun floor() = FloorConfig(
-        enabled = preferences.get(AimiDkaBooleanKey.DkaFloorEnabled),
-        percent = preferences.get(AimiDkaIntKey.FloorPercent).coerceIn(10, 100),
-        minBgMgdl = preferences.get(AimiDkaIntKey.FloorMinBg).coerceIn(70, 180)
-    )
+    private fun floor(): FloorConfig {
+        val percent = preferences.get(AimiDkaIntKey.FloorPercent).coerceIn(5, 50)
+        val dkaMin = preferences.get(AimiDkaIntKey.FloorDkaMinPercent)
+            .coerceIn(0, 20)
+            .coerceAtMost(percent - 1)  // DKA floor must always be below the normal floor
+        return FloorConfig(
+            enabled = preferences.get(AimiDkaBooleanKey.DkaFloorEnabled),
+            percent = percent,
+            minBgMgdl = preferences.get(AimiDkaIntKey.FloorMinBg).coerceIn(70, 180),
+            dkaMinPercent = dkaMin
+        )
+    }
 
     private fun buildInput(i: Inputs): DkaInput {
         val ts = preferences.get(AimiDkaLongStateKey.KetoneTimestamp)

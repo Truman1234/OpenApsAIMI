@@ -2,13 +2,29 @@ package app.aaps.plugins.aps.openAPSAIMI.dka
 
 import app.aaps.plugins.aps.openAPSAIMI.aimiFmt2
 
-data class FloorConfig(val enabled: Boolean = false, val percent: Int = 50, val minBgMgdl: Int = 100)
+data class FloorConfig(
+    val enabled: Boolean = false,
+    /** Normal floor: % of scheduled basal. Applied when BG is not low. Range 5-50. */
+    val percent: Int = 10,
+    /** The normal floor is not applied at or below this BG (mg/dL). */
+    val minBgMgdl: Int = 100,
+    /**
+     * DKA override floor: a small % of scheduled basal applied even when BG is low,
+     * but only when DKA risk is active (WATCH or higher).
+     * Must be less than [percent]. Range 0-20. Set to 0 to disable.
+     */
+    val dkaMinPercent: Int = 5
+)
 
 /**
  * Semaglutide / GLP-1 minimum insulin: keeps the loop's basal at or above a percentage of the
  * scheduled basal rate, so insulin is not driven to ~0 for hours (ketosis/DKA risk in type 1).
  *
- * Hypoglycemia always wins: the floor is not applied when BG is low, predicted low, or unknown.
+ * Normal behaviour: hypoglycemia wins — the floor is skipped when BG is low or predicted low.
+ *
+ * DKA override: when [dkaActive] is true (DKA risk WATCH or higher), a smaller floor
+ * ([FloorConfig.dkaMinPercent]) is applied even when BG is at or below [FloorConfig.minBgMgdl],
+ * as a compromise between hypo risk and ketosis risk.
  */
 object SemaglutideBasalFloor {
     data class Result(val rateUph: Double, val applied: Boolean, val note: String?)
@@ -19,15 +35,39 @@ object SemaglutideBasalFloor {
         bgMgdl: Double?,
         eventualBgMgdl: Double?,
         cfg: FloorConfig,
-        maxBasalUph: Double
+        maxBasalUph: Double,
+        dkaActive: Boolean = false
     ): Result {
         if (!cfg.enabled || scheduledBasalUph <= 0.0 || !proposedRateUph.isFinite()) return Result(proposedRateUph, false, null)
-        val floor = (scheduledBasalUph * cfg.percent.coerceIn(10, 100) / 100.0).coerceAtMost(maxBasalUph)
+        val floor = (scheduledBasalUph * cfg.percent.coerceIn(5, 50) / 100.0).coerceAtMost(maxBasalUph)
         if (proposedRateUph >= floor) return Result(proposedRateUph, false, null)
         if (bgMgdl == null || !bgMgdl.isFinite()) return Result(proposedRateUph, false, "Floor skipped: no current BG")
-        if (bgMgdl <= cfg.minBgMgdl) return Result(proposedRateUph, false, "Floor skipped: BG ${bgMgdl.toInt()} <= ${cfg.minBgMgdl} mg/dL")
-        if (eventualBgMgdl != null && eventualBgMgdl.isFinite() && eventualBgMgdl < cfg.minBgMgdl)
-            return Result(proposedRateUph, false, "Floor skipped: eventual BG ${eventualBgMgdl.toInt()} mg/dL is low")
+
+        val bgLow = bgMgdl <= cfg.minBgMgdl
+        val eventualLow = eventualBgMgdl != null && eventualBgMgdl.isFinite() && eventualBgMgdl < cfg.minBgMgdl
+
+        if (bgLow || eventualLow) {
+            // DKA override: apply a small floor even when BG is low, to limit ketosis risk
+            if (dkaActive && cfg.dkaMinPercent > 0) {
+                val dkaFloor = (scheduledBasalUph * cfg.dkaMinPercent.coerceIn(0, 20) / 100.0).coerceAtMost(maxBasalUph)
+                if (proposedRateUph < dkaFloor) {
+                    val bgDesc = if (bgLow)
+                        "BG ${bgMgdl.toInt()} mg/dL low"
+                    else
+                        "eventual BG ${eventualBgMgdl!!.toInt()} mg/dL low"
+                    return Result(
+                        dkaFloor, true,
+                        "DKA min floor ($bgDesc): ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(dkaFloor)} U/h (${cfg.dkaMinPercent}% of ${aimiFmt2(scheduledBasalUph)})"
+                    )
+                }
+            }
+            val skipReason = if (bgLow)
+                "Floor skipped: BG ${bgMgdl.toInt()} <= ${cfg.minBgMgdl} mg/dL"
+            else
+                "Floor skipped: eventual BG ${eventualBgMgdl!!.toInt()} mg/dL is low"
+            return Result(proposedRateUph, false, skipReason)
+        }
+
         return Result(
             floor, true,
             "Semaglutide floor: ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(floor)} U/h (${cfg.percent}% of ${aimiFmt2(scheduledBasalUph)})"
