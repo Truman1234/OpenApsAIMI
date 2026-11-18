@@ -118,7 +118,6 @@ aimi_cosine_gate_max_sens|DoubleKey|true
 aimi_cosine_gate_max_shift|IntKey|true
 aimi_cosine_gate_min_dq|DoubleKey|true
 aimi_cosine_gate_min_sens|DoubleKey|true
-aimi_dia_governor_learned_weight|DoubleKey|true
 aimi_dka_enabled|AimiDkaBooleanKey|true
 aimi_dka_floor_dka_min_percent|AimiDkaIntKey|true
 aimi_dka_floor_enabled|AimiDkaBooleanKey|true
