@@ -18,6 +18,9 @@ import app.aaps.core.ui.compose.preference.PreferenceSubScreenDef
 import app.aaps.plugins.aps.ApsStrings
 import app.aaps.plugins.aps.keys.ApsIntentKey
 import app.aaps.plugins.aps.openAPSAIMI.context.ui.AimiPreferenceInfoScreen
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaBooleanKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaStringKey
 import app.aaps.plugins.aps.openAPSAIMI.ports.AimiPlatformPreferenceItems
 import app.aaps.plugins.aps.openAPSAIMI.ports.AimiPlatformPreferenceSlot
 
@@ -187,11 +190,47 @@ internal class AimiPreferenceTree(
                 items = shown(AimiSettingsSectionId.TpoEnable, AimiSettingsSectionId.TpoOptions),
             )
         )
+        add(dkaSubScreen())
         platformItem(AimiPlatformPreferenceSlot.SUPPORT_PACKAGE)?.let(::add)
         platformItem(AimiPlatformPreferenceSlot.CONTEXT)?.let(::add)
         platformItem(AimiPlatformPreferenceSlot.PROFILE_ADVISOR)?.let(::add)
         add(expertSubScreen())
     }
+
+    /**
+     * Ketoacidosis (DKA) protection.
+     *
+     * Its keys are named one by one rather than taken from [AimiSettingsScreens.preferenceKeysOf],
+     * because they live in the DKA module's own key enums (`AimiDkaBooleanKey` and the other two),
+     * not in the shared key enums that [AimiSettingsManifest] covers. So the manifest has no entry
+     * for them and no generated page shows them: without this page the person cannot reach them.
+     *
+     * The order is the order of the DKA feature itself: the switch first, then what counts as high,
+     * then the cases that raise the risk (sick day, SGLT2, GLP-1), then the ketone reading, then the
+     * semaglutide basal floor.
+     */
+    private fun dkaSubScreen(): PreferenceSubScreenDef =
+        PreferenceSubScreenDef(
+            key = "aimi_compose_dka",
+            title = ApsStrings.aimi_dka_screen_title,
+            summary = ApsStrings.aimi_dka_screen_summary,
+            items = buildList {
+                add(AimiDkaBooleanKey.DkaEnabled)
+                add(AimiDkaBooleanKey.DkaNotifyWatch)
+                add(AimiDkaBooleanKey.DkaRestrictSmb)
+                add(AimiDkaIntKey.HighBg)
+                add(AimiDkaIntKey.VeryHighBg)
+                add(AimiDkaBooleanKey.DkaSickDay)
+                add(AimiDkaBooleanKey.DkaSglt2)
+                add(AimiDkaBooleanKey.DkaGlp1)
+                add(AimiDkaStringKey.KetoneUnitChoice)
+                add(AimiDkaStringKey.KetoneEntry)
+                add(AimiDkaBooleanKey.DkaFloorEnabled)
+                add(AimiDkaIntKey.FloorPercent)
+                add(AimiDkaIntKey.FloorMinBg)
+                add(AimiDkaIntKey.FloorDkaMinPercent)
+            },
+        )
 
     /**
      * The Expert area: the family pages generated from the manifest, then the technical pages, then
