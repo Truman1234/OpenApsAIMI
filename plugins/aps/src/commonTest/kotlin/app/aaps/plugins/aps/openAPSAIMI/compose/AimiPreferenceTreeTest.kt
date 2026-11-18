@@ -54,6 +54,8 @@ class AimiPreferenceTreeTest {
         AimiSettingsContentId.PreferencesAdaptiveBasal,
         AimiSettingsContentId.PreferencesTrajectory,
         AimiSettingsContentId.PreferencesAiAuditor,
+        // Ketoacidosis (DKA) protection: its four sections are a page of the tree, like the ones above.
+        AimiSettingsContentId.PreferencesDka,
     )
 
     /** Contents drawn by their own screen, opened from one entry of the tree. One list, shared with the reachability test. */
