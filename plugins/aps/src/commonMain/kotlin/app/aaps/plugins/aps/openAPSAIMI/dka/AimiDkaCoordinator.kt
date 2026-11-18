@@ -3,7 +3,6 @@ package app.aaps.plugins.aps.openAPSAIMI.dka
 import app.aaps.core.interfaces.aps.RT
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
-import app.aaps.core.interfaces.notifications.NotificationAction
 import app.aaps.core.interfaces.notifications.NotificationId
 import app.aaps.core.interfaces.notifications.NotificationManager
 import app.aaps.core.interfaces.resources.TextResolver
@@ -68,7 +67,8 @@ class AimiDkaCoordinator(
             // raised to the floor, otherwise the loop could leave insulin at zero for hours.
             val proposed = rt.rate ?: i.runningTempRateUph.takeIf { i.runningTempMinutes > 0 }
             if (proposed != null) {
-                val f = SemaglutideBasalFloor.apply(proposed, i.scheduledBasalUph, i.bgMgdl, rt.eventualBG, cfg, i.maxBasalUph)
+                val dkaActive = dka.risk != DkaRisk.NONE
+                val f = SemaglutideBasalFloor.apply(proposed, i.scheduledBasalUph, i.bgMgdl, rt.eventualBG, cfg, i.maxBasalUph, dkaActive)
                 if (f.applied) {
                     rt.rate = f.rateUph
                     if ((rt.duration ?: 0) <= 0) rt.duration = 30
@@ -90,12 +90,7 @@ class AimiDkaCoordinator(
         val mmol = raw.replace(',', '.').toDoubleOrNull()?.let { unit.toMmol(it) }
         if (mmol == null || !mmol.isFinite() || mmol < 0.0 || mmol > MAX_KETONE_MMOL) {
             aapsLogger.warn(LTag.APS, "AIMI DKA: ketone entry ignored: '$raw'")
-            notificationManager.post(
-                NotificationId.DKA_WATCH,
-                rh.gs(ApsStrings.aimi_dka_ketone_invalid),
-                validMinutes = 60,
-                actions = listOf(enterKetonesAction())
-            )
+            notificationManager.post(NotificationId.DKA_WATCH, rh.gs(ApsStrings.aimi_dka_ketone_invalid), validMinutes = 60)
             return
         }
         preferences.put(AimiDkaDoubleStateKey.KetoneMmol, mmol)
@@ -120,11 +115,18 @@ class AimiDkaCoordinator(
         )
     }
 
-    private fun floor() = FloorConfig(
-        enabled = preferences.get(AimiDkaBooleanKey.DkaFloorEnabled),
-        percent = preferences.get(AimiDkaIntKey.FloorPercent).coerceIn(10, 100),
-        minBgMgdl = preferences.get(AimiDkaIntKey.FloorMinBg).coerceIn(70, 180)
-    )
+    private fun floor(): FloorConfig {
+        val percent = preferences.get(AimiDkaIntKey.FloorPercent).coerceIn(5, 50)
+        val dkaMin = preferences.get(AimiDkaIntKey.FloorDkaMinPercent)
+            .coerceIn(0, 20)
+            .coerceAtMost(percent - 1)  // DKA floor must always be below the normal floor
+        return FloorConfig(
+            enabled = preferences.get(AimiDkaBooleanKey.DkaFloorEnabled),
+            percent = percent,
+            minBgMgdl = preferences.get(AimiDkaIntKey.FloorMinBg).coerceIn(70, 180),
+            dkaMinPercent = dkaMin
+        )
+    }
 
     private fun buildInput(i: Inputs): DkaInput {
         val ts = preferences.get(AimiDkaLongStateKey.KetoneTimestamp)
@@ -167,20 +169,12 @@ class AimiDkaCoordinator(
         }
         dismissAll()
         val reasons = d.reasons.joinToString("\n") { "• $it" }
-        val actionLines = d.messages.joinToString("\n") { "→ $it" }
-        val body = listOf(reasons, actionLines).filter { it.isNotBlank() }.joinToString("\n\n")
-        notificationManager.post(id, rh.gs(title) + "\n" + body, validMinutes = 180, actions = listOf(enterKetonesAction()))
+        val actions = d.messages.joinToString("\n") { "→ $it" }
+        val body = listOf(reasons, actions).filter { it.isNotBlank() }.joinToString("\n\n")
+        notificationManager.post(id, rh.gs(title) + "\n" + body, validMinutes = 180)
         preferences.put(AimiDkaIntStateKey.LastRisk, d.risk.ordinal)
         preferences.put(AimiDkaLongStateKey.LastAlert, nowMs)
     }
-
-    /**
-     * Button on every DKA notification. The closure itself does nothing: the id-based navigation in
-     * `ElementNavigation.handleNotificationAction` is what actually opens the ketone entry field, the
-     * same split `IDENTIFICATION_NOT_SET` and `MASTER_PASSWORD_NOT_SET` already use. Kept here only
-     * because the button text has to travel with the notification.
-     */
-    private fun enterKetonesAction() = NotificationAction(ApsStrings.aimi_dka_enter_ketones_action) {}
 
     private fun dismissAll() {
         notificationManager.dismiss(NotificationId.DKA_WATCH)
