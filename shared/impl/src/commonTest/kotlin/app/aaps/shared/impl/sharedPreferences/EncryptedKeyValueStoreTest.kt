@@ -141,7 +141,9 @@ class EncryptedKeyValueStoreTest {
      * the Float it was into one. Read as a whole number it is rounded, so what the user set is kept.
      */
     @Test
-    fun `a decimal read as a whole number is rounded, not dropped`() = runTest {
+    // No comma in the name: a backtick-quoted test name with a comma compiles on the JVM and fails
+    // on Kotlin/Native with "Name contains illegal characters".
+    fun `a decimal read as a whole number is rounded and not dropped`() = runTest {
         val store = store(MemoryBackend(mapOf("whole" to 7.0, "up" to 7.6, "down" to 7.4, "float" to 7.0f)))
 
         assertEquals(7, store.getInt("whole", 2))
