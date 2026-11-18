@@ -16,6 +16,7 @@ import app.aaps.plugins.aps.compose.OpenAPSComposeContent
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaBooleanKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaCoordinator
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaDoubleStateKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaFloorPercentMigration
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntStateKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaLongStateKey
@@ -420,6 +421,12 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
             remove = sp::remove,
         ).takeIf { it.isNotEmpty() }?.let {
             aapsLogger.info(LTag.APS, "AIMI deleted settings removed: $it")
+        }
+        // The DKA floor percentage used to allow up to 100. A value an older build stored above the
+        // new maximum is written back into range, so the screen and the loop agree. Safe on every
+        // start: a value already in range is left alone. See AimiDkaFloorPercentMigration.
+        AimiDkaFloorPercentMigration.capStored(preferences)?.let {
+            aapsLogger.info(LTag.APS, "AIMI DKA floor percent capped to the key range: $it")
         }
         tailDampingTraceJob?.cancel()
         tailDampingTraceJob = rxBus.toFlow(EventPreferenceChange::class)

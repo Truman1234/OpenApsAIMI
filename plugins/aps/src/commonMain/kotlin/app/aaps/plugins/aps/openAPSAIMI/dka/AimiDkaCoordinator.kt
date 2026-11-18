@@ -116,9 +116,10 @@ class AimiDkaCoordinator(
     }
 
     private fun floor(): FloorConfig {
-        val percent = preferences.get(AimiDkaIntKey.FloorPercent).coerceIn(5, 50)
+        val percent = preferences.get(AimiDkaIntKey.FloorPercent)
+            .coerceIn(SemaglutideBasalFloor.MIN_PERCENT, SemaglutideBasalFloor.MAX_PERCENT)
         val dkaMin = preferences.get(AimiDkaIntKey.FloorDkaMinPercent)
-            .coerceIn(0, 20)
+            .coerceIn(0, SemaglutideBasalFloor.MAX_DKA_MIN_PERCENT)
             .coerceAtMost(percent - 1)  // DKA floor must always be below the normal floor
         return FloorConfig(
             enabled = preferences.get(AimiDkaBooleanKey.DkaFloorEnabled),
