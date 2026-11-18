@@ -9,6 +9,16 @@ data class OemDeviceProfile(
     /** GATT connect attempt timeout. Values above ~30 s only bind when autoConnect=true;
      *  Android's hard connect (autoConnect=false) gives up around 30 s. */
     val connectTimeoutMs: Long,
+    /**
+     * How long an Android `autoConnect=true` connect may wait before the session gives up on it.
+     * The wait costs almost nothing: the radio keeps a background accept-list connect open.
+     *
+     * The real bound is `max(connectTimeoutMs, autoConnectTimeoutMs)`. 60 s was the fixed value for
+     * every profile. A field snoop log from a GENERIC_FALLBACK phone (2026-11-14) showed that there
+     * the blind autoConnect is the normal way each 5 min cycle connects, with only 7-25 s of margin
+     * inside 60 s; a wake-up at +76 s was missed and cost a whole cycle.
+     */
+    val autoConnectTimeoutMs: Long = 60_000L,
     /** Max connect attempts before surfacing failure. */
     val connectRetryCount: Int,
     /** Delay between connect retries. */
@@ -63,6 +73,17 @@ data class OemDeviceProfile(
      * dislikes. Default off. [requestMtuOnConnect] only chooses *when* to request, if this is on.
      */
     val requestMtu: Boolean = false,
+    /**
+     * The platform keeps a connection request open by itself while the app sleeps: iOS holds a
+     * `connectPeripheral` with no time limit and starts the app when the sensor comes in range.
+     *
+     * When true the session does not wait for an advertisement with scan windows. Those windows
+     * stop when iOS suspends the app, and nothing then wakes it, so the glucose stopped with the
+     * screen off. It asks the GATT client for such a held connection after every cycle instead,
+     * as `G7BluetoothManager` in LoopKit G7SensorKit (used by Trio) does. Only [DeviceProfileRegistry.AppleDefault]
+     * sets it; every Android profile keeps the scan wait.
+     */
+    val holdsPendingConnect: Boolean = false,
 )
 
 enum class OemProfileId {
@@ -70,4 +91,5 @@ enum class OemProfileId {
     SAMSUNG,
     MOTOROLA,
     GENERIC_FALLBACK,
+    APPLE,
 }

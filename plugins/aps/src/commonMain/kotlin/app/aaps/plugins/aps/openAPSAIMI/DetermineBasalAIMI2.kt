@@ -387,19 +387,22 @@ import app.aaps.plugins.aps.openAPSAIMI.model.PumpCaps
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkPdCsvLogger
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.MealAggressionContext
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkPdIntegration
+import app.aaps.plugins.aps.openAPSAIMI.pkpd.TrajectoryRuntimeRepository
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkPdLearnedState
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkpdBolusSample
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkPdLogRow
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.IsfTddProvider
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkPdRuntime
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PredictionPhysioModulationResolver
-import app.aaps.plugins.aps.openAPSAIMI.pkpd.CausalKineticsModulator
-import app.aaps.plugins.aps.openAPSAIMI.pkpd.DiaGovernor
+import app.aaps.plugins.aps.openAPSAIMI.pkpd.CausalKineticsContextMemory
+import app.aaps.plugins.aps.openAPSAIMI.pkpd.DosingKineticsRateLimiter
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.InsulinKineticsAuthority
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.PkpdLearningDiagnostics
+import app.aaps.plugins.aps.openAPSAIMI.pkpd.ProfileInsulin
 import app.aaps.plugins.aps.openAPSAIMI.pkpd.TapSitePeakShift
 import app.aaps.plugins.aps.openAPSAIMI.orchestration.AimiIntelligenceSnapshot
 import app.aaps.plugins.aps.openAPSAIMI.orchestration.AimiIntelligenceSnapshotBuilder
+import app.aaps.plugins.aps.openAPSAIMI.orchestration.InsulinKineticsView
 import app.aaps.plugins.aps.openAPSAIMI.orchestration.AimiAdaptationStatusBuilder
 import app.aaps.plugins.aps.openAPSAIMI.orchestration.IntelligenceSnapshotJson
 import app.aaps.plugins.aps.openAPSAIMI.orchestration.DoseTerminalSnapshot
@@ -531,6 +534,7 @@ import app.aaps.plugins.aps.openAPSAIMI.wcycle.WCycleFacade
 import app.aaps.plugins.aps.openAPSAIMI.orchestration.AimiDetermineBasalTickOrchestrator
 import app.aaps.plugins.aps.openAPSAIMI.orchestration.AimiLoopTickRecovery
 import app.aaps.plugins.aps.openAPSAIMI.orchestration.AimiTickContext
+import app.aaps.plugins.aps.openAPSAIMI.patient.CausalStatePosterior
 import app.aaps.plugins.aps.openAPSAIMI.patient.PatientMode
 import app.aaps.plugins.aps.openAPSAIMI.patient.PatientModeOrchestrator
 import app.aaps.plugins.aps.openAPSAIMI.patient.PatientEventMemory
@@ -1663,11 +1667,9 @@ class DetermineBasalaimiSMB2 @Inject constructor(
             hormonal_cycle_phase = work.wCycleInfoForRun?.let { "${it.phase.name}_Day${it.dayInCycle}" } ?: "Unknown",
             physical_activity_mode = if (snsDominance > 0.6) "Stress/Activity" else "Resting"
         )
-        val iobArrayForProfiler = if (preferences.get(BooleanKey.OApsAIMIIntelligenceKineticsProfiler)) {
-            ctx.pkpdIobDataArray ?: ctx.iobDataArray
-        } else {
-            ctx.iobDataArray
-        }
+        // The profiler reads the prediction IOB array of the kinetics authority. It was the key
+        // `OApsAIMIIntelligenceKineticsProfiler` (default on) until step P3.
+        val iobArrayForProfiler = ctx.pkpdIobDataArray ?: ctx.iobDataArray
         // Effective-IOB "now" (learned kinetics) for the maxIOB release gate — index 0 is the current tick.
         work.tickIobEffectiveU = ctx.pkpdIobDataArray?.firstOrNull()?.iob
         val iobActionProfile = InsulinActionProfiler.calculate(iobArrayForProfiler, ctx.profile, snsDominance)
@@ -1800,7 +1802,6 @@ class DetermineBasalaimiSMB2 @Inject constructor(
             override fun setInflammation(result: app.aaps.plugins.aps.openAPSAIMI.inflammatory.InflammationAdjuster.InflammationResult) {
                 work.lastInflammationResult = result
             }
-            override fun causalPosterior() = work.lastPatientState?.causalPosterior
         },
         g6 = AimiT9G6Source {
             val name = activePlugin.activeBgSource::class.simpleName ?: ""
@@ -1871,6 +1872,7 @@ class DetermineBasalaimiSMB2 @Inject constructor(
                 patientEventMemory = work.lastPatientState?.eventMemory,
                 allowLearning = allowLearning,
                 isfRateLimitAuthority = false,
+                profileInsulin = profileInsulinOf(ctx),
             )
         },
         predictions = AimiT9Predictions { earlySens, pkpdRuntime ->
@@ -2810,6 +2812,7 @@ class DetermineBasalaimiSMB2 @Inject constructor(
             override fun delta() = this@DetermineBasalaimiSMB2.delta.toDouble()
             override fun cob() = work.cob.toDouble()
             override fun minBgLookback() = minBgInLastMinutes(AUTODRIVE_POST_HYPO_MIN_BG_LOOKBACK_MINUTES)
+            override fun declaredMealEpisode() = declaredMealWindowActive()
             override fun writeMaxSmb(value: Double) {
                 work.maxSMB = value
             }
@@ -4260,6 +4263,7 @@ class DetermineBasalaimiSMB2 @Inject constructor(
                 override fun setTargetBg(value: Float) { targetBg = value }
                 override fun targetBg() = this@DetermineBasalaimiSMB2.targetBg
             },
+            manualBoostActive = ::tpoOrchestrator.isInitialized && tpoOrchestrator.manualBoostActive(ctx.currentTime),
         )
         return GlobalAimiBasalScheduleBootstrap(
             pumpCaps = schedule.pumpCaps,
@@ -7036,6 +7040,17 @@ class DetermineBasalaimiSMB2 @Inject constructor(
     }
 
     /**
+     * Insulin of the running profile for the PK/PD learner: the values the plugin resolved the kinetics
+     * with, else the profile DIA and the `iCfg` peak. `null` when neither is known; the learner then
+     * uses the last profile insulin it saw.
+     */
+    private fun profileInsulinOf(ctx: AimiTickContext): ProfileInsulin? {
+        ctx.kineticsView?.effective?.let { return ProfileInsulin.of(it.profileDiaHours, it.profilePeakMinutes.toDouble()) }
+        val peak = effectiveProfileCached(ctx.currentTime)?.iCfg?.peak ?: return null
+        return ProfileInsulin.of(ctx.profile.dia, peak.toDouble())
+    }
+
+    /**
      * Builds the unified intelligence snapshot for JSONL export and downstream consumers.
      */
     private fun buildIntelligenceSnapshot(
@@ -7044,7 +7059,6 @@ class DetermineBasalaimiSMB2 @Inject constructor(
         pkpdRuntime: PkPdRuntime?,
     ): AimiIntelligenceSnapshot? {
         val effectiveProfile = effectiveProfileCached(ctx.currentTime) ?: return null
-        val physioMults = work.lastFusedPhysioMultipliers ?: work.lastBasePhysioMultipliers
         val learningDiagnostics = PkpdLearningDiagnostics.from(
             causalStatePosterior = work.lastPatientState?.causalPosterior,
             // Signal-prep is the one learning path of the tick and it always learns, so the
@@ -7060,22 +7074,54 @@ class DetermineBasalaimiSMB2 @Inject constructor(
         return AimiIntelligenceSnapshotBuilder.build(
             AimiIntelligenceSnapshotBuilder.BuildInput(
                 timestampMs = ctx.currentTime,
-                accountingIobArray = ctx.iobDataArray,
+                dosingKinetics = ctx.kineticsView ?: kineticsFromDosingValues(ctx, profile, effectiveProfile.iCfg?.peak, pkpdRuntime),
                 profile = profile,
-                effectiveProfile = effectiveProfile,
                 pkpdRuntime = pkpdRuntime,
-                peakGovernor = null,
                 causalPosterior = work.lastPatientState?.causalPosterior,
-                physioPeakShiftMinutes = physioMults.peakShiftMinutes,
-                // Site branch: the snapshot used to leave this at its 0.0 default, so the peak
-                // governor always reported site=0.0. The cannula age is already cached here.
-                sitePeakShiftMinutes = TapSitePeakShift.minutesForSiteAge(pumpAgeDaysCached()),
-                preferences = preferences,
-                iobCobCalculator = iobCobCalculator,
-                pkpdPredictionIobArray = ctx.pkpdIobDataArray,
                 learningDiagnostics = learningDiagnostics,
                 predictionAuthority = work.lastDecisionPredictionAuthority,
             ),
+        )
+    }
+
+    /**
+     * For callers that pass only the dosing numbers and not the kinetics view (replay engine,
+     * simulator). The log must still show the DIA and peak that dosed, so they are taken from [ctx]
+     * as they are; when [ctx] has none, dosing used the profile values, and so does the log.
+     */
+    private fun kineticsFromDosingValues(
+        ctx: AimiTickContext,
+        profile: OapsProfileAimi,
+        profileInsulinPeakMinutes: Int?,
+        pkpdRuntime: PkPdRuntime?,
+    ): InsulinKineticsView {
+        val physioMults = work.lastFusedPhysioMultipliers ?: work.lastBasePhysioMultipliers
+        val resolved = InsulinKineticsAuthority.resolve(
+            InsulinKineticsAuthority.ResolveInput(
+                accountingIobArray = ctx.iobDataArray,
+                profileDiaHours = profile.dia,
+                profilePeakMinutes = profileInsulinPeakMinutes ?: profile.peakTime.toInt(),
+                pkpdRuntime = pkpdRuntime,
+                causalPosterior = null,
+                physioPeakShiftMinutes = physioMults.peakShiftMinutes,
+                sitePeakShiftMinutes = TapSitePeakShift.minutesForSiteAge(pumpAgeDaysCached()),
+                preferences = preferences,
+                learningDiagnostics = PkpdLearningDiagnostics.from(
+                    causalStatePosterior = null,
+                    allowLearning = false,
+                    exerciseFlag = false,
+                    iobU = 0.0,
+                    carbsActiveG = 0.0,
+                    bg = ctx.glucoseStatus.glucose,
+                    deltaMgDlPer5 = ctx.glucoseStatus.delta,
+                ),
+                predictionIobArray = ctx.pkpdIobDataArray,
+            ),
+        )
+        return InsulinKineticsAuthority.fromDosingValues(
+            resolved = resolved,
+            diaHours = ctx.effectiveDiaHours ?: profile.dia,
+            peakMinutes = ctx.effectivePeakMinutes ?: profile.peakTime,
         )
     }
 
@@ -7453,10 +7499,18 @@ class DetermineBasalaimiSMB2 @Inject constructor(
                     put("insulin_kinetics_context", JsonObj().apply {
                         put("effective_dia_h", snap.kinetics.effective.diaHours)
                         put("effective_peak_min", snap.kinetics.effective.peakMinutes)
+                        put("effective_dia_no_context_h", snap.kinetics.noContextEffective.diaHours)
+                        put("effective_peak_no_context_min", snap.kinetics.noContextEffective.peakMinutes)
+                        // Before the rate limit; the effective values above are the limited ones.
+                        put("effective_dia_target_h", snap.kinetics.targetEffective.diaHours)
+                        put("effective_peak_target_min", snap.kinetics.targetEffective.peakMinutes)
+                        // Context that shifted the DIA/peak that dosed: posterior of the previous tick.
+                        put("kinetics_context_reason", snap.kinetics.contextReason)
                         put("structural_dia_h", snap.kinetics.structural.diaHrs)
                         put("structural_peak_min", snap.kinetics.structural.peakMin)
                         put("learning_gate_pass", snap.kinetics.learning.learningGatePass)
-                        put("causal_modulation", snap.causal.causalModulationReason)
+                        // Posterior of this tick: it doses only from the next tick on.
+                        put("causal_modulation_this_tick", snap.causal.causalModulationReason)
                     })
                 }
             }.build()
@@ -8094,6 +8148,7 @@ class DetermineBasalaimiSMB2 @Inject constructor(
                 override fun causalPosterior() = work.lastPatientState?.causalPosterior
                 override fun eventMemory() = work.lastPatientState?.eventMemory
                 override fun declaredMeal() = work.lastDeclaredMeal
+                override fun profileInsulin() = profileInsulinOf(ctx)
                 override fun logPkpdRuntimeFailure(error: Exception) {
                     work.consoleError.add("❌ PKPD runtime failed: ${error.message}")
                     aapsLogger.error(LTag.APS, "PKPD computeRuntime failed", error)
@@ -8655,6 +8710,36 @@ class DetermineBasalaimiSMB2 @Inject constructor(
     /** PKPD vs scenario divergence audit of the current tick (PredictionDivergenceAuditor). */
     private var lastPredDivergenceExport: JsonObject? = null
     private var lastIntelligenceSnapshot: AimiIntelligenceSnapshot? = null
+
+    /** Causal posterior of the last tick, for the kinetics of the next one. */
+    private val kineticsContextMemory = CausalKineticsContextMemory()
+
+    /** DIA and peak that dosed the last tick, so the next tick moves at most its share of a step from them. */
+    private val dosingKineticsRateLimiter = DosingKineticsRateLimiter()
+
+    /**
+     * Resolves the DIA and peak that dose the tick at [nowMs]. [inputFor] builds the resolve input from
+     * the causal posterior of the previous tick, which is null on the first tick, after a tick that
+     * failed or had none, or when it is too old. See [CausalKineticsContextMemory].
+     *
+     * The result is then limited by [DosingKineticsRateLimiter] (at most 0.25 h of DIA and 2 min of
+     * peak per 5 minutes since the last tick). The view carries both the limited value that doses
+     * and the target.
+     */
+    fun resolveDosingKinetics(
+        nowMs: Long,
+        inputFor: (CausalStatePosterior?) -> InsulinKineticsAuthority.ResolveInput,
+    ): InsulinKineticsView = dosingKineticsRateLimiter.limit(
+        nowMs = nowMs,
+        resolved = InsulinKineticsAuthority.resolve(inputFor(kineticsContextMemory.forTickAt(nowMs))),
+    )
+
+    /**
+     * Runs one tick and keeps the causal posterior of its patient state for the kinetics of the next
+     * tick. A tick that throws keeps no posterior.
+     */
+    internal fun <T> runTickKeepingKineticsContext(tickTimeMs: Long, tick: () -> T): T =
+        kineticsContextMemory.runTick(tickTimeMs, posteriorAfterTick = { work.lastPatientState?.causalPosterior }, tick = tick)
     /** Cascade D4 / C1 — single dose terminal pair for the tick (post-Authority + thin Clamp). */
     private var lastDoseTerminalSnapshot: DoseTerminalSnapshot? = null
 
@@ -9510,6 +9595,8 @@ class DetermineBasalaimiSMB2 @Inject constructor(
                 physioLatentState = physioLatentStateProvider(),
                 estimatedRaMgdlPerMin = estimatedRaProvider()?.takeIf { it.isFinite() && it > 0.0 },
                 allowLearning = false,
+                // Read-only: the last profile insulin the loop saw.
+                profileInsulin = null,
             )
             return if (rt != null) {
                 PkpdPort.Snapshot(
@@ -9545,7 +9632,9 @@ class DetermineBasalaimiSMB2 @Inject constructor(
                                                     patientWeightKg = patientWeightKgProvider(),
                                                     physioLatentState = physioLatentStateProvider(),
                                                     estimatedRaMgdlPerMin = estimatedRaProvider()?.takeIf { it.isFinite() && it > 0.0 },
-                                                    allowLearning = false)
+                                                    allowLearning = false,
+                                                    // Read-only: the last profile insulin the loop saw.
+                                                    profileInsulin = null)
 
             val damping = SmbDampingUsecase.run(
                 rt,
@@ -9611,13 +9700,16 @@ class DetermineBasalaimiSMB2 @Inject constructor(
 
     private val nightGrowthLearner = NightGrowthResistanceLearner()
 
-    private fun buildNightGrowthResistanceConfig(
+    /** Internal, not private, so a test can check the NGR on/off rule at the loop level. */
+    internal fun buildNightGrowthResistanceConfig(
         profile: OapsProfileAimi,
         autosens: AutosensResult,
         glucoseStatus: GlucoseStatusAIMI?,
         targetBg: Double
     ): NGRConfig {
-        val age = preferences.get(IntKey.OApsAIMINightGrowthAgeYears).coerceAtLeast(0)
+        // Step D1: an age never stored means an adult (NGR off unless its switch or T3C turns it on).
+        val storedAge = preferences.getIfExists(IntKey.OApsAIMINightGrowthAgeYears)
+        val age = NightGrowthActivation.configAgeYears(storedAge)
         val enabledPref = preferences.getIfExists(BooleanKey.OApsAIMINightGrowthEnabled)
         val nightStart = parseNgrTime(preferences.get(StringKey.OApsAIMINightGrowthStart), KxLocalTime(22, 0))
         val nightEnd = parseNgrTime(preferences.get(StringKey.OApsAIMINightGrowthEnd), KxLocalTime(6, 0))
@@ -9638,7 +9730,7 @@ class DetermineBasalaimiSMB2 @Inject constructor(
             )
         )
         // T3C dependency: manual T3C activation implies NGR ON (nocturnal basal support) even if its own toggle is off.
-        val enabled = (enabledPref ?: (age < 18)) || t3cModeEnabled()
+        val enabled = NightGrowthActivation.isEnabledBySwitchOrAge(enabledPref, storedAge) || t3cModeEnabled()
         val slotCap = if (age < 10) 6 else 4
         return NGRConfig(
             enabled = enabled,
@@ -9882,6 +9974,7 @@ class DetermineBasalaimiSMB2 @Inject constructor(
             hasRecentMealEstimate = hasRecentMealEstimate,
             isConfirmedHighRise = work.isConfirmedHighRiseThisTick,
             postHypoHint = postHypoHint,
+            declaredMealEpisode = declaredMealWindowActive(),
         )
     }
 
@@ -10009,7 +10102,9 @@ class DetermineBasalaimiSMB2 @Inject constructor(
             delta = delta,
             slopeFromMinDeviation = slopeFromMinDeviation,
             estimatedCarbs = preferences.get(DoubleKey.OApsAIMILastEstimatedCarbs),
-            estimatedCarbsAgeMs = preferences.get(DoubleKey.OApsAIMILastEstimatedCarbTime).toLong(),
+            estimatedCarbsAgeMs = CorrectionAggressionGate.estimatedCarbsAgeMs(
+                preferences.get(DoubleKey.OApsAIMILastEstimatedCarbTime).toLong(), aimiWallClockMs()
+            ),
             localHour = work.hourOfDay,
             reason = reason,
         )
@@ -10315,7 +10410,8 @@ class DetermineBasalaimiSMB2 @Inject constructor(
                 onlineLearnerEnabled = preferences.get(BooleanKey.OApsAIMIautoDriveActive) ||
                     preferences.get(BooleanKey.OApsAIMIT3cBrittleMode),
                 onlineLearner = autodriveEngine.onlineLearnerStatus(),
-                ngrEnabled = preferences.getIfExists(BooleanKey.OApsAIMINightGrowthEnabled) == true,
+                // The same rule the loop doses with (switch, stored age, T3C), not the switch alone.
+                ngrEnabled = NightGrowthActivation.read(preferences).enabled,
                 ngr = nightGrowthResistanceMode.latestResult(),
                 wCycleEnabled = wCyclePreferences.enabled(),
                 wCycle = work.wCycleInfoForRun,
@@ -11689,8 +11785,7 @@ class DetermineBasalaimiSMB2 @Inject constructor(
         val estimatedCarbs = preferences.get(DoubleKey.OApsAIMILastEstimatedCarbs)
         val estimatedCarbsTimeDouble = preferences.get(DoubleKey.OApsAIMILastEstimatedCarbTime)
         val estimatedCarbsTime = estimatedCarbsTimeDouble.toLong()
-        val estimatedCarbsAgeMs =
-            if (estimatedCarbsTime > 0L) aimiWallClockMs() - estimatedCarbsTime else Long.MAX_VALUE
+        val estimatedCarbsAgeMs = CorrectionAggressionGate.estimatedCarbsAgeMs(estimatedCarbsTime, aimiWallClockMs())
         val explicitMealMode =
             mealTime || lunchTime || dinnerTime || bfastTime || highCarbTime || snackTime
         val postHypoState = classifyPostHypoState(
@@ -12817,6 +12912,7 @@ class DetermineBasalaimiSMB2 @Inject constructor(
             iob = work.iob,
             maxIob = work.maxIob,
             bg = bg,
+            delta = delta.toDouble(),
             hasHypoRecovery = work.lastContextSnapshot?.hasHypoRecovery == true,
             postHypo = work.lastPostHypoDeliveryAuthority,
             lastBolusSmbUnit = work.lastBolusSMBUnit,
@@ -14014,6 +14110,9 @@ class DetermineBasalaimiSMB2 @Inject constructor(
                         targetBg = targetBg,
                         maxBg = maxBg,
                     )
+                    // The Glass dashboard's Trajectory card reads the curves from here, and only from here.
+                    // Same place as on dev (after the PKPD targets stage). Display only: nothing that doses reads it.
+                    work.lastAdvancedPredictionCurves?.let { TrajectoryRuntimeRepository.publish(it) }
                     return AimiSchedulePkpdTargets(stage.bgi, stage.deviation, stage.minBg, stage.targetBg, stage.maxBg)
                 }
 
@@ -14500,7 +14599,8 @@ class DetermineBasalaimiSMB2 @Inject constructor(
         pkpd_iob_data_array: Array<IobTotal>? = null,
         effective_dia_hours: Double? = null,
         effective_peak_minutes: Double? = null,
-        extraDebug: String = ""
+        extraDebug: String = "",
+        kinetics_view: InsulinKineticsView? = null,
     ): RT {
         // Sync legacy prebolus latch into causal state for the replay harness.
         // Transitional: the getters below read preferences (shell concern).
@@ -14517,6 +14617,7 @@ class DetermineBasalaimiSMB2 @Inject constructor(
             pkpdIobDataArray = pkpd_iob_data_array,
             effectiveDiaHours = effective_dia_hours,
             effectivePeakMinutes = effective_peak_minutes,
+            kineticsView = kinetics_view,
             profile = profile,
             autosensData = autosens_data,
             mealData = mealData,
@@ -14572,7 +14673,8 @@ class DetermineBasalaimiSMB2 @Inject constructor(
             work = AimiTickWorkingState()
             carryOverFromPreviousTick(previousTick, work)
             work.smbSwitchOnThisTick = ctx.microBolusAllowed
-            AimiDetermineBasalTickOrchestrator.run(this, ctx)
+            // The next tick resolves its kinetics with the posterior of this one.
+            runTickKeepingKineticsContext(ctx.currentTime) { AimiDetermineBasalTickOrchestrator.run(this, ctx) }
         }
     }
 

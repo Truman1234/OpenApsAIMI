@@ -1,9 +1,13 @@
 package app.aaps.plugins.source
 
+import app.aaps.core.interfaces.rx.bus.RxBus
 import app.aaps.core.keys.interfaces.PreferenceItem
 import app.aaps.core.keys.interfaces.TextRef
+import app.aaps.core.ui.compose.navigation.NavigationRequest
 import app.aaps.plugins.dexcomoneplus.OnePlusCgmDriver
+import app.aaps.plugins.dexcomoneplus.OnePlusCompetingApps
 import app.aaps.plugins.dexcomoneplus.OnePlusGlucoseWatcher
+import app.aaps.plugins.dexcomoneplus.OnePlusInstalledApps
 import app.aaps.plugins.dexcomoneplus.OnePlusWarmupState
 import app.aaps.plugins.dexcomoneplus.identity.OnePlusSensorStore
 import app.aaps.plugins.dexcomoneplus.scan.OnePlusBleScanner
@@ -13,9 +17,9 @@ import app.aaps.plugins.dexcomoneplus.scan.OnePlusBleScanner
  *
  * The plugin itself is shared code: the sensor slots, the pre-soak rules, the promotion gates and
  * the ingest path read the same on both platforms. What is not shared is the host around it - the
- * driver registry, how the three setup screens are opened (the screens themselves are shared), the
- * foreground service and the status-bar notification - and an iPhone has no equivalent of some of
- * them.
+ * driver registry, how the start and warm-up screens are opened (the screens themselves are
+ * shared), where the driver log is read from, the foreground service and the status-bar
+ * notification - and an iPhone has no equivalent of some of them.
  *
  * Each of those favours is named here one by one, the same way `OnePlusPlatform` names what the
  * driver needs, so the plugin never has to know what an Android `Context` is.
@@ -70,10 +74,26 @@ interface DexcomOnePlusHost {
     val platformNote: TextRef?
 
     /** The driver feeding the loop. */
+    /**
+     * True where this source is the BG source a fresh install starts with. Every phone needs one
+     * BG source marked default, or start-up fails ("Default plugin not found"). On Android that is
+     * the Dexcom (BYODA) source; on an iPhone, which has no BYODA, it is this one.
+     */
+    val isDefaultBgSource: Boolean get() = false
+
     fun productionDriver(): OnePlusCgmDriver
 
     /** The second, independent driver for a pre-soak sensor. */
     fun stagingDriver(): OnePlusCgmDriver
+
+    /**
+     * The production driver if it was already built, else null. Plugin stop asks this one, so
+     * stopping does not build a driver only to shut it down.
+     */
+    fun existingProductionDriver(): OnePlusCgmDriver?
+
+    /** The pre-soak driver if it was already built, else null. See [existingProductionDriver]. */
+    fun existingStagingDriver(): OnePlusCgmDriver?
 
     /** The driver feeding the loop, with [watcher] attached. */
     fun attachProductionDriver(watcher: OnePlusGlucoseWatcher): OnePlusCgmDriver
@@ -119,6 +139,15 @@ interface DexcomOnePlusHost {
     fun cancelMissedReadingAlarm() = Unit
 
     /**
+     * How direct-to-watch messages reach a watch, or null when this phone has no watch link.
+     *
+     * Null by default, and on iPhone: an Apple Watch would need its own watchOS app, so the feature
+     * is not offered there at all rather than offered and dead. Android answers with the Wear OS
+     * data layer.
+     */
+    fun watchTransport(rxBus: RxBus): DexcomOnePlusWatchTransport? = null
+
+    /**
      * A scanner for the setup screens to drive themselves, separate from the driver's own.
      *
      * The start screen lists what is in range so the user can pick their sensor, which is a
@@ -132,6 +161,15 @@ interface DexcomOnePlusHost {
     fun screenScanner(): OnePlusBleScanner
 
     /**
+     * Tells which other apps are installed, for the start screen's warning about apps that fight
+     * with us for the sensor (see [OnePlusCompetingApps]).
+     *
+     * Null on a phone that cannot tell. An iPhone app cannot list the other apps, so there the
+     * warning is absent, never a "none found" it does not know.
+     */
+    val installedApps: OnePlusInstalledApps?
+
+    /**
      * The entries that open this plugin's own screens, for the settings screen.
      *
      * Empty on a host that has no such screens, so the settings screen simply does not offer them
@@ -141,4 +179,49 @@ interface DexcomOnePlusHost {
      *   the plugin builds the host, so a host that asked for the plugin would be a loop.
      */
     fun screenItems(plugin: DexcomOnePlusPlugin): List<PreferenceItem>
+
+    /**
+     * True on iPhone, where [DexcomOnePlusBooleanKey.IosPreSoak] can turn the pre-soak slot off.
+     *
+     * Android always runs the slot and does not show the switch. Default false, so a host that
+     * does not override it changes nothing.
+     */
+    val offersIosPreSoakSwitch: Boolean get() = false
+
+    /**
+     * True when this phone runs the second, pre-soak sensor slot.
+     *
+     * False hides the pre-soak card and the end-of-life prompt of the status screen, so a phone
+     * that cannot have a second slot does not show one that never fills.
+     */
+    val supportsStaging: Boolean
+
+    /**
+     * The screens of this plugin that the status screen opens through the host. [START] starts the
+     * sensor that feeds the loop, [START_PRESOAK] a pre-soak sensor; each locks the Start screen on
+     * its own slot, so the wrong kind of sensor cannot be started by accident.
+     */
+    enum class Screen { START, START_PRESOAK, WARMUP }
+
+    /**
+     * Opens [screen].
+     *
+     * @param navigate the navigation of the plugin tab, for a host whose screens live in the
+     *   settings tree. A host that opens its own windows does not need it.
+     */
+    fun openScreen(screen: Screen, navigate: (NavigationRequest) -> Unit)
+
+    /**
+     * What the log screen shows.
+     *
+     * @param lines the driver lines, oldest first.
+     * @param note one sentence that says where the lines come from and how long they are kept.
+     */
+    data class DriverLog(val lines: List<String>, val note: TextRef)
+
+    /** Reads the newest driver lines. A host that reads a file does so off the main thread itself. */
+    suspend fun driverLog(): DriverLog
+
+    /** Hands the log text to another app, or null on a phone where the log screen offers no share. */
+    val logSharer: ((String) -> Unit)?
 }

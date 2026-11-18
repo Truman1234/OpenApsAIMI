@@ -20,7 +20,7 @@ class SemaglutideBasalFloorTest {
         val r = apply()
         assertTrue(r.applied)
         assertEquals(0.5, r.rateUph, 1e-9)
-        assertTrue((r.note).contains("50%"))
+        assertTrue(r.note?.contains("50%") == true)
     }
 
     @Test fun rateAboveTheFloorIsUntouched() {
@@ -34,7 +34,7 @@ class SemaglutideBasalFloorTest {
         val r = apply(bg = 95.0)
         assertFalse(r.applied)
         assertEquals(0.0, r.rateUph)
-        assertTrue((r.note).contains("skipped"))
+        assertTrue(r.note?.contains("skipped") == true)
     }
 
     @Test fun glucoseExactlyAtTheLimitIsTreatedAsLow() {
@@ -45,7 +45,7 @@ class SemaglutideBasalFloorTest {
     @Test fun predictedLowGlucoseSkipsTheFloor() {
         val r = apply(eventual = 80.0)
         assertFalse(r.applied)
-        assertTrue((r.note).contains("eventual"))
+        assertTrue(r.note?.contains("eventual") == true)
     }
 
     @Test fun missingGlucoseSkipsTheFloor() {
@@ -56,9 +56,52 @@ class SemaglutideBasalFloorTest {
         assertTrue(apply(eventual = null).applied)
     }
 
+    // 50 % is the most the floor can ask for, so the cap only shows above a 6 U/h scheduled basal.
+    // This used to pass percent = 100, which the clamp now turns into 50: the floor came out at 2.0
+    // U/h, below the max, so the test checked nothing.
     @Test fun floorNeverExceedsTheMaxBasal() {
-        val r = apply(scheduled = 4.0, c = cfg.copy(percent = 100), max = 3.0)
+        val r = apply(scheduled = 8.0, c = cfg.copy(percent = 50), max = 3.0)
         assertEquals(3.0, r.rateUph, 1e-9)
+    }
+
+    /**
+     * A stored value above the key range is clamped, and the note says what was really used.
+     *
+     * An older build let the floor percentage go up to 100. The note used to print the stored value
+     * while the rate came from the clamped one, so it claimed a percentage the loop never applied.
+     */
+    @Test fun aPercentAboveTheRangeIsReportedAsTheClampedOne() {
+        val r = apply(scheduled = 1.0, c = cfg.copy(percent = 100))
+        assertEquals(0.5, r.rateUph, 1e-9)
+        assertTrue(r.note!!.contains("50%"), r.note!!)
+        assertFalse(r.note!!.contains("100%"), r.note!!)
+    }
+
+    /** The same for a value below the range, and for the DKA override's own percentage. */
+    @Test fun aPercentBelowTheRangeIsReportedAsTheClampedOne() {
+        val r = apply(c = cfg.copy(percent = 2))
+        assertTrue(r.note!!.contains("5%"), r.note!!)
+        assertFalse(r.note!!.contains("2%"), r.note!!)
+    }
+
+    @Test fun aDkaMinPercentAboveTheRangeIsReportedAsTheClampedOne() {
+        val r = apply(bg = 90.0, dkaActive = true, c = cfg.copy(dkaMinPercent = 90))
+        assertEquals(0.2, r.rateUph, 1e-9)
+        assertTrue(r.note!!.contains("20%"), r.note!!)
+        assertFalse(r.note!!.contains("90%"), r.note!!)
+    }
+
+    /**
+     * The bounds the dosing path clamps with are the bounds the settings screen offers.
+     *
+     * `AimiDkaFloorPercentMigration` caps a stored value at the key's own maximum. If that stopped
+     * matching what [SemaglutideBasalFloor.apply] clamps with, a value the screen accepts could still
+     * be clamped by the loop, which is the disagreement the migration exists to end.
+     */
+    @Test fun theKeyRangeMatchesTheBoundsTheFloorClampsWith() {
+        assertEquals(SemaglutideBasalFloor.MIN_PERCENT, AimiDkaIntKey.FloorPercent.min)
+        assertEquals(SemaglutideBasalFloor.MAX_PERCENT, AimiDkaIntKey.FloorPercent.max)
+        assertEquals(SemaglutideBasalFloor.MAX_DKA_MIN_PERCENT, AimiDkaIntKey.FloorDkaMinPercent.max)
     }
 
     @Test fun percentBelow5IsClampedTo5() {

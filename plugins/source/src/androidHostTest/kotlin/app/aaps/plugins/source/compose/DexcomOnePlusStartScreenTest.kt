@@ -1,17 +1,23 @@
 package app.aaps.plugins.source.compose
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasScrollToKeyAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToKey
 import app.aaps.core.interfaces.resources.TextRefIdRegistry
+import app.aaps.core.interfaces.source.SensorSlot
 import app.aaps.core.keys.interfaces.PreferenceItem
 import app.aaps.core.keys.interfaces.TextRef
+import app.aaps.core.ui.compose.navigation.NavigationRequest
 import app.aaps.plugins.dexcomoneplus.OnePlusCgmDriver
 import app.aaps.plugins.dexcomoneplus.OnePlusCgmDriverReal
 import app.aaps.plugins.dexcomoneplus.OnePlusCgmDriverStub
 import app.aaps.plugins.dexcomoneplus.OnePlusGlucoseWatcher
+import app.aaps.plugins.dexcomoneplus.OnePlusInstalledApps
 import app.aaps.plugins.dexcomoneplus.OnePlusWarmupState
 import app.aaps.plugins.dexcomoneplus.identity.OnePlusSensorPrefs
 import app.aaps.plugins.dexcomoneplus.identity.OnePlusSensorStore
@@ -20,6 +26,7 @@ import app.aaps.plugins.dexcomoneplus.scan.OnePlusBleScannerStub
 import app.aaps.plugins.source.DexcomOnePlusHost
 import app.aaps.plugins.source.DexcomOnePlusPlugin
 import app.aaps.plugins.source.SourceStringIds
+import app.aaps.plugins.source.SourceStrings
 import app.aaps.plugins.source.SourceStringsValues
 import org.junit.Rule
 import org.junit.Test
@@ -48,17 +55,19 @@ class DexcomOnePlusStartScreenTest {
     private fun text(name: String): String =
         requireNotNull(SourceStringsValues.textOf(name, null)) { "no English text for $name" }
 
-    private fun render(twoSlots: Boolean) {
+    private fun render(twoSlots: Boolean, host: DexcomOnePlusHost = FakeHost(), initialSlot: SensorSlot = SensorSlot.PRODUCTION) {
         // MainApp does this in production. Without it every TextRef.Named draws as its raw name and
         // the assertions below read "the node is not displayed" without saying why.
         TextRefIdRegistry.register("source") { name -> SourceStringIds.idOf(name) }
         compose.setContent {
             DexcomOnePlusStartScreen(
-                host = FakeHost,
+                host = host,
+                initialSlot = initialSlot,
                 permissions = OnePlusBlePermissionGate.NoSeparateStep,
                 onBack = {},
                 onEnsureDriver = { OnePlusCgmDriverStub.instance },
                 onActivatePlugin = {},
+                isPluginStopped = { false },
                 onStarted = {},
                 onBeginStaging = { true },
                 onIsStagingSensor = { false },
@@ -66,6 +75,7 @@ class DexcomOnePlusStartScreenTest {
                 onOpenPromote = {},
                 onStagingDriver = if (twoSlots) ({ error("not reached in this test") }) else null,
                 onSensorSessionStarted = { _, _ -> },
+                applicatorScanner = null,
             )
         }
     }
@@ -75,6 +85,21 @@ class DexcomOnePlusStartScreenTest {
         render(twoSlots = true)
         compose.onNodeWithText(text("dexcom_oneplus_slot_staging_short")).assertIsDisplayed()
         compose.onNodeWithText(text("dexcom_oneplus_slot_production_short")).assertIsDisplayed()
+    }
+
+    /** "Start a pre-soak sensor" must not be able to start a production sensor by accident. */
+    @Test
+    fun `opened for a pre-soak the production choice is disabled`() {
+        render(twoSlots = true, initialSlot = SensorSlot.STAGING)
+        compose.onNodeWithText(text("dexcom_oneplus_slot_staging_short")).assertIsSelected().assertIsEnabled()
+        compose.onNodeWithText(text("dexcom_oneplus_slot_production_short")).assertIsNotEnabled()
+    }
+
+    @Test
+    fun `opened for a new sensor the pre-soak choice is disabled`() {
+        render(twoSlots = true, initialSlot = SensorSlot.PRODUCTION)
+        compose.onNodeWithText(text("dexcom_oneplus_slot_production_short")).assertIsSelected().assertIsEnabled()
+        compose.onNodeWithText(text("dexcom_oneplus_slot_staging_short")).assertIsNotEnabled()
     }
 
     @Test
@@ -109,8 +134,28 @@ class DexcomOnePlusStartScreenTest {
         compose.onNodeWithText(idle, useUnmergedTree = true).assertExists()
     }
 
+    @Test
+    fun `an installed sensor app is named in a warning`() {
+        render(twoSlots = false, host = FakeHost(installedApps = { it == "com.eveningoutpost.dexdrip" }))
+        compose.onNodeWithText(text("dexcom_oneplus_competing_apps_title")).assertIsDisplayed()
+        compose.onNodeWithText("xDrip+").assertIsDisplayed()
+    }
+
+    @Test
+    fun `no warning when no sensor app is installed`() {
+        render(twoSlots = false, host = FakeHost(installedApps = { false }))
+        compose.onNodeWithText(text("dexcom_oneplus_competing_apps_title")).assertDoesNotExist()
+    }
+
+    @Test
+    fun `no warning at all on a phone that cannot list its apps`() {
+        // The iPhone case: no answer is not the same as "none installed", so nothing is drawn.
+        render(twoSlots = false, host = FakeHost(installedApps = null))
+        compose.onNodeWithText(text("dexcom_oneplus_competing_apps_title")).assertDoesNotExist()
+    }
+
     /** Everything the screen asks of the phone, answered without Bluetooth or a file. */
-    private object FakeHost : DexcomOnePlusHost {
+    private class FakeHost(override val installedApps: OnePlusInstalledApps? = null) : DexcomOnePlusHost {
 
         override fun attachPlatform(driver: OnePlusCgmDriver) = Unit
         override fun slotStore(namespace: String?): OnePlusSensorStore = OnePlusSensorStore(MemoryPrefs())
@@ -119,6 +164,8 @@ class DexcomOnePlusStartScreenTest {
         override val platformNote: TextRef? = null
         override fun productionDriver(): OnePlusCgmDriver = OnePlusCgmDriverStub.instance
         override fun stagingDriver(): OnePlusCgmDriver = OnePlusCgmDriverStub.instance
+        override fun existingProductionDriver(): OnePlusCgmDriver? = OnePlusCgmDriverStub.instance
+        override fun existingStagingDriver(): OnePlusCgmDriver? = OnePlusCgmDriverStub.instance
         override fun attachProductionDriver(watcher: OnePlusGlucoseWatcher): OnePlusCgmDriver =
             OnePlusCgmDriverStub.instance
 
@@ -129,6 +176,12 @@ class DexcomOnePlusStartScreenTest {
         override fun alert(message: String) = Unit
         override fun screenScanner(): OnePlusBleScanner = OnePlusBleScannerStub()
         override fun screenItems(plugin: DexcomOnePlusPlugin): List<PreferenceItem> = emptyList()
+        override val supportsStaging: Boolean = false
+        override fun openScreen(screen: DexcomOnePlusHost.Screen, navigate: (NavigationRequest) -> Unit) = Unit
+        override suspend fun driverLog(): DexcomOnePlusHost.DriverLog =
+            DexcomOnePlusHost.DriverLog(emptyList(), SourceStrings.dexcom_oneplus_log_note_memory)
+
+        override val logSharer: ((String) -> Unit)? = null
     }
 
     /** An empty slot store in memory, so the screen starts with no sensor remembered. */

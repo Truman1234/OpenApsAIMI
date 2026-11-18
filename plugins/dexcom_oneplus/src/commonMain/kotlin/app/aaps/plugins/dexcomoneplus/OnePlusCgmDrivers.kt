@@ -32,10 +32,10 @@ object OnePlusCgmDrivers {
      * executor, scanner and namespaced sensor store, so it can run concurrently with production
      * without sharing identity / key / ingest markers.
      *
-     * ⚠️ Android only in practice. An iPhone gets one Bluetooth scan for the whole app, so a second
-     * slot would take the radio from the first; `DexcomOnePlusIosHost` keeps the pre-soak slot on
-     * the stub driver and says so.
-     * See docs/DEXCOM_ONEPLUS_DUAL_SENSOR_STAGING_PLAN.md.
+     * ⚠️ The two drivers share no scan of their own on iPhone. CoreBluetooth allows one scan per
+     * central, so `OnePlusIosScanBus` owns that scan and both slots read it. Each slot still has
+     * its own connection. `DexcomOnePlusIosHost` can turn the pre-soak slot off.
+     * See docs/kmp-migration/ios-presoak.md.
      */
     @Volatile
     private var stagingReal: OnePlusCgmDriverReal? = null
@@ -65,6 +65,12 @@ object OnePlusCgmDrivers {
 
     /** The driver feeding the loop. */
     fun default(): OnePlusCgmDriver = realProduction()
+
+    /** The production instance if it was already built, else null. Never builds one. */
+    fun existingProduction(): OnePlusCgmDriverReal? = lock.withLock { productionReal }
+
+    /** The pre-soak instance if it was already built, else null. Never builds one. */
+    fun existingStaging(): OnePlusCgmDriverReal? = lock.withLock { stagingReal }
 
     /** The production driver, with [watcher] attached. Adding the same watcher twice is harmless. */
     fun production(watcher: OnePlusGlucoseWatcher): OnePlusCgmDriver =

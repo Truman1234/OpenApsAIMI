@@ -22,6 +22,14 @@ interface OnePlusGattClient {
     fun isConnected(): Boolean
 
     /**
+     * The status the platform gave when the link of the current connect went down, or null if it did
+     * not go down yet or the platform does not say. On Android this is the GATT status of
+     * `STATE_DISCONNECTED`: 19 means the sensor closed the link itself, 8 is a supervision timeout.
+     * The session uses it to tell a sensor that went back to sleep from a lost link.
+     */
+    fun lastLinkDownStatus(): Int? = null
+
+    /**
      * Ask the platform for a slower, or the usual, connection interval on this link.
      *
      * Used while another job on the same radio must not be disturbed — a pump setup, see
@@ -105,27 +113,4 @@ interface OnePlusGattClient {
      * Block until next ProbablyBackfill notification (history stream).
      */
     fun awaitBackfillNotify(timeoutMs: Long): ByteArray?
-}
-
-class OnePlusGattClientUnimplemented : OnePlusGattClient {
-    override fun connect(deviceAddress: String, autoConnect: Boolean) {
-        error("ONEPLUS_GATT_UNIMPLEMENTED: await A3 GO + A1-pinned Direct port")
-    }
-
-    override fun disconnect() = Unit
-    override fun isConnected(): Boolean = false
-    override fun writeAuthentication(payload: ByteArray?) = Unit
-    override fun writeExtraData(payload: ByteArray?) = Unit
-    override fun writeControl(payload: ByteArray?) = Unit
-    override fun enableControlNotifications() = Unit
-    override fun enableControlIndications() = Unit
-    override fun enableBackfillNotifications() = Unit
-    override fun isBonded(): Boolean = false
-    override fun createBond(): Boolean = false
-    override fun removeBond(): Boolean = false
-    override fun awaitBondComplete(timeoutMs: Long): Boolean = false
-    override fun awaitKeksNotify(timeoutMs: Long): OnePlusKeksNotify? = null
-    override fun awaitNotify(timeoutMs: Long): ByteArray? = null
-    override fun awaitControlNotify(timeoutMs: Long): ByteArray? = null
-    override fun awaitBackfillNotify(timeoutMs: Long): ByteArray? = null
 }

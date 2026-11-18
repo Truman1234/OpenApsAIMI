@@ -54,6 +54,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeast
+import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.times
@@ -62,8 +63,9 @@ import org.mockito.kotlin.verifyNoInteractions
 import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
 import java.time.Clock
-import java.time.Instant
+import java.time.Instant as JavaInstant
 import java.time.ZoneId
+import kotlin.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 
 class LoopHubTest : TestBase() {
@@ -81,7 +83,7 @@ class LoopHubTest : TestBase() {
     @Mock lateinit var userEntryLogger: UserEntryLogger
 
     private lateinit var loopHub: LoopHubImpl
-    private val clock = Clock.fixed(Instant.ofEpochMilli(10_000), ZoneId.of("UTC"))
+    private val clock = Clock.fixed(JavaInstant.ofEpochMilli(10_000), ZoneId.of("UTC"))
     private val testScope = CoroutineScope(Dispatchers.Unconfined)
 
     @BeforeEach
@@ -96,7 +98,7 @@ class LoopHubTest : TestBase() {
             profileFunction, profileUtil, persistenceLayer, preferences, processedTbrEbData,
             masterActionExecutor, userEntryLogger, testScope
         )
-        loopHub.clock = clock
+        loopHub.nowMs = { clock.millis() }
     }
 
     @AfterEach
@@ -293,7 +295,7 @@ class LoopHubTest : TestBase() {
         whenever(iobCobCalculator.ads).thenReturn(ads)
         assertArrayEquals(
             glucoseValues.toTypedArray(),
-            loopHub.getGlucoseValues(Instant.ofEpochMilli(1001_000), false).toTypedArray()
+            loopHub.getGlucoseValues(Instant.fromEpochMilliseconds(1001_000), false).toTypedArray()
         )
         verify(persistenceLayer).getBgReadingsDataFromTime(1001_000, false)
         verify(iobCobCalculator).ads
@@ -322,7 +324,7 @@ class LoopHubTest : TestBase() {
             InMemoryGlucoseValue(timestamp = 720_000L, value = 110.0, smoothed = 107.0),
             InMemoryGlucoseValue(timestamp = 900_000L, value = 120.0, smoothed = 118.0, filledGap = true),
         )
-        val values = loopHub.getGlucoseValues(Instant.ofEpochMilli(0), true).map { it.value }
+        val values = loopHub.getGlucoseValues(Instant.fromEpochMilliseconds(0), true).map { it.value }
         assertEquals(listOf(98.0, 107.0, 130.0), values)
         verify(persistenceLayer).getBgReadingsDataFromTime(0, true)
         verify(iobCobCalculator).ads
@@ -335,10 +337,59 @@ class LoopHubTest : TestBase() {
             (0..4).map { rawReading(240_000L + it * 60_000L, 100.0 + it) }
         )
         stubOverlay(InMemoryGlucoseValue(timestamp = 300_000L, value = 101.0, smoothed = 101.5))
-        val values = loopHub.getGlucoseValues(Instant.ofEpochMilli(0), true)
+        val values = loopHub.getGlucoseValues(Instant.fromEpochMilliseconds(0), true)
         // 240..420 s fall on the entry at 300 s; 480 s is 3 min away and keeps its raw value.
         assertEquals(listOf(300_000L to 101.5, 480_000L to 104.0), values.map { it.timestamp to it.value })
         verify(persistenceLayer).getBgReadingsDataFromTime(0, true)
+        verify(iobCobCalculator).ads
+    }
+
+    /** The clock of these tests is at 10 s: a reading at 0 s is 10 s old, so it is fresh. */
+    private suspend fun freshNewestCase(vararg overlays: List<InMemoryGlucoseValue>) {
+        loopHub.smoothingWaitMs = 5L
+        loopHub.smoothingPollMs = 1L
+        whenever(persistenceLayer.getBgReadingsDataFromTime(-600_000L, true)).thenReturn(
+            listOf(rawReading(-300_000L, 107.0), rawReading(0L, 96.0))
+        )
+        val ads = mock<AutosensDataStore>()
+        whenever(ads.dataLock).thenReturn(AapsLock())
+        val lists = overlays.map { it.toMutableList() }
+        whenever(ads.bucketedData).thenReturn(lists.first(), *lists.drop(1).toTypedArray())
+        whenever(iobCobCalculator.ads).thenReturn(ads)
+    }
+
+    /** The watch asked 3 s before the smoothing ran on the new reading: it waits and gets 99, like the phone. */
+    @Test
+    fun testGetGlucoseValues_WaitsForTheNewestReadingToBeSmoothed() = runTest {
+        val older = InMemoryGlucoseValue(timestamp = -300_000L, value = 107.0, smoothed = 107.0)
+        freshNewestCase(
+            listOf(older),
+            listOf(older, InMemoryGlucoseValue(timestamp = 0L, value = 96.0, smoothed = 99.0)),
+        )
+        val values = loopHub.getGlucoseValues(Instant.fromEpochMilliseconds(-600_000L), true).map { it.value }
+        assertEquals(listOf(107.0, 99.0), values)
+        verify(persistenceLayer).getBgReadingsDataFromTime(-600_000L, true)
+        verify(iobCobCalculator, atLeastOnce()).ads
+    }
+
+    /** No smoothing in time: the raw 96 is not sent next to smoothed values; the watch keeps 107. */
+    @Test
+    fun testGetGlucoseValues_LeavesOutTheNewestReadingWhenNotSmoothedInTime() = runTest {
+        val older = InMemoryGlucoseValue(timestamp = -300_000L, value = 107.0, smoothed = 107.0)
+        freshNewestCase(listOf(older))
+        val values = loopHub.getGlucoseValues(Instant.fromEpochMilliseconds(-600_000L), true).map { it.value }
+        assertEquals(listOf(107.0), values)
+        verify(persistenceLayer).getBgReadingsDataFromTime(-600_000L, true)
+        verify(iobCobCalculator, atLeastOnce()).ads
+    }
+
+    /** Without any smoothed data the raw values are all there is, so nothing waits and nothing is left out. */
+    @Test
+    fun testGetGlucoseValues_WithoutSmoothingSendsTheRawNewestReading() = runTest {
+        freshNewestCase(emptyList())
+        val values = loopHub.getGlucoseValues(Instant.fromEpochMilliseconds(-600_000L), true).map { it.value }
+        assertEquals(listOf(107.0, 96.0), values)
+        verify(persistenceLayer).getBgReadingsDataFromTime(-600_000L, true)
         verify(iobCobCalculator).ads
     }
 
@@ -379,11 +430,11 @@ class LoopHubTest : TestBase() {
 
     @Test
     fun testStoreStepsCount() = runTest {
-        val samplingStart = Instant.ofEpochMilli(1_001_000)
-        val samplingEnd = Instant.ofEpochMilli(1_301_000)
+        val samplingStart = Instant.fromEpochMilliseconds(1_001_000)
+        val samplingEnd = Instant.fromEpochMilliseconds(1_301_000)
         val sc = SC(
             duration = 300_000,
-            timestamp = samplingEnd.toEpochMilli(),
+            timestamp = samplingEnd.toEpochMilliseconds(),
             steps5min = 12,
             steps10min = 18,
             steps15min = 24,
@@ -414,11 +465,11 @@ class LoopHubTest : TestBase() {
 
     @Test
     fun testStoreHeartRate() = runTest {
-        val samplingStart = Instant.ofEpochMilli(1_001_000)
-        val samplingEnd = Instant.ofEpochMilli(1_101_000)
+        val samplingStart = Instant.fromEpochMilliseconds(1_001_000)
+        val samplingEnd = Instant.fromEpochMilliseconds(1_101_000)
         val hr = HR(
-            timestamp = samplingStart.toEpochMilli(),
-            duration = samplingEnd.toEpochMilli() - samplingStart.toEpochMilli(),
+            timestamp = samplingStart.toEpochMilliseconds(),
+            duration = samplingEnd.toEpochMilliseconds() - samplingStart.toEpochMilliseconds(),
             dateCreated = clock.millis(),
             beatsPerMinute = 101.0,
             device = "Test Device"

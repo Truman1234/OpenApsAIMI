@@ -27,6 +27,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -42,36 +44,40 @@ import app.aaps.core.ui.compose.glass.GlassColors
 import app.aaps.core.ui.compose.stringResource
 import app.aaps.ui.UiStrings
 
-private val ANNOUNCEMENT_VIOLET = Color(0xFF8B5CF6)
-
 // ==========================================
 // NOTIFICATION: PUMP STATUS
 // ==========================================
 
 /**
- * The pump line under the charts: "Pump: Reservoir … | Site … | Sensor …". As on DEV, "pump
- * unreachable" is red, a site older than 3 days yellow and a sensor older than 8 days orange.
+ * The pump line under the charts: "Pump: … | Site … | Sensor …". The reservoir is red while the pump
+ * is unreachable, a site older than 3 days yellow and a sensor older than 8 days orange.
+ *
+ * The words "pump unreachable" are not shown, so the line stays on one row on a small phone; only
+ * the color says it. A screen reader still hears them, through the content description.
  */
 @Composable
 internal fun PumpStatusNotification(
     status: GlassPumpStatusLine,
     isDark: Boolean
 ) {
-    val reservoir = AnnotatedString(status.reservoirText)
-    val reservoirPart = status.unreachableText?.let { unreachable ->
-        formatAnnotated(
-            stringResource(UiStrings.dashboard_glass_pump_reservoir_unreachable),
-            listOf(reservoir, AnnotatedString(unreachable, SpanStyle(color = GlassColors.red))),
-        )
-    } ?: reservoir
+    val siteAge = status.siteAgeText.colored(GlassColors.metricAttention.takeIf { status.siteAgeWarning })
+    val sensorAge = status.sensorAgeText.colored(GlassColors.amber.takeIf { status.sensorAgeWarning })
     val text = formatAnnotated(
         stringResource(UiStrings.dashboard_glass_pump_status_line),
         listOf(
-            reservoirPart,
-            status.siteAgeText.colored(GlassColors.metricAttention.takeIf { status.siteAgeWarning }),
-            status.sensorAgeText.colored(GlassColors.amber.takeIf { status.sensorAgeWarning }),
+            status.reservoirText.colored(GlassColors.red.takeIf { status.unreachableText != null }),
+            siteAge,
+            sensorAge,
         ),
     )
+    val spoken = status.unreachableText?.let { unreachable ->
+        stringResource(
+            UiStrings.dashboard_glass_pump_status_line,
+            stringResource(UiStrings.dashboard_glass_pump_reservoir_unreachable, status.reservoirText, unreachable),
+            status.siteAgeText,
+            status.sensorAgeText,
+        )
+    }
 
     val shape = RoundedCornerShape(14.dp)
     val bgBrush = if (isDark) {
@@ -95,139 +101,9 @@ internal fun PumpStatusNotification(
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             color = if (isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B),
-            letterSpacing = 0.3.sp
+            letterSpacing = 0.3.sp,
+            modifier = if (spoken != null) Modifier.semantics { contentDescription = spoken } else Modifier
         )
-    }
-}
-
-// ==========================================
-// SYSTEM NOTIFICATIONS (Alarms, Alerts)
-// ==========================================
-
-/** Colour and short label of a notification card, by level. Same mapping as on `dev_OAPSAIMI`. */
-internal data class GlassNotificationStyle(val color: Color, val label: TextRef)
-
-internal fun NotificationLevel.glassStyle(): GlassNotificationStyle = when (this) {
-    NotificationLevel.URGENT       -> GlassNotificationStyle(GlassColors.red, UiStrings.dashboard_glass_notification_alert)
-    NotificationLevel.IMPORTANT,
-    NotificationLevel.NORMAL       -> GlassNotificationStyle(GlassColors.amber, UiStrings.dashboard_glass_notification_alert)
-    NotificationLevel.LOW          -> GlassNotificationStyle(GlassColors.skyBlue, UiStrings.dashboard_glass_notification_notice)
-    NotificationLevel.INFO         -> GlassNotificationStyle(GlassColors.emerald, UiStrings.dashboard_glass_notification_info)
-    NotificationLevel.ANNOUNCEMENT -> GlassNotificationStyle(ANNOUNCEMENT_VIOLET, UiStrings.dashboard_glass_notification_notice)
-}
-
-/**
- * The in-app notifications as Glass cards. A card has one button: the notification's own action when
- * it has one (it runs the action, reports it with [onActionClick], then removes the card), otherwise
- * Snooze, which removes the card, as on `dev_OAPSAIMI`.
- */
-@Composable
-internal fun NotificationsSection(
-    notifications: List<AapsNotification>,
-    isDark: Boolean,
-    onDismiss: (AapsNotification) -> Unit,
-    onActionClick: (AapsNotification) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val dateUtil = LocalDateUtil.current
-    val cardBg = if (isDark) Color(0xFF1E293B) else Color.White
-    val textColor = GlassColors.textBright(isDark)
-    val textMuted = GlassColors.textMuted(isDark)
-    val snoozeBg = if (isDark) Color(0xFF334155) else Color(0xFFF1F5F9)
-
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        notifications.forEach { notification ->
-            val style = notification.level.glassStyle()
-            val action = notification.actions.firstOrNull()
-
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = cardBg,
-                border = BorderStroke(2.dp, style.color),
-                shadowElevation = 4.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(style.color.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = null,
-                            tint = style.color,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(style.label),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = style.color,
-                            letterSpacing = 0.5.sp
-                        )
-                        Text(
-                            text = stringResource(UiStrings.dashboard_glass_notification_text, dateUtil.timeString(notification.date), notification.text),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = textColor,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Surface(
-                        onClick = {
-                            if (action != null) {
-                                action.action()
-                                onActionClick(notification)
-                            }
-                            onDismiss(notification)
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        color = snoozeBg,
-                        modifier = Modifier.wrapContentWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Snooze,
-                                contentDescription = null,
-                                tint = textMuted,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = stringResource(action?.buttonText ?: CoreUiStrings.snooze),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = textMuted
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

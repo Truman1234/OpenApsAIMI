@@ -16,6 +16,7 @@ import app.aaps.core.keys.IntComposedKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.ui.CoreUiStrings
 import app.aaps.ui.widget.directionToDrawableRes
+import app.aaps.ui.widget.state.WidgetStateRules
 import dev.zacsweers.metro.Inject
 
 data class BgGraphRenderState(
@@ -81,16 +82,17 @@ class BgGraphStateLoader(
 
         val colors = BgGraphColors.WIDGET
 
-        // Current BG + trend (same logic as WidgetStateLoader)
+        // Current BG + trend (same rule as WidgetStateBuilder). Read the reading once: the value and
+        // its age must belong together. Before, `isActualBg()` read it a second time, and a new
+        // reading landing in between could leave an old value not struck through. The age is judged
+        // with a clock read taken next to the reading, as `isActualBg()` did, not with `now` from the
+        // start of the load: the reads above take time, and the reading can turn old during them.
         val lastBg = lastBgData.lastBg()
+        val bgReadAt = dateUtil.now()
         val bgText = lastBg?.let { profileUtil.fromMgdlToStringInUnits(it.recalculated) }
             ?: rh.gs(CoreUiStrings.value_unavailable_short)
-        val bgColor = when {
-            lastBgData.isLow()  -> colors.low
-            lastBgData.isHigh() -> colors.high
-            else                -> colors.inRange
-        }
-        val strikeThrough = !lastBgData.isActualBg()
+        val bgColor = WidgetStateRules.bgRange(lastBgData.isLow(), lastBgData.isHigh()).toColor()
+        val strikeThrough = WidgetStateRules.isStale(lastBg?.timestamp, bgReadAt)
         val trendArrow = trendCalculator.getTrendArrow(iobCobCalculator.ads)
         val arrowResId = lastBg?.let { (trendArrow ?: TrendArrow.FLAT).directionToDrawableRes() }
 

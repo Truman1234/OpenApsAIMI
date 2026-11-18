@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mock
 import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
+import kotlin.math.abs
 
 /**
  * Matching tests for [PkPdLearnedState] from `origin/dev_OAPSAIMI` @ `0761e9c00a`
@@ -47,6 +48,9 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
     }
 
     private lateinit var integration: PkPdIntegration
+
+    /** Profile insulin of every tick: bounds DIA 4.5-7.5 h, peak 41.25-74.25 min, anchor 6.0 h / 55 min. */
+    private val profileInsulin = ProfileInsulin(diaHours = 6.0, peakMinutes = 55.0)
 
     @BeforeEach
     fun setUp() {
@@ -132,7 +136,7 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
         whenever(preferences.get(LongNonKey.OApsAIMIPkpdLearnedStateGeneration)).thenReturn(1L)
         tick(2)
 
-        assertEquals(8.0, learnedDiaHrs(), 1e-9)
+        assertEquals(7.5, learnedDiaHrs(), 1e-9)
     }
 
     @Test
@@ -171,7 +175,7 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
     }
 
     @Test
-    fun preset_change_in_the_same_tick_does_not_overwrite_the_external_reset() {
+    fun pace_change_in_the_same_tick_does_not_overwrite_the_external_reset() {
         val stored = mutableMapOf<DoubleKey, Double>()
         val stateful = statefulPreferences(stored)
         whenever(stateful.get(BooleanKey.OApsAIMIPkpdEnabled)).thenReturn(true)
@@ -183,13 +187,14 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
         tick(1, engine)
         assertEquals(6.0, learnedDiaHrs(engine), 1e-9)
 
-        stored[DoubleKey.OApsAIMIPkpdBoundsDiaMaxH] = 5.5
-        stored[DoubleKey.OApsAIMIPkpdStateDiaH] = 4.5
+        // A new pace changes the bounds, like the insulin presets used to.
+        stored[DoubleKey.OApsAIMIPkpdMaxDiaChangePerDayH] = 1.0
+        stored[DoubleKey.OApsAIMIPkpdStateDiaH] = 4.6
         whenever(stateful.get(LongNonKey.OApsAIMIPkpdLearnedStateGeneration)).thenReturn(1L)
         tick(2, engine)
 
-        assertEquals(4.5, learnedDiaHrs(engine), 1e-9)
-        assertEquals(4.5, stored.getValue(DoubleKey.OApsAIMIPkpdStateDiaH), 1e-9)
+        assertEquals(4.6, learnedDiaHrs(engine), 1e-9)
+        assertEquals(4.6, stored.getValue(DoubleKey.OApsAIMIPkpdStateDiaH), 1e-9)
     }
 
     @Test
@@ -207,7 +212,8 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
 
         for (index in 2L..40L) learningTick(index, learner)
         val learned = learnedDiaHrs(learner)
-        assertTrue(learned < 6.0 - 1e-6, "the learner did not move the DIA: $learned")
+        // The anchor is the profile DIA (6.0 h) now, so the direction depends on the error only.
+        assertTrue(abs(learned - 6.0) > 1e-6, "the learner did not move the DIA: $learned")
 
         val readerRuntime = learningTick(41, reader, allowLearning = false)
         assertNotNull(readerRuntime)
@@ -229,9 +235,10 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
         learningTick(1, reader, allowLearning = false)
         for (index in 2L..201L) learningTick(index, learner)
         val learned = learnedDiaHrs(learner)
-        assertTrue(learned < 5.9, "the learner did not move the DIA far enough: $learned")
+        assertTrue(abs(learned - 6.0) > 0.05, "the learner did not move the DIA far enough: $learned")
 
-        stored[DoubleKey.OApsAIMIPkpdBoundsDiaMaxH] = 5.9
+        // A new pace changes the bounds and makes the read-only consumer persist.
+        stored[DoubleKey.OApsAIMIPkpdMaxDiaChangePerDayH] = 1.0
         learningTick(202, reader, allowLearning = false)
 
         assertEquals(learned, stored.getValue(DoubleKey.OApsAIMIPkpdStateDiaH), 0.01)
@@ -317,6 +324,42 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
         assertEquals(0.0, reader.reconstructedIobUnits(), 1e-9)
     }
 
+    @Test
+    fun a_tick_the_estimator_refuses_counts_as_blocked_with_the_estimator_reason() {
+        stubEnabled()
+        stubPkpdDefaults(preferences)
+        whenever(preferences.get(LongNonKey.OApsAIMIPkpdLearnedStateGeneration)).thenReturn(0L)
+        IsfTddProvider.set(50.0)
+        PkpdTickTelemetry.learning.clear()
+
+        // The gates pass, but IOB 0.1 U is below the learning minimum, so the estimator refuses the step.
+        tick(1)
+
+        val summary = PkpdTickTelemetry.learning.summary(nowMs = 5L * 60L * 1000L)
+        assertEquals(1, summary.learningTicks)
+        assertEquals(0, summary.acceptedSteps)
+        assertEquals(1, summary.blockedTicks)
+        assertEquals(PkPdIntegration.LEARN_BLOCKED_ESTIMATOR_PREFIX + "iob_too_low", summary.topBlockReason)
+        PkpdTickTelemetry.learning.clear()
+    }
+
+    @Test
+    fun an_accepted_learning_step_is_not_counted_as_blocked() {
+        stubEnabled()
+        stubPkpdDefaults(preferences)
+        whenever(preferences.get(LongNonKey.OApsAIMIPkpdLearnedStateGeneration)).thenReturn(0L)
+        IsfTddProvider.set(50.0)
+        PkpdTickTelemetry.learning.clear()
+
+        learningTick(1, integration)
+
+        val summary = PkpdTickTelemetry.learning.summary(nowMs = 5L * 60L * 1000L)
+        assertEquals(1, summary.learningTicks)
+        assertEquals(1, summary.acceptedSteps)
+        assertEquals(0, summary.blockedTicks)
+        PkpdTickTelemetry.learning.clear()
+    }
+
     private fun engine(
         prefs: Preferences,
         state: PkPdLearnedState = PkPdLearnedState(),
@@ -329,14 +372,9 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
     private fun stubPkpdDefaults(target: Preferences) {
         whenever(target.get(DoubleKey.OApsAIMIPkpdStateDiaH)).thenReturn(6.0)
         whenever(target.get(DoubleKey.OApsAIMIPkpdStatePeakMin)).thenReturn(55.0)
-        whenever(target.get(DoubleKey.OApsAIMIPkpdBoundsDiaMinH)).thenReturn(5.0)
-        whenever(target.get(DoubleKey.OApsAIMIPkpdBoundsDiaMaxH)).thenReturn(8.0)
-        whenever(target.get(DoubleKey.OApsAIMIPkpdBoundsPeakMinMin)).thenReturn(35.0)
-        whenever(target.get(DoubleKey.OApsAIMIPkpdBoundsPeakMinMax)).thenReturn(95.0)
         whenever(target.get(DoubleKey.OApsAIMIPkpdMaxDiaChangePerDayH)).thenReturn(0.5)
         whenever(target.get(DoubleKey.OApsAIMIPkpdMaxPeakChangePerDayMin)).thenReturn(5.0)
-        whenever(target.get(DoubleKey.OApsAIMIPkpdAnchorDiaH)).thenReturn(4.0)
-        whenever(target.get(DoubleKey.OApsAIMIPkpdAnchorPeakMin)).thenReturn(55.0)
+        stubProfileInsulinSeen(target)
         whenever(target.get(DoubleKey.OApsAIMIIsfFusionMinFactor)).thenReturn(0.7)
         whenever(target.get(DoubleKey.OApsAIMIIsfFusionMaxFactor)).thenReturn(1.5)
         whenever(target.get(DoubleKey.OApsAIMIIsfFusionMaxChangePerTick)).thenReturn(0.2)
@@ -349,14 +387,8 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
     private fun storePkpdDefaults(stored: MutableMap<DoubleKey, Double>) {
         stored[DoubleKey.OApsAIMIPkpdStateDiaH] = 6.0
         stored[DoubleKey.OApsAIMIPkpdStatePeakMin] = 55.0
-        stored[DoubleKey.OApsAIMIPkpdBoundsDiaMinH] = 4.0
-        stored[DoubleKey.OApsAIMIPkpdBoundsDiaMaxH] = 8.0
-        stored[DoubleKey.OApsAIMIPkpdBoundsPeakMinMin] = 35.0
-        stored[DoubleKey.OApsAIMIPkpdBoundsPeakMinMax] = 95.0
         stored[DoubleKey.OApsAIMIPkpdMaxDiaChangePerDayH] = 0.5
         stored[DoubleKey.OApsAIMIPkpdMaxPeakChangePerDayMin] = 5.0
-        stored[DoubleKey.OApsAIMIPkpdAnchorDiaH] = 4.0
-        stored[DoubleKey.OApsAIMIPkpdAnchorPeakMin] = 55.0
         stored[DoubleKey.OApsAIMIIsfFusionMinFactor] = 0.7
         stored[DoubleKey.OApsAIMIIsfFusionMaxFactor] = 1.5
         stored[DoubleKey.OApsAIMIIsfFusionMaxChangePerTick] = 0.2
@@ -377,7 +409,14 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
             val key = invocation.getArgument<DoubleKey>(0)
             stored[key] ?: key.defaultValue
         }
+        stubProfileInsulinSeen(prefs)
         return prefs
+    }
+
+    /** The loop already started from [profileInsulin], so no tick re-seeds from it. */
+    private fun stubProfileInsulinSeen(target: Preferences) {
+        whenever(target.get(LongNonKey.OApsAIMIPkpdProfileInsulinDiaMin)).thenReturn(360L)
+        whenever(target.get(LongNonKey.OApsAIMIPkpdProfileInsulinPeakMin)).thenReturn(55L)
     }
 
     private fun tick(index: Long, target: PkPdIntegration = integration) {
@@ -391,6 +430,7 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
             exerciseFlag = false,
             profileIsf = 50.0,
             tdd24h = 40.0,
+            profileInsulin = profileInsulin,
         )
     }
 
@@ -409,6 +449,7 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
         profileIsf = 50.0,
         tdd24h = 40.0,
         allowLearning = allowLearning,
+        profileInsulin = profileInsulin,
     )
 
     private fun isfTick(
@@ -427,6 +468,7 @@ class PkPdLearnedStateIntegrationTest : TestBase() {
         profileIsf = profileIsf,
         tdd24h = 40.0,
         allowLearning = allowLearning,
+        profileInsulin = profileInsulin,
     )
 
     private fun acceptedUpdateCount(target: PkPdIntegration): Long {

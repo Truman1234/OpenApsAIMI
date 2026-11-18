@@ -46,6 +46,7 @@ sealed class AppRoute(val route: String) {
     data object ProfileHelper : AppRoute("profile_helper")
     data object HistoryBrowser : AppRoute("history_browser")
     data object Preferences : AppRoute("preferences")
+    data object UserManual : AppRoute("user_manual")
     data object PluginPreferences : AppRoute("plugin_preferences/{pluginKey}?composeScreenKey={composeScreenKey}") {
 
         fun createRoute(pluginKey: String, composeScreenKey: String? = null) =
@@ -79,6 +80,7 @@ sealed class AppRoute(val route: String) {
     }
 
     data object CalibrationDialog : AppRoute("calibration_dialog")
+    data object EversenseCalibrationDialog : AppRoute("eversense_calibration_dialog")
     data object CarbsDialog : AppRoute("carbs_dialog")
     data object InsulinDialog : AppRoute("insulin_dialog")
     data object TreatmentDialog : AppRoute("treatment_dialog")
@@ -151,6 +153,10 @@ sealed class AppRoute(val route: String) {
 
     data object GlassTargetDetail : AppRoute("glass_target_detail")
     data object GlassLoopDetail : AppRoute("glass_loop_detail")
+
+    // AIMI dashboard information screens
+    data object AimiAdaptationStatus : AppRoute("aimi_adaptation_status")
+    data object AimiAdjustmentDetails : AppRoute("aimi_adjustment_details")
 
     data object FoodManagement : AppRoute("food_management")
     data object SiteRotationManagement : AppRoute("siteRotationManagement")

@@ -22,6 +22,14 @@ enum class TpoPackId(val priority: Int) {
     EXHAUSTED_RECOVERY(priority = 3),
     POST_HYPO_RECOVERY(priority = 2),
     POOR_SLEEP_WINDOW(priority = 1),
+
+    /**
+     * The manual Boost, started only by the user (see `TpoBoostPlan`) because they have eaten and want
+     * more action. It has the highest priority: no automatic pack can supersede it, and it replaces a
+     * protective pack that is running when it starts. Only a real low ends it early
+     * (`TpoBoostEligibility.shouldEndForLow`); the dosing safety (low suspend, max IOB) stays on all along.
+     */
+    MANUAL_BOOST(priority = 4),
     ;
 
     companion object {
@@ -76,6 +84,8 @@ data class TpoTickInput(
     val eventMemory: app.aaps.plugins.aps.openAPSAIMI.patient.PatientEventMemory,
     val reboundGuardActive: Boolean,
     val dawnEndogenousDrive: Double,
+    /** A meal was declared recently: mode or note active, or meal note younger than 3 h (4 h high-carb). */
+    val declaredMealEpisode: Boolean = false,
 )
 
 data class TpoSessionDocument(

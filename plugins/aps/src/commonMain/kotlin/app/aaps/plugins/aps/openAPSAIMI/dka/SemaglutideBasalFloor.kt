@@ -27,6 +27,20 @@ data class FloorConfig(
  * as a compromise between hypo risk and ketosis risk.
  */
 object SemaglutideBasalFloor {
+
+    /**
+     * The range the floor percentage is allowed to be, and the most the DKA override may ask for.
+     *
+     * These are the same bounds as the keys (`AimiDkaIntKey.FloorPercent` and
+     * `AimiDkaIntKey.FloorDkaMinPercent`), kept here because a stored value can sit outside them: an
+     * older build let the floor percentage go up to 100, and a 100 % floor would stop the loop ever
+     * going below the scheduled basal, which blocks hypo protection. `AimiDkaFloorPercentMigration`
+     * writes such a value back into range; until it runs, this clamp is what keeps dosing sane.
+     */
+    const val MIN_PERCENT: Int = 5
+    const val MAX_PERCENT: Int = 50
+    const val MAX_DKA_MIN_PERCENT: Int = 20
+
     data class Result(val rateUph: Double, val applied: Boolean, val note: String?)
 
     fun apply(
@@ -39,7 +53,10 @@ object SemaglutideBasalFloor {
         dkaActive: Boolean = false
     ): Result {
         if (!cfg.enabled || scheduledBasalUph <= 0.0 || !proposedRateUph.isFinite()) return Result(proposedRateUph, false, null)
-        val floor = (scheduledBasalUph * cfg.percent.coerceIn(5, 50) / 100.0).coerceAtMost(maxBasalUph)
+        // Clamped once and used for both the rate and the note: a stored value outside the key range
+        // (an older build allowed up to 100) must not make the note claim a percentage that was not used.
+        val percent = cfg.percent.coerceIn(MIN_PERCENT, MAX_PERCENT)
+        val floor = (scheduledBasalUph * percent / 100.0).coerceAtMost(maxBasalUph)
         if (proposedRateUph >= floor) return Result(proposedRateUph, false, null)
         if (bgMgdl == null || !bgMgdl.isFinite()) return Result(proposedRateUph, false, "Floor skipped: no current BG")
 
@@ -49,7 +66,8 @@ object SemaglutideBasalFloor {
         if (bgLow || eventualLow) {
             // DKA override: apply a small floor even when BG is low, to limit ketosis risk
             if (dkaActive && cfg.dkaMinPercent > 0) {
-                val dkaFloor = (scheduledBasalUph * cfg.dkaMinPercent.coerceIn(0, 20) / 100.0).coerceAtMost(maxBasalUph)
+                val dkaPercent = cfg.dkaMinPercent.coerceIn(0, MAX_DKA_MIN_PERCENT)
+                val dkaFloor = (scheduledBasalUph * dkaPercent / 100.0).coerceAtMost(maxBasalUph)
                 if (proposedRateUph < dkaFloor) {
                     val bgDesc = if (bgLow)
                         "BG ${bgMgdl.toInt()} mg/dL low"
@@ -57,7 +75,7 @@ object SemaglutideBasalFloor {
                         "eventual BG ${eventualBgMgdl!!.toInt()} mg/dL low"
                     return Result(
                         dkaFloor, true,
-                        "DKA min floor ($bgDesc): ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(dkaFloor)} U/h (${cfg.dkaMinPercent}% of ${aimiFmt2(scheduledBasalUph)})"
+                        "DKA min floor ($bgDesc): ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(dkaFloor)} U/h ($dkaPercent% of ${aimiFmt2(scheduledBasalUph)})"
                     )
                 }
             }
@@ -70,7 +88,7 @@ object SemaglutideBasalFloor {
 
         return Result(
             floor, true,
-            "Semaglutide floor: ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(floor)} U/h (${cfg.percent}% of ${aimiFmt2(scheduledBasalUph)})"
+            "Semaglutide floor: ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(floor)} U/h ($percent% of ${aimiFmt2(scheduledBasalUph)})"
         )
     }
 }

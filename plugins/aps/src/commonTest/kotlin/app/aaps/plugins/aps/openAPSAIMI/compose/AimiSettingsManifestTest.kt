@@ -1,11 +1,13 @@
 package app.aaps.plugins.aps.openAPSAIMI.compose
 
+import app.aaps.core.keys.AimiRetiredSettings
 import app.aaps.core.keys.BooleanKey
 import app.aaps.core.keys.DoubleKey
 import app.aaps.core.keys.IntKey
 import app.aaps.core.keys.StringKey
 import app.aaps.core.keys.interfaces.PreferenceKey
 import app.aaps.core.keys.interfaces.StringPreferenceKey
+import app.aaps.plugins.aps.openAPSAIMI.keys.AimiLongKey
 import app.aaps.plugins.aps.openAPSAIMI.keys.AimiStringKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -46,41 +48,16 @@ class AimiSettingsManifestTest {
      * already unreachable: a new key must be reachable on the day it is written.
      */
     private val expectedReachabilityDebt: Set<String> = setOf(
-        DoubleKey.OApsAIMIActivityBasalCapFactor.key,
-        BooleanKey.OApsAIMIAimiSmbComparatorEnabled.key,
-        DoubleKey.OApsAIMIAutodriveAcceleration.key,
-        BooleanKey.OApsAIMIAutodriveV3EnhancedGater.key,
-        BooleanKey.OApsAIMIDiaGovernorEnabled.key,
-        DoubleKey.OApsAIMIDiaGovernorLearnedWeight.key,
+        // Step S2 took 19 keys out: 11 nothing reads (now in DEAD_KEYS) and 8 that got a row.
         BooleanKey.OApsAIMIEffectiveIobReleaseEnabled.key,
-        BooleanKey.OApsAIMIEnableBasal.key,
         BooleanKey.OApsAIMIEnableStepsFromWatch.key,
-        BooleanKey.AimiHrvBaselinePerNight.key,
         BooleanKey.AimiPhoneStepsSyncEnable.key,
         BooleanKey.AimiHealthConnectStepsEnable.key,
-        DoubleKey.OApsAIMIFCLFactor.key,
-        IntKey.OApsAIMIHighBGinterval.key,
         BooleanKey.OApsAIMIHyperDroppingExemptEnabled.key,
-        BooleanKey.OApsAIMIIntelligenceKineticsProfiler.key,
-        BooleanKey.OApsAIMIIntelligenceSingleLearnPath.key,
-        BooleanKey.OApsAIMIIntelligenceSnapshotExport.key,
-        IntKey.OApsAIMIIntratickStallSeconds.key,
-        BooleanKey.OApsAIMILoopBlackboxFileEnabled.key,
         BooleanKey.OApsAIMILoopExclusiveInvocationEnabled.key,
         BooleanKey.OApsAIMIMealHyperBypassEnabled.key,
-        DoubleKey.OApsAIMINightGrowthBasalMultiplier.key,
-        DoubleKey.OApsAIMINightGrowthMaxSmbClamp.key,
-        DoubleKey.OApsAIMINightGrowthMinRiseSlope.key,
-        DoubleKey.OApsAIMINightGrowthSmbMultiplier.key,
-        BooleanKey.OApsAIMIPkpdEndogenousReversion.key,
-        BooleanKey.OApsAIMIPkpdHyperReversion.key,
-        BooleanKey.OApsAIMIPkpdPredictionKinetics.key,
-        DoubleKey.OApsAIMIPlateauBandAbs.key,
         BooleanKey.OApsAIMIPredictionAuthorityEnabled.key,
-        BooleanKey.OApsAIMIPredictionAuthorityShadow.key,
-        DoubleKey.OApsAIMIR2Confident.key,
         BooleanKey.OApsAIMIT3cPhysioInformedEnabled.key,
-        BooleanKey.OApsAIMIforcelimits.key,
         BooleanKey.AimiCosineGateEnabled.key,
         DoubleKey.AimiCosineGateAlpha.key,
         DoubleKey.AimiCosineGateMinDataQuality.key,
@@ -88,18 +65,13 @@ class AimiSettingsManifestTest {
         DoubleKey.AimiCosineGateMaxSensitivity.key,
         IntKey.AimiCosineGateMaxPeakShift.key,
         DoubleKey.AimiUamConfidence.key,
-        StringKey.AimiPhysioLLMProvider.key,
         StringKey.AimiTuningContextSelection.key,
-        // The context module's own settings. They came into scope when `isAimiScoped` was taught to
-        // read its named list, and their screen is a standalone activity outside the settings tree
-        // this manifest models. Listed here on purpose: the debt is pinned name by name, so nothing
-        // joins it without being written down.
+        // The context module's own setting. It came into scope when `isAimiScoped` was taught to read
+        // its named list, and its screen is a standalone activity outside the settings tree this
+        // manifest models. Listed here on purpose: the debt is pinned name by name, so nothing joins
+        // it without being written down. Step S3 deleted the five context credential keys that were
+        // here too (nothing read them).
         StringKey.ContextMode.key,
-        StringKey.ContextLLMProvider.key,
-        StringKey.ContextLLMOpenAIKey.key,
-        StringKey.ContextLLMGeminiKey.key,
-        StringKey.ContextLLMDeepSeekKey.key,
-        StringKey.ContextLLMClaudeKey.key,
     )
 
     // ---------------------------------------------------------------- 1. completeness
@@ -111,7 +83,8 @@ class AimiSettingsManifestTest {
 
         assertEquals(declared.size, declared.toSet().size, "duplicates in " + declared)
 
-        val missing = scoped - declared.toSet() - AimiSettingsManifest.UNCLASSIFIED - AimiSettingsManifest.DEAD_KEYS
+        val missing = scoped - declared.toSet() - AimiSettingsManifest.UNCLASSIFIED - AimiSettingsManifest.DEAD_KEYS -
+            AimiSettingsManifest.INTERNAL_STATE
         assertEquals(emptyList<Any>(), missing.toList())
 
         val unknown = declared.toSet() - scoped.toSet()
@@ -271,6 +244,120 @@ class AimiSettingsManifestTest {
         assertEquals(ids.size, ids.toSet().size, "duplicates in " + ids)
     }
 
+    // ---------------------------------------------------------------- internal state (step P3)
+
+    /**
+     * The learned PK/PD DIA and peak are what the learner found, not settings. Step P3 took them out
+     * of the settings tiers: they stay keys (so a backup still restores them and the stored value is
+     * kept), but no entry gives them a level and no screen or audit row shows them.
+     */
+    @Test
+    fun `the learned PK PD state is internal and has no settings entry`() {
+        val learned = setOf(DoubleKey.OApsAIMIPkpdStateDiaH.key, DoubleKey.OApsAIMIPkpdStatePeakMin.key)
+        assertTrue(AimiSettingsManifest.INTERNAL_STATE.containsAll(learned))
+        val declared = AimiSettingsManifest.entries.map { it.key.key }.toSet()
+        assertEquals(emptyList<Any>(), declared.intersect(AimiSettingsManifest.INTERNAL_STATE).toList())
+    }
+
+    /**
+     * Step S3: the values the loop and the meal advisor keep for themselves are internal state too. They
+     * keep their storage names (the 20-minute SMB spacing and the carry-forward prebolus survive a
+     * restart), but no settings page, no Expert page and no audit row shows them.
+     */
+    @Test
+    fun `the runtime state of the loop and the meal advisor is internal state`() {
+        assertEquals(
+            setOf(
+                DoubleKey.OApsAIMIPkpdStateDiaH.key,
+                DoubleKey.OApsAIMIPkpdStatePeakMin.key,
+                BooleanKey.OApsAIMIMealAdvisorTrigger.key,
+                DoubleKey.OApsAIMILastEstimatedCarbs.key,
+                DoubleKey.OApsAIMILastEstimatedCarbTime.key,
+                AimiLongKey.LastPrebolusTime.key,
+                AimiLongKey.LastLegacyPrebolusTime.key,
+                AimiLongKey.PendingLegacyPrebolusUnitMilli.key,
+                AimiLongKey.PendingLegacyPrebolusExpiry.key,
+                StringKey.OApsAIMIContextStorage.key,
+                AimiLongKey.EndometriosisFlareStartedAt.key,
+            ),
+            AimiSettingsManifest.INTERNAL_STATE,
+        )
+    }
+
+    @Test
+    fun `no setting is written by the loop alone`() {
+        // A value only code writes is internal state, not a setting: it belongs in INTERNAL_STATE, with
+        // no entry, so it can never get a row or a reset button.
+        val loopOnly = AimiSettingsManifest.entries.filter { it.writers == setOf(AimiSettingsWriter.LOOP) }.map { it.key.key }
+        assertEquals(emptyList<Any>(), loopOnly)
+    }
+
+    // ---------------------------------------------------------------- dead keys (step S3)
+
+    @Test
+    fun `no dead key is left`() {
+        // Step S3 deleted every other dead key, step S3b wired or deleted the seven of the protected
+        // families, and step D1 deleted the xDrip one minute switch (owner decisions 2026-11-15).
+        assertEquals(emptySet<String>(), AimiSettingsManifest.DEAD_KEYS)
+    }
+
+    @Test
+    fun `the xDrip one minute switch is retired under its storage name`() {
+        // Owner decision of step D1: its reader was lost in the port and every xDrip user keeps all
+        // readings, so the key is deleted and its stored value is removed.
+        assertTrue("key_use_Aimi_xdripOM" in AimiRetiredSettings.storageNames)
+    }
+
+    @Test
+    fun `the wired protected keys are user settings`() {
+        listOf(BooleanKey.AimiPhysioSleepDataEnable, BooleanKey.AimiPhysioHRVDataEnable, IntKey.AimiEndometriosisFlareDuration).forEach {
+            assertEquals(setOf(AimiSettingsWriter.USER), AimiSettingsManifest.entries.single { entry -> entry.key.key == it.key }.writers, it.key)
+        }
+    }
+
+    @Test
+    fun `the flare start time is internal state`() {
+        assertTrue(AimiLongKey.EndometriosisFlareStartedAt.key in AimiSettingsManifest.INTERNAL_STATE)
+    }
+
+    @Test
+    fun `the deleted protected keys are retired under their storage names`() {
+        listOf("aimi_physio_debug_logs", "aimi_physio_llm_provider", "aimi_endo_suppression", "oa_aimi_pregnancy_due_date_ms")
+            .forEach { assertTrue(it in AimiRetiredSettings.storageNames, it) }
+        // The copy of the old due date writes this name: it must stay the due date text key.
+        assertEquals(AimiStringKey.PregnancyDueDateString.key, AimiRetiredSettings.PREGNANCY_DUE_DATE_TEXT)
+    }
+
+    @Test
+    fun `a deleted key does not come back under its storage name`() {
+        val current = (BooleanKey.entries + DoubleKey.entries + IntKey.entries + StringKey.entries).map { it.key }.toSet() +
+            AimiStringKey.entries.map { it.key } + AimiLongKey.entries.map { it.key }
+        assertEquals(emptyList<Any>(), AimiRetiredSettings.storageNames.filter { it in current })
+        assertEquals(AimiRetiredSettings.storageNames.size, AimiRetiredSettings.storageNames.toSet().size)
+    }
+
+    // ---------------------------------------------------------------- levels (owner decision, S1 review)
+
+    @Test
+    fun `age and due date are SIMPLE because they are on the Essentials page`() {
+        assertEquals(AimiSettingsLevel.SIMPLE, AimiSettingsManifest.levelOf(IntKey.OApsAIMINightGrowthAgeYears))
+        assertEquals(AimiSettingsLevel.SIMPLE, AimiSettingsManifest.levelOf(AimiStringKey.PregnancyDueDateString))
+    }
+
+    @Test
+    fun `internal state is in scope and is on no screen`() {
+        val scoped = AimiSettingsManifest.scopedKeys.map { it.key }.toSet()
+        assertTrue(scoped.containsAll(AimiSettingsManifest.INTERNAL_STATE))
+        val onScreen = AimiSettingsScreens.sections.flatMap { section -> section.keys.map { it.key } }.toSet()
+        assertEquals(emptyList<Any>(), onScreen.intersect(AimiSettingsManifest.INTERNAL_STATE).toList())
+    }
+
+    @Test
+    fun `internal state is neither dead nor unclassified nor debt`() {
+        val other = AimiSettingsManifest.DEAD_KEYS + AimiSettingsManifest.UNCLASSIFIED + AimiSettingsManifest.REACHABILITY_DEBT
+        assertEquals(emptyList<Any>(), other.intersect(AimiSettingsManifest.INTERNAL_STATE).toList())
+    }
+
     // ---------------------------------------------------------------- 4. the lists only shrink
 
     @Test
@@ -328,11 +415,6 @@ class AimiSettingsManifestTest {
             StringKey.AimiAdvisorClaudeKey.key,
             StringKey.AimiEmergencySosPhone.key,
             StringKey.AimiEmergencySosPhone2.key,
-            // The context module keeps its own provider credentials, separate from the advisor's.
-            StringKey.ContextLLMOpenAIKey.key,
-            StringKey.ContextLLMGeminiKey.key,
-            StringKey.ContextLLMDeepSeekKey.key,
-            StringKey.ContextLLMClaudeKey.key,
             // Declared by the keys themselves (`isPin` / `isPassword`), not by the manifest.
             AimiStringKey.RemoteControlPin.key,
             AimiStringKey.OuraPersonalAccessToken.key,

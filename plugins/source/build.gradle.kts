@@ -91,12 +91,23 @@ kotlin {
                 // Fork-only CGM source plugin whose wrapper is still Android only. Libre 3 stays
                 // here until it gets a shared caller, the way Dexcom ONE+ just did.
                 implementation(project(":plugins:libre3"))
+                // Native Eversense driver, a plain Android library (Android BLE and JVM
+                // BouncyCastle). Android only, so the Eversense source is absent on iOS.
+                implementation(project(":plugins:eversense"))
 
                 implementation(project.dependencies.platform(libs.androidx.compose.bom))
                 implementation(libs.androidx.compose.material3)
                 implementation(libs.androidx.compose.runtime)
                 implementation(libs.androidx.lifecycle.runtime.compose)
                 implementation(libs.androidx.work.runtime)
+
+                // The camera that reads the Dexcom ONE+ / G7 applicator barcode on the start screen.
+                // The same CameraX and ZXing versions as the client set-up QR scanner of :plugins:sync.
+                implementation(libs.androidx.camera.camera2)
+                implementation(libs.androidx.camera.core)
+                implementation(libs.androidx.camera.lifecycle)
+                implementation(libs.androidx.camera.view)
+                implementation(libs.com.google.zxing.core)
             }
         }
 

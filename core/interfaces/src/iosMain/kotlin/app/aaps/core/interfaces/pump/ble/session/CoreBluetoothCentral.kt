@@ -28,10 +28,12 @@ import platform.CoreBluetooth.CBManagerStateUnknown
 import platform.CoreBluetooth.CBManagerStateUnsupported
 import platform.CoreBluetooth.CBPeripheral
 import platform.CoreBluetooth.CBPeripheralDelegateProtocol
+import platform.CoreBluetooth.CBPeripheralStateConnected
 import platform.CoreBluetooth.CBService
 import platform.CoreBluetooth.CBUUID
 import platform.Foundation.NSData
 import platform.Foundation.NSError
+import platform.Foundation.NSNumber
 import platform.Foundation.NSUUID
 import platform.Foundation.create
 import platform.darwin.DISPATCH_TIME_NOW
@@ -165,13 +167,39 @@ class CoreBluetoothCentral(
         manager?.stopScan()
     }
 
-    override fun connect(id: String): Boolean {
+    override fun connect(id: String): Boolean = connect(id, startDelaySeconds = 0)
+
+    /**
+     * `connectPeripheral` has no time limit: iOS keeps the request open, also while the app is
+     * suspended, and starts the app when the peripheral comes. A start delay, given in whole seconds
+     * because CoreBluetooth rejects a fraction, is counted by iOS in the same way.
+     */
+    override fun connect(id: String, startDelaySeconds: Int): Boolean {
         val peripheral = peripheralFor(id) ?: return false
         peripheral.delegate = delegate
         val central = manager ?: return false
-        central.connectPeripheral(peripheral, options = null)
+        val options: Map<Any?, *>? =
+            if (startDelaySeconds > 0) mapOf<Any?, Any?>(START_DELAY_KEY to NSNumber(int = startDelaySeconds)) else null
+        central.connectPeripheral(peripheral, options = options)
         return true
     }
+
+    private companion object {
+
+        /**
+         * The value of `CBConnectPeripheralOptionStartDelayKey`. The iOS header declares it (iOS 6 and
+         * later), but the Kotlin/Native CoreBluetooth bindings do not expose it, so the key is written
+         * out. Read from the SDK with Swift: `print(CBConnectPeripheralOptionStartDelayKey)`.
+         */
+        const val START_DELAY_KEY = "kCBConnectOptionStartDelay"
+    }
+
+    /**
+     * True when iOS has the link to [id] up now (`CBPeripheral.state` is connected), also when its
+     * `didConnect` event still waits on the radio queue. A peripheral this central does not know is
+     * not connected. Runs on the radio queue.
+     */
+    fun isPeripheralConnected(id: String): Boolean = syncValue { peripherals[id]?.state == CBPeripheralStateConnected }
 
     override fun cancel(id: String) {
         val peripheral = peripherals[id] ?: return
@@ -323,6 +351,9 @@ class CoreBluetoothCentral(
          * peripherals are offered.
          */
         override fun centralManager(central: CBCentralManager, willRestoreState: Map<Any?, *>) {
+            // The process was started for a radio event. Tell whoever needs a few seconds of it
+            // (the Garmin HTTP server) before the restore work, and ignore a failure there.
+            IosRadioWake.ping()
             restore(central, willRestoreState)
         }
 
@@ -353,6 +384,7 @@ class CoreBluetoothCentral(
         }
 
         override fun centralManager(central: CBCentralManager, didConnectPeripheral: CBPeripheral) {
+            IosRadioWake.ping()
             val id = didConnectPeripheral.identifier.UUIDString
             peripherals[id] = didConnectPeripheral
             didConnectPeripheral.delegate = this
@@ -433,6 +465,8 @@ class CoreBluetoothCentral(
             didUpdateValueForCharacteristic: CBCharacteristic,
             error: NSError?
         ) {
+            // A notification is the usual wake of a suspended app that is holding a connect.
+            IosRadioWake.ping()
             val failure = statusOf(error)
             if (failure != 0) {
                 emit(BleCentralEvent.OperationFailed("notify", "${didUpdateValueForCharacteristic.UUID.UUIDString} status $failure"))

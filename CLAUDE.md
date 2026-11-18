@@ -52,6 +52,28 @@ machine you are on. On macOS these rules replace the Windows ones:
   SDK is installed.`, that is what it means. Install it with `xcodebuild -downloadPlatform iOS`
   (no sudo, takes a while). Installed today: iOS 26.1 (23B86), arm64. Check with
   `xcrun simctl list runtimes`.
+- **`iosSimulatorArm64Test` also needs the TensorFlow Lite archive, which is built by hand.**
+  Without `plugins/aps/build/tflite-24-sim-arm64/libtensorflow-lite.a`, `:plugins:aps` and
+  `:ios:shell` fail at `linkDebugTestIosSimulatorArm64` with
+  `ld: library '.../libtensorflow-lite.a' not found`. Every other module's simulator tests still run,
+  so the failure looks narrow and is easy to read as a code problem. It is not. Build it with:
+  ```
+  ./plugins/aps/src/tfliteParity/build-uam24-sim-arm64.sh
+  ```
+  Three things about that script:
+    - **The archive is finished long before the script is.** It builds (or reuses) the `.a` first,
+      then boots a simulator to compare TFLite output against the Android reference vectors. Gradle
+      only needs the `.a`, which the build file passes as a `-force_load` linker input, so **a failure
+      in that validation step does not block the tests.** On 2026-11-16 it died with
+      `Incompatible device (domain=com.apple.CoreSimulator.SimError, code=403)`: the script takes the
+      last runtime in the list (`ios[-1]`) and Apple had installed a device-bound
+      `iOS-27-2-iPhone19-4` next to the normal `iOS-27-2`. Run gradle anyway.
+    - **The cache lives in `build/`, so it is per checkout and a clean wipes it.** A second clone has
+      to get it again. Building from source downloads the TensorFlow v2.4.0 tarball and compiles it;
+      copying `libtensorflow-lite.a` from another clone is enough and takes a second, because nothing
+      but the archive is a linker input (the `flags.txt` and `archive.sha256` beside it are only for
+      the script's own cache check).
+    - The device target has `build-uam24-device-arm64.sh`. `iosSimulatorArm64Test` does not need it.
 
 ### What each machine can run
 
@@ -138,7 +160,7 @@ the exact assertions passed on `iosSimulatorArm64Test`.
 - **A rename or a signature change is never local.** Run the suite **CI** runs, not the modules you
   edited. The command is in `.github/workflows/unit-tests.yml`:
   ```
-  ./gradlew.bat --console=plain --no-daemon --continue -PfirebaseDisable \
+  ./gradlew.bat --console=plain --no-daemon --continue \
     testFullDebugUnitTest testDebugUnitTest jvmTest testAndroidHostTest :desktop:shell:test
   ```
   Add `--continue` yourself. Without it gradle stops scheduling after the first failing module, so

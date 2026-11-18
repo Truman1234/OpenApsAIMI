@@ -22,10 +22,18 @@ enum class ApsIntentKey(
         urlRef = ApsStrings.openapsama_link_to_preference_json_doc
     ),
 
-    AimiControlCenter(
-        key = "aimi_control_center_compose",
-        title = ApsStrings.pref_title_aimi_control_center,
-        summary = ApsStrings.pref_summary_aimi_control_center,
+    /** The read only "What AIMI learned" page (step S2). It replaced the Control Center row. */
+    AimiLearned(
+        key = "aimi_learned_compose",
+        title = ApsStrings.aimi_learned_title,
+        summary = ApsStrings.aimi_learned_summary,
+        preferenceType = PreferenceType.CLICK,
+    ),
+
+    AimiSettingsAudit(
+        key = "aimi_settings_audit_compose",
+        title = ApsStrings.aimi_settings_audit_entry_title,
+        summary = ApsStrings.aimi_settings_audit_entry_summary,
         preferenceType = PreferenceType.CLICK,
     ),
 
@@ -75,6 +83,17 @@ enum class ApsIntentKey(
         key = "aimi_hypo_risk_alarm_info",
         title = ApsStrings.pref_title_aimi_hypo_risk_alarm_info,
         summary = ApsStrings.pref_summary_aimi_hypo_risk_alarm_info,
+        preferenceType = PreferenceType.CLICK,
+    ),
+
+    /**
+     * Read only: night growth support on or off now, and why (step D1). Its page uses the same rule
+     * as the loop, because the switch and age rows show their key defaults also when nothing is stored.
+     */
+    AimiNightGrowthState(
+        key = "aimi_ngr_state_info",
+        title = ApsStrings.aimi_ngr_state_title,
+        summary = ApsStrings.aimi_ngr_state_summary,
         preferenceType = PreferenceType.CLICK,
     ),
 

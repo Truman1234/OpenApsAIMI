@@ -106,9 +106,10 @@ object IosPlatformBindings {
         rxBus: RxBus,
         commandQueue: CommandQueue,
         ch: ConcentrationHelper,
+        preferences: Preferences,
         rh: TextResolver
     ): KeepAliveChecks = KeepAliveChecks(
-        aapsLogger, localAlertUtils, config, iobCobCalculator, loop, dateUtil, activePlugin, profileFunction, rxBus, commandQueue, ch,
+        aapsLogger, localAlertUtils, config, iobCobCalculator, loop, dateUtil, activePlugin, profileFunction, rxBus, commandQueue, ch, preferences,
         statusOutdatedLabel = { rh.gs(CoreUiStrings.keepalive_status_outdated) },
         basalOutdatedLabel = { rh.gs(CoreUiStrings.keepalive_basal_outdated) }
     )
@@ -136,15 +137,17 @@ object IosPlatformBindings {
             chosenMelody = { category -> AlarmAudioPolicy.chosenMelody(preferences, category) },
             alarmActionLabel = { action ->
                 when (action) {
-                    AlarmAction.HYPO_TREATED -> rh.gs(CoreUiStrings.alert_hypo_treated)
+                    AlarmAction.HYPO_TREATED    -> rh.gs(CoreUiStrings.alert_hypo_treated)
+                    AlarmAction.CGM_ACKNOWLEDGE -> rh.gs(CoreUiStrings.cgm_alarm_acknowledge)
                 }
             },
             // Button text of a generic notification action, for example the DKA "Enter ketones" button.
             resolveText = { textRef -> rh.gs(textRef) },
-            // "Hypo treated" on the lock screen, same as the Android notification button.
+            // "Hypo treated" and "Acknowledge" on the lock screen, same as the Android notification buttons.
             onAlarmAction = { action ->
                 when (action) {
-                    AlarmAction.HYPO_TREATED -> localAlertUtils().snoozeHypoAfterTreatment()
+                    AlarmAction.HYPO_TREATED    -> localAlertUtils().snoozeHypoAfterTreatment()
+                    AlarmAction.CGM_ACKNOWLEDGE -> localAlertUtils().acknowledgeCgmAlarms()
                 }
             }
         ) { preferences.get(BooleanKey.AlertOverrideDoNotDisturb) }
