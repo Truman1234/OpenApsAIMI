@@ -54,11 +54,18 @@ class AimiDkaSettings(private val preferences: Preferences, private val context:
 
     fun notifyOnWatch() = preferences.get(AimiDkaBooleanKey.DkaNotifyWatch)
 
-    fun floor() = FloorConfig(
-        enabled = preferences.get(AimiDkaBooleanKey.DkaFloorEnabled),
-        percent = preferences.get(AimiDkaIntKey.FloorPercent).coerceIn(10, 100),
-        minBgMgdl = preferences.get(AimiDkaIntKey.FloorMinBg).coerceIn(70, 180)
-    )
+    fun floor(): FloorConfig {
+        val percent = preferences.get(AimiDkaIntKey.FloorPercent).coerceIn(5, 50)
+        val dkaMin = preferences.get(AimiDkaIntKey.FloorDkaMinPercent)
+            .coerceIn(0, 20)
+            .coerceAtMost(percent - 1)  // DKA floor must always be below the normal floor
+        return FloorConfig(
+            enabled = preferences.get(AimiDkaBooleanKey.DkaFloorEnabled),
+            percent = percent,
+            minBgMgdl = preferences.get(AimiDkaIntKey.FloorMinBg).coerceIn(70, 180),
+            dkaMinPercent = dkaMin
+        )
+    }
 
     fun buildInput(
         nowMs: Long, bgHistory: List<BgPoint>, insulinDelivered3h: Double, iob: Double, carbs2h: Double,

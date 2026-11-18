@@ -72,11 +72,17 @@ enum class AimiDkaIntKey(
     HighBg("aimi_dka_high_bg", 250, 180, 350, R.string.aimi_dka_high_bg_title, R.string.aimi_dka_high_bg_summary, dependency = AimiDkaBooleanKey.DkaEnabled),
     VeryHighBg("aimi_dka_very_high_bg", 300, 200, 400, R.string.aimi_dka_very_high_bg_title, R.string.aimi_dka_very_high_bg_summary, dependency = AimiDkaBooleanKey.DkaEnabled),
 
-    /** Minimum temp basal as % of the current basal rate. */
-    FloorPercent("aimi_dka_floor_percent", 50, 10, 100, R.string.aimi_dka_floor_percent_title, R.string.aimi_dka_floor_percent_summary, dependency = AimiDkaBooleanKey.DkaFloorEnabled),
+    /** Normal floor: minimum temp basal as % of scheduled basal. Range 5-50. */
+    FloorPercent("aimi_dka_floor_percent", 10, 5, 50, R.string.aimi_dka_floor_percent_title, R.string.aimi_dka_floor_percent_summary, dependency = AimiDkaBooleanKey.DkaFloorEnabled),
 
-    /** The floor is never applied at or below this BG (mg/dL). */
+    /** The normal floor is not applied at or below this BG (mg/dL). */
     FloorMinBg("aimi_dka_floor_min_bg", 100, 70, 180, R.string.aimi_dka_floor_min_bg_title, R.string.aimi_dka_floor_min_bg_summary, dependency = AimiDkaBooleanKey.DkaFloorEnabled),
+
+    /**
+     * DKA override floor: applied even when BG is low, but only when DKA risk is active.
+     * Always kept below [FloorPercent]. Range 0-20.
+     */
+    FloorDkaMinPercent("aimi_dka_floor_dka_min_percent", 5, 0, 20, R.string.aimi_dka_floor_dka_min_percent_title, R.string.aimi_dka_floor_dka_min_percent_summary, dependency = AimiDkaBooleanKey.DkaFloorEnabled),
 }
 
 /** Opens the ketone entry dialog from the settings screen. */

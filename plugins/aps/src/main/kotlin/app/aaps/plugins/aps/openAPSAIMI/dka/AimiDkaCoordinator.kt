@@ -64,7 +64,8 @@ class AimiDkaCoordinator(
             // raised to the floor, otherwise the loop could leave insulin at zero for hours.
             val proposed = rt.rate ?: i.runningTempRateUph.takeIf { i.runningTempMinutes > 0 }
             if (proposed != null) {
-                val f = SemaglutideBasalFloor.apply(proposed, i.scheduledBasalUph, i.bgMgdl, rt.eventualBG, cfg, i.maxBasalUph)
+                val dkaActive = dka.risk != DkaRisk.NONE
+                val f = SemaglutideBasalFloor.apply(proposed, i.scheduledBasalUph, i.bgMgdl, rt.eventualBG, cfg, i.maxBasalUph, dkaActive)
                 if (f.applied) {
                     rt.rate = f.rateUph
                     if ((rt.duration ?: 0) <= 0) rt.duration = 30

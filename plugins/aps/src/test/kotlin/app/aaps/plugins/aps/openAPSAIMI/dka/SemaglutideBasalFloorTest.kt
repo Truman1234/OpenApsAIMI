@@ -5,12 +5,12 @@ import org.junit.jupiter.api.Test
 
 class SemaglutideBasalFloorTest {
 
-    private val cfg = FloorConfig(enabled = true, percent = 50, minBgMgdl = 100)
+    private val cfg = FloorConfig(enabled = true, percent = 50, minBgMgdl = 100, dkaMinPercent = 5)
 
     private fun apply(
         proposed: Double = 0.0, scheduled: Double = 1.0, bg: Double? = 180.0, eventual: Double? = 150.0,
-        c: FloorConfig = cfg, max: Double = 3.0
-    ) = SemaglutideBasalFloor.apply(proposed, scheduled, bg, eventual, c, max)
+        c: FloorConfig = cfg, max: Double = 3.0, dkaActive: Boolean = false
+    ) = SemaglutideBasalFloor.apply(proposed, scheduled, bg, eventual, c, max, dkaActive)
 
     @Test fun `zero temp is raised to the percentage of scheduled basal`() {
         val r = apply()
@@ -57,9 +57,14 @@ class SemaglutideBasalFloorTest {
         assertThat(r.rateUph).isWithin(1e-9).of(3.0)
     }
 
-    @Test fun `percent below 10 is clamped to 10`() {
-        val r = apply(c = cfg.copy(percent = 5))
-        assertThat(r.rateUph).isWithin(1e-9).of(0.1)
+    @Test fun `percent below 5 is clamped to 5`() {
+        val r = apply(c = cfg.copy(percent = 2))
+        assertThat(r.rateUph).isWithin(1e-9).of(0.05)
+    }
+
+    @Test fun `percent above 50 is clamped to 50`() {
+        val r = apply(c = cfg.copy(percent = 80))
+        assertThat(r.rateUph).isWithin(1e-9).of(0.5)
     }
 
     @Test fun `disabled or no scheduled basal changes nothing`() {
@@ -69,5 +74,41 @@ class SemaglutideBasalFloorTest {
 
     @Test fun `non finite proposal is left alone`() {
         assertThat(apply(proposed = Double.NaN).applied).isFalse()
+    }
+
+    // --- DKA override tests ---
+
+    @Test fun `low glucose with dkaActive applies the DKA min floor`() {
+        val r = apply(bg = 85.0, dkaActive = true)
+        assertThat(r.applied).isTrue()
+        assertThat(r.rateUph).isWithin(1e-9).of(0.05)  // 5% of 1.0
+        assertThat(r.note).contains("DKA min floor")
+        assertThat(r.note).contains("85")
+    }
+
+    @Test fun `low glucose without dkaActive still skips the floor`() {
+        val r = apply(bg = 85.0, dkaActive = false)
+        assertThat(r.applied).isFalse()
+        assertThat(r.note).contains("skipped")
+    }
+
+    @Test fun `predicted low glucose with dkaActive applies the DKA min floor`() {
+        val r = apply(eventual = 75.0, dkaActive = true)
+        assertThat(r.applied).isTrue()
+        assertThat(r.rateUph).isWithin(1e-9).of(0.05)
+        assertThat(r.note).contains("eventual")
+    }
+
+    @Test fun `dka min floor of zero disables the override`() {
+        val r = apply(bg = 85.0, dkaActive = true, c = cfg.copy(dkaMinPercent = 0))
+        assertThat(r.applied).isFalse()
+        assertThat(r.note).contains("skipped")
+    }
+
+    @Test fun `dkaActive does not raise rate already above the DKA min floor`() {
+        // proposed = 0.1 is above the DKA floor (0.05), so nothing changes
+        val r = apply(proposed = 0.1, bg = 85.0, dkaActive = true)
+        assertThat(r.applied).isFalse()
+        assertThat(r.rateUph).isEqualTo(0.1)
     }
 }

@@ -26,6 +26,8 @@
     <string name="aimi_dka_floor_percent_summary">Follows your basal profile at each time of day, including a profile percentage</string>
     <string name="aimi_dka_floor_min_bg_title">Floor inactive at or below (mg/dL)</string>
     <string name="aimi_dka_floor_min_bg_summary">At or below this BG, or when the predicted eventual BG is below it, the floor is not applied</string>
+    <string name="aimi_dka_floor_dka_min_percent_title">DKA minimum basal when glucose is low (% of scheduled basal)</string>
+    <string name="aimi_dka_floor_dka_min_percent_summary">When DKA risk is active (WATCH or higher) and glucose is below the floor threshold, this smaller floor still runs. Must be less than the normal minimum. Set to 0 to disable. Agree the value with your diabetes team.</string>
     <string name="dka_channel_watch">DKA protection: watch</string>
     <string name="dka_channel_warning">DKA protection: warning</string>
     <string name="dka_channel_critical">DKA protection: critical alarm</string>
