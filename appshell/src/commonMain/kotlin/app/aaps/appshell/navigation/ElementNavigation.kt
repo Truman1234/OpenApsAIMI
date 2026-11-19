@@ -323,6 +323,15 @@ fun ElementNavigator.handleNotificationAction(notificationId: NotificationId) {
         NotificationId.AAPS_DIR_NOT_SELECTED,
         NotificationId.AAPS_DIR_ACCESS_LOST    -> onRequestDirectoryAccess()
 
+        // The ketone entry field on the AIMI DKA sub screen. The screen key and the highlight key
+        // are literal strings, not an import from :plugins:aps, to avoid a new inter-module
+        // dependency - they must keep matching "aimi_compose_dka" in
+        // AimiPreferenceTree.dkaSubScreen() and AimiDkaKeys.KetoneEntry.key.
+        NotificationId.DKA_WATCH,
+        NotificationId.DKA_WARNING,
+        NotificationId.DKA_CRITICAL            ->
+            navController.navigate(AppRoute.PreferenceScreen.createRoute("aimi_compose_dka", "aimi_dka_ketone_entry"))
+
         else                                   -> Unit
     }
 }

@@ -3,6 +3,7 @@ package app.aaps.plugins.aps.openAPSAIMI.dka
 import app.aaps.core.interfaces.aps.RT
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
+import app.aaps.core.interfaces.notifications.NotificationAction
 import app.aaps.core.interfaces.notifications.NotificationId
 import app.aaps.core.interfaces.notifications.NotificationManager
 import app.aaps.core.interfaces.resources.TextResolver
@@ -90,7 +91,12 @@ class AimiDkaCoordinator(
         val mmol = raw.replace(',', '.').toDoubleOrNull()?.let { unit.toMmol(it) }
         if (mmol == null || !mmol.isFinite() || mmol < 0.0 || mmol > MAX_KETONE_MMOL) {
             aapsLogger.warn(LTag.APS, "AIMI DKA: ketone entry ignored: '$raw'")
-            notificationManager.post(NotificationId.DKA_WATCH, rh.gs(ApsStrings.aimi_dka_ketone_invalid), validMinutes = 60)
+            notificationManager.post(
+                NotificationId.DKA_WATCH,
+                rh.gs(ApsStrings.aimi_dka_ketone_invalid),
+                validMinutes = 60,
+                actions = listOf(enterKetonesAction())
+            )
             return
         }
         preferences.put(AimiDkaDoubleStateKey.KetoneMmol, mmol)
@@ -172,10 +178,18 @@ class AimiDkaCoordinator(
         val reasons = d.reasons.joinToString("\n") { "• $it" }
         val actions = d.messages.joinToString("\n") { "→ $it" }
         val body = listOf(reasons, actions).filter { it.isNotBlank() }.joinToString("\n\n")
-        notificationManager.post(id, rh.gs(title) + "\n" + body, validMinutes = 180)
+        notificationManager.post(id, rh.gs(title) + "\n" + body, validMinutes = 180, actions = listOf(enterKetonesAction()))
         preferences.put(AimiDkaIntStateKey.LastRisk, d.risk.ordinal)
         preferences.put(AimiDkaLongStateKey.LastAlert, nowMs)
     }
+
+    /**
+     * Button on every DKA notification. The closure itself does nothing: the id-based navigation in
+     * `ElementNavigation.handleNotificationAction` is what actually opens the ketone entry field, the
+     * same split `IDENTIFICATION_NOT_SET` and `MASTER_PASSWORD_NOT_SET` already use. Kept here only
+     * because the button text has to travel with the notification.
+     */
+    private fun enterKetonesAction() = NotificationAction(ApsStrings.aimi_dka_enter_ketones_action) {}
 
     private fun dismissAll() {
         notificationManager.dismiss(NotificationId.DKA_WATCH)
