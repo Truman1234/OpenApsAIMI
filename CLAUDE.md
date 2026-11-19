@@ -144,6 +144,15 @@ the exact assertions passed on `iosSimulatorArm64Test`.
   Add `--continue` yourself. Without it gradle stops scheduling after the first failing module, so
   you fix one thing, push, and CI goes red on the next one. (Learned the slow way on 2026-10-13:
   three red CI rounds for a single commit, each a different module of the same change.)
+- **Never commit `gradle/gradle-daemon-jvm.properties` because it showed up as modified.** Android
+  Studio rewrites it on a Gradle sync: it replaces the whole file, which drops the comment that
+  explains why only the version is pinned, and can add a `toolchainVendor` or `toolchainUrl` line
+  for the JDK the IDE itself runs on. CI sets up Temurin, so a vendor line there makes every runner
+  download a JDK from `api.foojay.io`, and when those package ids stopped working in October 2026
+  every job failed before compiling anything (`a343e32613` undid exactly that). The file has to stay
+  tracked, so `.gitignore` is not the answer: check `git status` before a commit and
+  `git checkout -- gradle/gradle-daemon-jvm.properties` when it appears. Only edit it by hand, to
+  change the pinned version.
 - **After renaming anything, grep case-insensitively.** `grep -rni oldname` — renaming a class also
   renames the lowercase DI property, and `grep -rn OldName` silently misses `oldName`. Two files
   hold names as a golden list, so they do not fail to compile, they fail a test:
@@ -157,6 +166,20 @@ the exact assertions passed on `iosSimulatorArm64Test`.
 - **Never run two gradle builds at once.** They contend on the build cache (`Timeout waiting to
   lock Build cache … Owner PID`) and fail tasks that are otherwise fine, and the extra load makes
   real-time tests (`withTimeout`, cancellation races) flake. Run them one after the other.
+- **Moving a file between source sets needs the consumers rebuilt.** Incremental compilation keeps
+  the old output and the old compile classpath, so the class reads as gone: `Unresolved reference`
+  in the module's own test source set and in every module that depends on it, while
+  `compileAndroidMain` of the module that holds it passes, because the file compiled fine where it
+  now lives. It looks exactly like a real visibility problem and it is not. Before believing one,
+  rebuild the module the file moved in:
+  ```
+  ./gradlew :the:module:compileAndroidHostTest --rerun-tasks --no-daemon
+  ```
+  If that passes, the move is fine and the failures were stale state; a `clean` of the consumers
+  clears the rest. On 2026-11-18 moving `HistoryEventStore` from `commonMain` to `androidMain` cost
+  a nine minute CI round and nearly a rewrite of working code, because the stale failure was read as
+  proof that `androidMain` was not visible to its consumers. It was: another file moved the same day
+  was being consumed happily in the same build.
 - **In a coroutine test, do not `advanceUntilIdle()` on anything that can re-arm itself.** A
   scheduler that re-schedules from a mocked, frozen `dateUtil.now()` never goes idle, and the test
   hangs instead of failing — it ate a whole test run before anyone noticed. Use `advanceTimeBy(d)`
