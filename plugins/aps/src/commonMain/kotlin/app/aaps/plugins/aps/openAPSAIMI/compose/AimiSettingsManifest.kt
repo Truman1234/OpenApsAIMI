@@ -6,6 +6,9 @@ import app.aaps.core.keys.IntKey
 import app.aaps.core.keys.StringKey
 import app.aaps.core.keys.interfaces.NonPreferenceKey
 import app.aaps.core.keys.interfaces.StringPreferenceKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaBooleanKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaStringKey
 import app.aaps.plugins.aps.openAPSAIMI.keys.AimiLongKey
 import app.aaps.plugins.aps.openAPSAIMI.keys.AimiStringKey
 
@@ -114,8 +117,14 @@ internal data class AimiSettingEntry(
  * ## Scope
  * [scopedKeys] is every AIMI owned key: an entry of [BooleanKey], [DoubleKey], [IntKey] or
  * [StringKey] whose name starts with one of [AIMI_NAME_PREFIXES], plus the keys named one by one
- * in [EXTRA_SCOPED_KEY_NAMES], plus every entry of [AimiStringKey] and [AimiLongKey]. A new AIMI
- * key breaks `AimiSettingsManifestTest` on the day it is written.
+ * in [EXTRA_SCOPED_KEY_NAMES], plus every entry of [AimiStringKey], [AimiLongKey],
+ * [AimiDkaBooleanKey], [AimiDkaIntKey] and [AimiDkaStringKey]. A new AIMI key breaks
+ * `AimiSettingsManifestTest` on the day it is written.
+ *
+ * The DKA protection's own runtime-state enums (`AimiDkaDoubleStateKey`, `AimiDkaLongStateKey`,
+ * `AimiDkaIntStateKey`) are deliberately NOT in scope: they hold no user preference, only values
+ * [app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaCoordinator] reads and writes itself, and they are
+ * not instances of any of the key types this manifest walks.
  *
  * The scope used to be the `OApsAIMI` prefix alone, which left about 45 AIMI settings outside
  * every guarantee, among them the two AIMI max basal values and the two tube values the
@@ -571,6 +580,24 @@ internal object AimiSettingsManifest {
         // Secret: a personal phone number, not a dosing value. See `AimiSettingEntry.secret`.
         AimiSettingEntry(StringKey.AimiEmergencySosPhone, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Protection, setOf(AimiSettingsWriter.USER), declaredSecret = true),
         AimiSettingEntry(StringKey.AimiEmergencySosPhone2, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Protection, setOf(AimiSettingsWriter.USER), declaredSecret = true),
+        // DKA protection. Declared mirror of `aimiComposeDkaSubScreen()` in `OpenAPSAIMIPlugin.kt`;
+        // see `AimiSettingsScreens`'s `PreferencesDka` content for the matching sections.
+        AimiSettingEntry(AimiDkaBooleanKey.DkaEnabled, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaBooleanKey.DkaNotifyWatch, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaBooleanKey.DkaRestrictSmb, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaBooleanKey.DkaFloorEnabled, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaIntKey.HighBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaIntKey.VeryHighBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaIntKey.FloorPercent, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaIntKey.FloorMinBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaIntKey.FloorDkaMinPercent, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaBooleanKey.DkaSickDay, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaBooleanKey.DkaSglt2, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaBooleanKey.DkaGlp1, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaStringKey.KetoneUnitChoice, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        // The coordinator also writes this one, clearing it back to "" once it has taken the typed
+        // value over for the next loop tick - see `AimiDkaCoordinator.takeOverKetoneEntry`.
+        AimiSettingEntry(AimiDkaStringKey.KetoneEntry, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, setOf(AimiSettingsWriter.USER, AimiSettingsWriter.LOOP)),
     )
 
     private val entryByKeyString: Map<String, AimiSettingEntry> =
@@ -584,6 +611,9 @@ internal object AimiSettingsManifest {
         addAll(StringKey.entries.filter { it.isAimiScoped() })
         addAll(AimiStringKey.entries)
         addAll(AimiLongKey.entries)
+        addAll(AimiDkaBooleanKey.entries)
+        addAll(AimiDkaIntKey.entries)
+        addAll(AimiDkaStringKey.entries)
     }
 
     /**

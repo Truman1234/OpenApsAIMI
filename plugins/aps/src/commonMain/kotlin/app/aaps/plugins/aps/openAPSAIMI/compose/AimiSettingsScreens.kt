@@ -6,6 +6,9 @@ import app.aaps.core.keys.IntKey
 import app.aaps.core.keys.StringKey
 import app.aaps.core.keys.interfaces.NonPreferenceKey
 import app.aaps.core.keys.interfaces.PreferenceKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaBooleanKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaStringKey
 import app.aaps.plugins.aps.openAPSAIMI.keys.AimiStringKey
 
 /**
@@ -54,6 +57,9 @@ internal enum class AimiSettingsContentId {
     PreferencesTrajectory,
     PreferencesAiAuditor,
     ContextEditor,
+
+    /** Declared mirror of `aimiComposeDkaSubScreen()` in `OpenAPSAIMIPlugin.kt`. */
+    PreferencesDka,
 
     /**
      * The settings audit screen. Unlike every other content it declares no section and no list of
@@ -167,6 +173,10 @@ internal enum class AimiSettingsSectionId {
     ExpertStability,
     ExpertPhysio,
     ExpertAutonomy,
+    DkaToggles,
+    DkaThresholds,
+    DkaContext,
+    DkaKetone,
 }
 
 /**
@@ -251,6 +261,7 @@ internal object AimiSettingsScreens {
         AimiSettingsContentId.PreferencesTrajectory,
         AimiSettingsContentId.PreferencesAiAuditor,
         AimiSettingsContentId.ContextEditor,
+        AimiSettingsContentId.PreferencesDka,
     )
 
     /** Every content the navigation really reaches. */
@@ -671,6 +682,56 @@ internal object AimiSettingsScreens {
         fields(
             AimiSettingsSectionId.ContextModuleEnable, AimiSettingsContentId.ContextEditor, AimiSettingsLevel.EXPERT,
             BooleanKey.OApsAIMIContextEnabled, BooleanKey.OApsAIMIContextLLMEnabled,
+        ),
+        // Declared mirror of `aimiComposeDkaSubScreen()` in `OpenAPSAIMIPlugin.kt`.
+        AimiSettingsSection(
+            // Feature toggles: intent-level switches, not therapy values.
+            id = AimiSettingsSectionId.DkaToggles,
+            content = AimiSettingsContentId.PreferencesDka,
+            level = AimiSettingsLevel.ADVANCED,
+            kind = AimiSettingsSectionKind.FIELDS,
+            keys = listOf(
+                AimiDkaBooleanKey.DkaEnabled,
+                AimiDkaBooleanKey.DkaNotifyWatch,
+                AimiDkaBooleanKey.DkaRestrictSmb,
+                AimiDkaBooleanKey.DkaFloorEnabled,
+            ),
+        ),
+        AimiSettingsSection(
+            // BG and floor thresholds: the person's own safety-net values, like `SosThresholds`.
+            id = AimiSettingsSectionId.DkaThresholds,
+            content = AimiSettingsContentId.PreferencesDka,
+            level = AimiSettingsLevel.SIMPLE,
+            kind = AimiSettingsSectionKind.FIELDS,
+            keys = listOf(
+                AimiDkaIntKey.HighBg,
+                AimiDkaIntKey.VeryHighBg,
+                AimiDkaIntKey.FloorPercent,
+                AimiDkaIntKey.FloorMinBg,
+                AimiDkaIntKey.FloorDkaMinPercent,
+            ),
+        ),
+        AimiSettingsSection(
+            // Facts about the person's own therapy, not behavior knobs.
+            id = AimiSettingsSectionId.DkaContext,
+            content = AimiSettingsContentId.PreferencesDka,
+            level = AimiSettingsLevel.SIMPLE,
+            kind = AimiSettingsSectionKind.FIELDS,
+            keys = listOf(
+                AimiDkaBooleanKey.DkaSickDay,
+                AimiDkaBooleanKey.DkaSglt2,
+                AimiDkaBooleanKey.DkaGlp1,
+            ),
+        ),
+        AimiSettingsSection(
+            id = AimiSettingsSectionId.DkaKetone,
+            content = AimiSettingsContentId.PreferencesDka,
+            level = AimiSettingsLevel.SIMPLE,
+            kind = AimiSettingsSectionKind.FIELDS,
+            keys = listOf(
+                AimiDkaStringKey.KetoneUnitChoice,
+                AimiDkaStringKey.KetoneEntry,
+            ),
         ),
     )
 
