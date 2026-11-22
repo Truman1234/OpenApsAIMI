@@ -709,6 +709,7 @@ internal object AimiSettingsScreens {
                 AimiDkaIntKey.FloorPercent,
                 AimiDkaIntKey.FloorMinBg,
                 AimiDkaIntKey.FloorDkaMinPercent,
+                AimiDkaIntKey.FloorHardStopBg,
             ),
         ),
         AimiSettingsSection(

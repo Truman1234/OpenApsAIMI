@@ -121,6 +121,7 @@ aimi_cosine_gate_min_sens|DoubleKey|true
 aimi_dka_enabled|AimiDkaBooleanKey|true
 aimi_dka_floor_dka_min_percent|AimiDkaIntKey|true
 aimi_dka_floor_enabled|AimiDkaBooleanKey|true
+aimi_dka_floor_hard_stop_bg|AimiDkaIntKey|true
 aimi_dka_floor_min_bg|AimiDkaIntKey|true
 aimi_dka_floor_percent|AimiDkaIntKey|true
 aimi_dka_glp1|AimiDkaBooleanKey|true
