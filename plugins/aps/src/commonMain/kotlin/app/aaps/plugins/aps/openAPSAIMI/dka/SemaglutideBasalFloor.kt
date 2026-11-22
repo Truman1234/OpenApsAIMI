@@ -13,7 +13,13 @@ data class FloorConfig(
      * but only when DKA risk is active (WATCH or higher).
      * Must be less than [percent]. Range 0-20. Set to 0 to disable.
      */
-    val dkaMinPercent: Int = 5
+    val dkaMinPercent: Int = 5,
+    /**
+     * Hard stop: at or below this BG, now or predicted, no floor is applied at all, not even the
+     * DKA override. Always at or below [minBgMgdl]. Range 50-90, same default as
+     * `AimiDkaIntKey.FloorHardStopBg`.
+     */
+    val hardStopBgMgdl: Int = 80
 )
 
 /**
@@ -25,6 +31,10 @@ data class FloorConfig(
  * DKA override: when [dkaActive] is true (DKA risk WATCH or higher), a smaller floor
  * ([FloorConfig.dkaMinPercent]) is applied even when BG is at or below [FloorConfig.minBgMgdl],
  * as a compromise between hypo risk and ketosis risk.
+ *
+ * That compromise has a bottom: at or below [FloorConfig.hardStopBgMgdl], now or predicted, nothing
+ * here adds insulin, the DKA override included. Without it the override had no lower limit and still
+ * asked for its percentage at any BG, however low.
  */
 object SemaglutideBasalFloor {
 
@@ -40,6 +50,10 @@ object SemaglutideBasalFloor {
     const val MIN_PERCENT: Int = 5
     const val MAX_PERCENT: Int = 50
     const val MAX_DKA_MIN_PERCENT: Int = 20
+
+    /** Bounds of the hard stop, the same as `AimiDkaIntKey.FloorHardStopBg`. */
+    const val MIN_HARD_STOP_BG: Int = 50
+    const val MAX_HARD_STOP_BG: Int = 90
 
     data class Result(val rateUph: Double, val applied: Boolean, val note: String?)
 
@@ -59,6 +73,19 @@ object SemaglutideBasalFloor {
         val floor = (scheduledBasalUph * percent / 100.0).coerceAtMost(maxBasalUph)
         if (proposedRateUph >= floor) return Result(proposedRateUph, false, null)
         if (bgMgdl == null || !bgMgdl.isFinite()) return Result(proposedRateUph, false, "Floor skipped: no current BG")
+
+        // Hard stop first: below it nothing here adds insulin, so the DKA override below never sees
+        // a glucose value this low. Kept at or below minBgMgdl, so it can only ever be the stricter
+        // of the two.
+        val hardStop = cfg.hardStopBgMgdl.coerceIn(MIN_HARD_STOP_BG, MAX_HARD_STOP_BG).coerceAtMost(cfg.minBgMgdl)
+        val eventualBelowHardStop = eventualBgMgdl != null && eventualBgMgdl.isFinite() && eventualBgMgdl <= hardStop
+        if (bgMgdl <= hardStop || eventualBelowHardStop) {
+            val bgDesc = if (bgMgdl <= hardStop)
+                "BG ${bgMgdl.toInt()}"
+            else
+                "eventual BG ${eventualBgMgdl!!.toInt()}"
+            return Result(proposedRateUph, false, "Floor hard stop: $bgDesc <= $hardStop mg/dL, no floor applied")
+        }
 
         val bgLow = bgMgdl <= cfg.minBgMgdl
         val eventualLow = eventualBgMgdl != null && eventualBgMgdl.isFinite() && eventualBgMgdl < cfg.minBgMgdl

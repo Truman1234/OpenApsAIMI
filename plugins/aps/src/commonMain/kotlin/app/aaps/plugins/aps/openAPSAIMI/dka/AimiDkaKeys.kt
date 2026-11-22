@@ -66,6 +66,18 @@ enum class AimiDkaIntKey(
      * Always kept below [FloorPercent]. Range 0-20.
      */
     FloorDkaMinPercent("aimi_dka_floor_dka_min_percent", 5, 0, 20, ApsStrings.aimi_dka_floor_dka_min_percent_title, ApsStrings.aimi_dka_floor_dka_min_percent_summary, AimiDkaBooleanKey.DkaFloorEnabled),
+
+    /**
+     * Hard stop (mg/dL). At or below this BG, now or predicted, no floor is applied at all, not even
+     * [FloorDkaMinPercent]. Kept at or below [FloorMinBg] by the coordinator. Range 50-90.
+     *
+     * The default is 80 rather than the 70 you might expect. Between this value and [FloorMinBg]
+     * the only thing that can run is the small [FloorDkaMinPercent] override, and only while DKA
+     * risk is active, so moving the bound costs almost no insulin either way. Given that, the
+     * conservative end is the better default: a loop cannot treat ketosis at a low glucose anyway,
+     * because that needs carbohydrate as well, so it should stand aside and leave it to the person.
+     */
+    FloorHardStopBg("aimi_dka_floor_hard_stop_bg", 80, 50, 90, ApsStrings.aimi_dka_floor_hard_stop_bg_title, ApsStrings.aimi_dka_floor_hard_stop_bg_summary, AimiDkaBooleanKey.DkaFloorEnabled),
 }
 
 /** Text settings: the ketone unit and the one-shot ketone entry field. */

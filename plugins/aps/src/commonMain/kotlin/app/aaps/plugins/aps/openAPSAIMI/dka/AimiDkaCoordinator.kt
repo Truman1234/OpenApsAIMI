@@ -127,11 +127,15 @@ class AimiDkaCoordinator(
         val dkaMin = preferences.get(AimiDkaIntKey.FloorDkaMinPercent)
             .coerceIn(0, SemaglutideBasalFloor.MAX_DKA_MIN_PERCENT)
             .coerceAtMost(percent - 1)  // DKA floor must always be below the normal floor
+        val minBg = preferences.get(AimiDkaIntKey.FloorMinBg).coerceIn(70, 180)
         return FloorConfig(
             enabled = preferences.get(AimiDkaBooleanKey.DkaFloorEnabled),
             percent = percent,
-            minBgMgdl = preferences.get(AimiDkaIntKey.FloorMinBg).coerceIn(70, 180),
-            dkaMinPercent = dkaMin
+            minBgMgdl = minBg,
+            dkaMinPercent = dkaMin,
+            hardStopBgMgdl = preferences.get(AimiDkaIntKey.FloorHardStopBg)
+                .coerceIn(SemaglutideBasalFloor.MIN_HARD_STOP_BG, SemaglutideBasalFloor.MAX_HARD_STOP_BG)
+                .coerceAtMost(minBg)  // the hard stop can only ever be the stricter of the two
         )
     }
 
