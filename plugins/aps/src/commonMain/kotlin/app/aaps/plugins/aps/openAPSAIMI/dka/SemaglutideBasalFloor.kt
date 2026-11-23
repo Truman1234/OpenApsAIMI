@@ -6,8 +6,8 @@ data class FloorConfig(
     val enabled: Boolean = false,
     /** Normal floor: % of scheduled basal. Applied when BG is not low. Range 5-50. */
     val percent: Int = 10,
-    /** The normal floor is not applied at or below this BG (mg/dL). */
-    val minBgMgdl: Int = 100,
+    /** The normal floor is not applied at or below this glucose value (mg/dL). */
+    val minBgMgdl: Double = 100.0,
     /**
      * DKA override floor: a small % of scheduled basal applied even when BG is low,
      * but only when DKA risk is active (WATCH or higher).
@@ -15,11 +15,11 @@ data class FloorConfig(
      */
     val dkaMinPercent: Int = 5,
     /**
-     * Hard stop: at or below this BG, now or predicted, no floor is applied at all, not even the
-     * DKA override. Always at or below [minBgMgdl]. Range 50-90, same default as
-     * `AimiDkaIntKey.FloorHardStopBg`.
+     * Hard stop: at or below this glucose value (mg/dL), now or predicted, no floor is applied at
+     * all, not even the DKA override. Always at or below [minBgMgdl]. Range 50-90, same default as
+     * `AimiDkaUnitDoubleKey.FloorHardStopBg`.
      */
-    val hardStopBgMgdl: Int = 80
+    val hardStopBgMgdl: Double = 80.0
 )
 
 /**
@@ -51,7 +51,7 @@ object SemaglutideBasalFloor {
     const val MAX_PERCENT: Int = 50
     const val MAX_DKA_MIN_PERCENT: Int = 20
 
-    /** Bounds of the hard stop, the same as `AimiDkaIntKey.FloorHardStopBg`. */
+    /** Bounds of the hard stop in mg/dL, the same as `AimiDkaUnitDoubleKey.FloorHardStopBg`. */
     const val MIN_HARD_STOP_BG: Int = 50
     const val MAX_HARD_STOP_BG: Int = 90
 
@@ -64,7 +64,8 @@ object SemaglutideBasalFloor {
         eventualBgMgdl: Double?,
         cfg: FloorConfig,
         maxBasalUph: Double,
-        dkaActive: Boolean = false
+        dkaActive: Boolean = false,
+        glucoseText: GlucoseText = mgdlText
     ): Result {
         if (!cfg.enabled || scheduledBasalUph <= 0.0 || !proposedRateUph.isFinite()) return Result(proposedRateUph, false, null)
         // Clamped once and used for both the rate and the note: a stored value outside the key range
@@ -77,14 +78,16 @@ object SemaglutideBasalFloor {
         // Hard stop first: below it nothing here adds insulin, so the DKA override below never sees
         // a glucose value this low. Kept at or below minBgMgdl, so it can only ever be the stricter
         // of the two.
-        val hardStop = cfg.hardStopBgMgdl.coerceIn(MIN_HARD_STOP_BG, MAX_HARD_STOP_BG).coerceAtMost(cfg.minBgMgdl)
+        val hardStop = cfg.hardStopBgMgdl
+            .coerceIn(MIN_HARD_STOP_BG.toDouble(), MAX_HARD_STOP_BG.toDouble())
+            .coerceAtMost(cfg.minBgMgdl)
         val eventualBelowHardStop = eventualBgMgdl != null && eventualBgMgdl.isFinite() && eventualBgMgdl <= hardStop
         if (bgMgdl <= hardStop || eventualBelowHardStop) {
             val bgDesc = if (bgMgdl <= hardStop)
-                "BG ${bgMgdl.toInt()}"
+                "BG ${glucoseText(bgMgdl)}"
             else
-                "eventual BG ${eventualBgMgdl!!.toInt()}"
-            return Result(proposedRateUph, false, "Floor hard stop: $bgDesc <= $hardStop mg/dL, no floor applied")
+                "eventual BG ${glucoseText(eventualBgMgdl!!)}"
+            return Result(proposedRateUph, false, "Floor hard stop: $bgDesc <= ${glucoseText(hardStop)}, no floor applied")
         }
 
         val bgLow = bgMgdl <= cfg.minBgMgdl
@@ -97,9 +100,9 @@ object SemaglutideBasalFloor {
                 val dkaFloor = (scheduledBasalUph * dkaPercent / 100.0).coerceAtMost(maxBasalUph)
                 if (proposedRateUph < dkaFloor) {
                     val bgDesc = if (bgLow)
-                        "BG ${bgMgdl.toInt()} mg/dL low"
+                        "BG ${glucoseText(bgMgdl)} low"
                     else
-                        "eventual BG ${eventualBgMgdl!!.toInt()} mg/dL low"
+                        "eventual BG ${glucoseText(eventualBgMgdl!!)} low"
                     return Result(
                         dkaFloor, true,
                         "DKA min floor ($bgDesc): ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(dkaFloor)} U/h ($dkaPercent% of ${aimiFmt2(scheduledBasalUph)})"
@@ -107,9 +110,9 @@ object SemaglutideBasalFloor {
                 }
             }
             val skipReason = if (bgLow)
-                "Floor skipped: BG ${bgMgdl.toInt()} <= ${cfg.minBgMgdl} mg/dL"
+                "Floor skipped: BG ${glucoseText(bgMgdl)} <= ${glucoseText(cfg.minBgMgdl)}"
             else
-                "Floor skipped: eventual BG ${eventualBgMgdl!!.toInt()} mg/dL is low"
+                "Floor skipped: eventual BG ${glucoseText(eventualBgMgdl!!)} is low"
             return Result(proposedRateUph, false, skipReason)
         }
 
