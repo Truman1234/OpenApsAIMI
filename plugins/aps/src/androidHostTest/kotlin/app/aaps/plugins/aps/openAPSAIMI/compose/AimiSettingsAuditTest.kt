@@ -11,6 +11,7 @@ import app.aaps.core.keys.interfaces.LongNonPreferenceKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.interfaces.StringNonPreferenceKey
 import app.aaps.core.keys.interfaces.TextRef
+import app.aaps.core.keys.interfaces.UnitDoublePreferenceKey
 import app.aaps.plugins.aps.openAPSAIMI.keys.AimiLongKey
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -187,6 +188,7 @@ class AimiSettingsAuditTest {
         whenever(preferences.getIfExists(any<IntNonPreferenceKey>())).thenAnswer { (it.arguments[0] as IntNonPreferenceKey).defaultValue + 1 }
         whenever(preferences.getIfExists(any<StringNonPreferenceKey>())).thenAnswer { (it.arguments[0] as StringNonPreferenceKey).defaultValue + "x" }
         whenever(preferences.getIfExists(any<LongNonPreferenceKey>())).thenAnswer { (it.arguments[0] as LongNonPreferenceKey).defaultValue + 1L }
+        whenever(preferences.getIfExists(any<UnitDoublePreferenceKey>())).thenAnswer { (it.arguments[0] as UnitDoublePreferenceKey).defaultValue + 1.0 }
 
         val report = build()
 

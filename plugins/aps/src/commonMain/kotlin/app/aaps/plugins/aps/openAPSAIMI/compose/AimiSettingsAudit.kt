@@ -7,6 +7,7 @@ import app.aaps.core.keys.interfaces.NonPreferenceKey
 import app.aaps.core.keys.interfaces.PreferenceKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.interfaces.StringPreferenceKey
+import app.aaps.core.keys.interfaces.UnitDoublePreferenceKey
 import app.aaps.core.keys.interfaces.TextRef
 import app.aaps.plugins.aps.openAPSAIMI.NightGrowthActivation
 import kotlin.math.abs
@@ -206,6 +207,21 @@ internal object AimiSettingsAudit {
                 default = AimiValueDescriptor(valueText = doubleText(key.defaultValue, stored)),
                 isSet = true,
                 ignored = abs(preferences.get(key) - stored) >= DOUBLE_SAME_VALUE_EPSILON,
+                reset = { prefs -> prefs.put(key, key.defaultValue) },
+            )
+        }
+
+        // Glucose thresholds. Stored and compared in mg/dL; only the screen shows the user's unit.
+        is UnitDoublePreferenceKey -> {
+            val stored = preferences.getIfExists(key)
+            if (stored == null || abs(stored - key.defaultValue) < DOUBLE_SAME_VALUE_EPSILON) null
+            else Diff(
+                stored = AimiValueDescriptor(valueText = doubleText(stored, key.defaultValue)),
+                default = AimiValueDescriptor(valueText = doubleText(key.defaultValue, stored)),
+                isSet = true,
+                // getRaw, not get: both sides have to be mg/dL, or a mmol/L user sees every one of
+                // these rows claiming a difference they never made.
+                ignored = abs(preferences.getRaw(key) - stored) >= DOUBLE_SAME_VALUE_EPSILON,
                 reset = { prefs -> prefs.put(key, key.defaultValue) },
             )
         }
