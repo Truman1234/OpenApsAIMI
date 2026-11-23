@@ -57,6 +57,9 @@ class AimiSettingsAuditTest {
         whenever(preferences.getIfExists(any<IntNonPreferenceKey>())).thenReturn(null)
         whenever(preferences.getIfExists(any<StringNonPreferenceKey>())).thenReturn(null)
         whenever(preferences.getIfExists(any<LongNonPreferenceKey>())).thenReturn(null)
+        // Needed like the rest: Mockito answers a boxed Double with 0.0, not null, so without this
+        // every glucose threshold reads as stored at 0 and the audit shows a row nobody asked for.
+        whenever(preferences.getIfExists(any<UnitDoublePreferenceKey>())).thenReturn(null)
     }
 
     private fun build() = AimiSettingsAudit.build(preferences, strings)
