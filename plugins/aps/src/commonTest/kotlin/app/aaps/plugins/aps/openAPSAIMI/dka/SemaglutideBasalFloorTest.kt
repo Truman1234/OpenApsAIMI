@@ -184,14 +184,14 @@ class SemaglutideBasalFloorTest {
     /** The hard stop is the stricter of the two, so a stored value above the low threshold is capped at it. */
     @Test fun aHardStopAboveTheLowThresholdIsCappedAtIt() {
         // Uncapped, a hard stop of 90 would block at BG 85 and nothing would be applied.
-        val r = apply(bg = 85.0, dkaActive = true, c = cfg.copy(minBgMgdl = 80, hardStopBgMgdl = 90))
+        val r = apply(bg = 85.0, dkaActive = true, c = cfg.copy(minBgMgdl = 80.0, hardStopBgMgdl = 90.0))
         assertTrue(r.applied)
         assertFalse(r.note!!.contains("hard stop"), r.note!!)
     }
 
     @Test fun aHardStopOutsideTheKeyRangeIsClamped() {
         // 10 is below the range: clamped to 50, so 55 still passes and 45 does not.
-        val c = cfg.copy(hardStopBgMgdl = 10)
+        val c = cfg.copy(hardStopBgMgdl = 10.0)
         assertTrue(apply(bg = 55.0, dkaActive = true, c = c).applied)
         assertFalse(apply(bg = 45.0, dkaActive = true, c = c).applied)
     }
