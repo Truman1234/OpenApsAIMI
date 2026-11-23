@@ -11,6 +11,7 @@ import app.aaps.core.keys.interfaces.LongNonPreferenceKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.keys.interfaces.StringNonPreferenceKey
 import app.aaps.core.keys.interfaces.TextRef
+import app.aaps.core.keys.interfaces.UnitDoublePreferenceKey
 import app.aaps.plugins.aps.openAPSAIMI.keys.AimiLongKey
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -56,6 +57,9 @@ class AimiSettingsAuditTest {
         whenever(preferences.getIfExists(any<IntNonPreferenceKey>())).thenReturn(null)
         whenever(preferences.getIfExists(any<StringNonPreferenceKey>())).thenReturn(null)
         whenever(preferences.getIfExists(any<LongNonPreferenceKey>())).thenReturn(null)
+        // Needed like the rest: Mockito answers a boxed Double with 0.0, not null, so without this
+        // every glucose threshold reads as stored at 0 and the audit shows a row nobody asked for.
+        whenever(preferences.getIfExists(any<UnitDoublePreferenceKey>())).thenReturn(null)
     }
 
     private fun build() = AimiSettingsAudit.build(preferences, strings)
@@ -187,6 +191,7 @@ class AimiSettingsAuditTest {
         whenever(preferences.getIfExists(any<IntNonPreferenceKey>())).thenAnswer { (it.arguments[0] as IntNonPreferenceKey).defaultValue + 1 }
         whenever(preferences.getIfExists(any<StringNonPreferenceKey>())).thenAnswer { (it.arguments[0] as StringNonPreferenceKey).defaultValue + "x" }
         whenever(preferences.getIfExists(any<LongNonPreferenceKey>())).thenAnswer { (it.arguments[0] as LongNonPreferenceKey).defaultValue + 1L }
+        whenever(preferences.getIfExists(any<UnitDoublePreferenceKey>())).thenAnswer { (it.arguments[0] as UnitDoublePreferenceKey).defaultValue + 1.0 }
 
         val report = build()
 

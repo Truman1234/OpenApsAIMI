@@ -9,7 +9,9 @@ import kotlin.test.assertTrue
 
 class SemaglutideBasalFloorTest {
 
-    private val cfg = FloorConfig(enabled = true, percent = 50, minBgMgdl = 100, dkaMinPercent = 5)
+    // The hard stop is pinned here rather than taken from the default: it is a tuning value that may
+    // change, and the tests below say what the code does, not what today's default happens to be.
+    private val cfg = FloorConfig(enabled = true, percent = 50, minBgMgdl = 100.0, dkaMinPercent = 5, hardStopBgMgdl = 70.0)
 
     private fun apply(
         proposed: Double = 0.0, scheduled: Double = 1.0, bg: Double? = 180.0, eventual: Double? = 150.0,
@@ -152,6 +154,80 @@ class SemaglutideBasalFloorTest {
         val r = apply(proposed = 0.1, bg = 90.0, dkaActive = true)
         assertFalse(r.applied)
         assertEquals(0.1, r.rateUph)
+    }
+
+    // --- Hard stop tests ---
+
+    /**
+     * The point of the hard stop. Before it, the DKA override had no lower limit: it asked for its
+     * percentage at any glucose value, however low, as long as DKA risk was active.
+     */
+    @Test fun dkaOverrideIsAbandonedBelowTheHardStop() {
+        val r = apply(bg = 55.0, dkaActive = true)
+        assertFalse(r.applied)
+        assertEquals(0.0, r.rateUph)
+        assertTrue(r.note!!.contains("hard stop"), r.note!!)
+    }
+
+    @Test fun glucoseExactlyAtTheHardStopIsAlreadyTooLow() {
+        assertFalse(apply(bg = 70.0, dkaActive = true).applied)
+        assertTrue(apply(bg = 71.0, dkaActive = true).applied)
+    }
+
+    @Test fun aPredictedValueBelowTheHardStopAlsoStopsTheDkaOverride() {
+        val r = apply(bg = 150.0, eventual = 60.0, dkaActive = true)
+        assertFalse(r.applied)
+        assertTrue(r.note!!.contains("eventual"), r.note!!)
+        assertTrue(r.note!!.contains("hard stop"), r.note!!)
+    }
+
+    /** The hard stop is the stricter of the two, so a stored value above the low threshold is capped at it. */
+    @Test fun aHardStopAboveTheLowThresholdIsCappedAtIt() {
+        // Uncapped, a hard stop of 90 would block at BG 85 and nothing would be applied.
+        val r = apply(bg = 85.0, dkaActive = true, c = cfg.copy(minBgMgdl = 80.0, hardStopBgMgdl = 90.0))
+        assertTrue(r.applied)
+        assertFalse(r.note!!.contains("hard stop"), r.note!!)
+    }
+
+    @Test fun aHardStopOutsideTheKeyRangeIsClamped() {
+        // 10 is below the range: clamped to 50, so 55 still passes and 45 does not.
+        val c = cfg.copy(hardStopBgMgdl = 10.0)
+        assertTrue(apply(bg = 55.0, dkaActive = true, c = c).applied)
+        assertFalse(apply(bg = 45.0, dkaActive = true, c = c).applied)
+    }
+
+    @Test fun theHardStopKeyRangeMatchesTheBoundsTheFloorClampsWith() {
+        assertEquals(SemaglutideBasalFloor.MIN_HARD_STOP_BG, AimiDkaUnitDoubleKey.FloorHardStopBg.minMgdl)
+        assertEquals(SemaglutideBasalFloor.MAX_HARD_STOP_BG, AimiDkaUnitDoubleKey.FloorHardStopBg.maxMgdl)
+    }
+
+    /**
+     * The glucose thresholds are stored in mg/dL and the loop compares against mg/dL, so the
+     * coordinator must read them with `getRaw`. If someone switches it to plain `get`, a mmol/L
+     * user gets 5.6 where 100 is meant, every reading is then above the threshold, and the floor
+     * would run through a hypo. This states the expected scale so that mistake has a test to fail.
+     */
+    @Test fun theGlucoseThresholdsAreStoredInMgdl() {
+        AimiDkaUnitDoubleKey.entries.forEach {
+            assertTrue(it.defaultValue >= 36.0, "${it.key} looks like mmol/L: ${it.defaultValue}")
+            assertTrue(it.defaultValue >= it.minMgdl && it.defaultValue <= it.maxMgdl, it.key)
+        }
+    }
+
+    /** The note follows the user's unit, and nothing else in the result does. */
+    @Test fun theNoteUsesTheFormatterItIsGiven() {
+        val mmol: GlucoseText = { "${(it / 18.0 * 10).toInt() / 10.0} mmol/L" }
+        val r = SemaglutideBasalFloor.apply(0.0, 1.0, 65.0, 150.0, cfg, 3.0, true, mmol)
+        assertFalse(r.applied)
+        assertTrue(r.note!!.contains("mmol/L"), r.note!!)
+        assertFalse(r.note!!.contains("mg/dL"), r.note!!)
+    }
+
+    /** The shipped defaults, stated once so a change to either is a deliberate edit here. */
+    @Test fun theShippedDefaultsAreTheTunedOnes() {
+        assertEquals(100.0, AimiDkaUnitDoubleKey.FloorMinBg.defaultValue)
+        assertEquals(80.0, AimiDkaUnitDoubleKey.FloorHardStopBg.defaultValue)
+        assertEquals(AimiDkaUnitDoubleKey.FloorHardStopBg.defaultValue, FloorConfig().hardStopBgMgdl)
     }
 
     @Test fun disabledOrNoScheduledBasalChangesNothing() {

@@ -18,6 +18,7 @@ import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaCoordinator
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaDoubleStateKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaFloorPercentMigration
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaUnitDoubleKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntStateKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaLongStateKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaStringKey
@@ -387,6 +388,7 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
         preferences.registerPreferences(AimiStringKey.entries)
         preferences.registerPreferences(AimiDkaBooleanKey.entries)
         preferences.registerPreferences(AimiDkaIntKey.entries)
+        preferences.registerPreferences(AimiDkaUnitDoubleKey.entries)
         preferences.registerPreferences(AimiDkaStringKey.entries)
         preferences.registerPreferences(AimiDkaDoubleStateKey.entries)
         preferences.registerPreferences(AimiDkaLongStateKey.entries)
@@ -1178,7 +1180,7 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
     }
 
 
-    private val dkaCoordinator by lazy { AimiDkaCoordinator(preferences, rh, notificationManager, aapsLogger) }
+    private val dkaCoordinator by lazy { AimiDkaCoordinator(preferences, rh, notificationManager, aapsLogger, profileUtil) }
 
     override suspend fun invoke(initiator: String, tempBasalFallback: Boolean): Unit = withContext(Dispatchers.Default) {
         aapsLogger.debug(LTag.APS, "invoke from $initiator tempBasalFallback: $tempBasalFallback")
