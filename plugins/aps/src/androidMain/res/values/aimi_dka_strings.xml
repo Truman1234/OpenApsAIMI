@@ -5,7 +5,7 @@
     <string name="aimi_dka_enabled_title">Enable DKA protection</string>
     <string name="aimi_dka_enabled_summary">Experimental safety aid. It does not replace ketone testing or medical advice.</string>
     <string name="aimi_dka_notify_watch_title">Notify at WATCH level</string>
-    <string name="aimi_dka_notify_watch_summary">Early low-priority notification (ketones 0.6-1.4 mmol/L, or 2 h above the high threshold)</string>
+    <string name="aimi_dka_notify_watch_summary">Early low-priority notification (ketones 0.6-1.4 mmol/L = 6-15 mg/dL, or 2 h above the high threshold)</string>
     <string name="aimi_dka_restrict_smb_title">Pause SMB if insulin seems ineffective</string>
     <string name="aimi_dka_restrict_smb_summary">If BG stays high despite delivered insulin, stop SMBs to avoid hidden insulin stacking. Change the infusion set and correct by pen/syringe.</string>
     <string name="aimi_dka_high_bg_title">High BG threshold</string>
@@ -19,7 +19,7 @@
     <string name="aimi_dka_glp1_title">I take a GLP-1 or GIP/GLP-1 medicine</string>
     <string name="aimi_dka_glp1_summary">For example semaglutide or tirzepatide (Mounjaro). Reduced appetite and insulin need can lead to ketosis; nausea and vomiting can mask DKA symptoms.</string>
     <string name="aimi_dka_ketone_entry_title">Enter blood ketone value</string>
-    <string name="aimi_dka_ketone_entry_summary">Type the value of your meter and confirm. It is used for 4 hours and is taken over at the next loop run. Choose the unit above first.</string>
+    <string name="aimi_dka_ketone_entry_summary">Type the value of your meter and confirm. It is used for 4 hours and is taken over at the next loop run. Choose the unit above first. Warning level is 1.5 mmol/L = 16 mg/dL, critical is 3.0 mmol/L = 31 mg/dL.</string>
     <string name="aimi_dka_ketone_unit_title">Ketone unit</string>
     <string name="aimi_dka_ketone_unit_summary">Unit of your ketone meter. Valid range: 0 to 8 mmol/L (0 to 83 mg/dL)</string>
     <string name="aimi_dka_ketone_unit_mmol">mmol/L</string>
