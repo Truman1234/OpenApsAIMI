@@ -8,6 +8,7 @@ import app.aaps.core.keys.interfaces.NonPreferenceKey
 import app.aaps.core.keys.interfaces.PreferenceKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaBooleanKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaUnitDoubleKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaStringKey
 import app.aaps.plugins.aps.openAPSAIMI.keys.AimiStringKey
 
@@ -704,11 +705,12 @@ internal object AimiSettingsScreens {
             level = AimiSettingsLevel.SIMPLE,
             kind = AimiSettingsSectionKind.FIELDS,
             keys = listOf(
-                AimiDkaIntKey.HighBg,
-                AimiDkaIntKey.VeryHighBg,
+                AimiDkaUnitDoubleKey.HighBg,
+                AimiDkaUnitDoubleKey.VeryHighBg,
                 AimiDkaIntKey.FloorPercent,
-                AimiDkaIntKey.FloorMinBg,
+                AimiDkaUnitDoubleKey.FloorMinBg,
                 AimiDkaIntKey.FloorDkaMinPercent,
+                AimiDkaUnitDoubleKey.FloorHardStopBg,
             ),
         ),
         AimiSettingsSection(
