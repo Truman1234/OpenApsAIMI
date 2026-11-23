@@ -3,6 +3,7 @@ package app.aaps.plugins.aps.openAPSAIMI.dka
 import android.content.Context
 import app.aaps.core.interfaces.aps.RT
 import app.aaps.core.interfaces.logging.AAPSLogger
+import app.aaps.core.interfaces.profile.ProfileUtil
 import app.aaps.core.interfaces.logging.LTag
 import app.aaps.core.keys.interfaces.Preferences
 
@@ -17,9 +18,16 @@ import app.aaps.core.keys.interfaces.Preferences
 class AimiDkaCoordinator(
     context: Context,
     preferences: Preferences,
-    private val aapsLogger: AAPSLogger
+    private val aapsLogger: AAPSLogger,
+    private val profileUtil: ProfileUtil
 ) {
     private val settings = AimiDkaSettings(preferences, context)
+
+    /**
+     * Glucose values in the reason text follow the unit the user has set.
+     * Only the text: every comparison below stays in mg/dL.
+     */
+    private val glucoseText: GlucoseText = { profileUtil.fromMgdlToStringWithUnits(it) }
     private val notifier = DkaGuardNotifier(context)
 
     data class Inputs(
@@ -42,7 +50,7 @@ class AimiDkaCoordinator(
 
     fun process(rt: RT, i: Inputs) {
         // 1) DKA risk + notification
-        val dka = DkaGuard(settings.config()).evaluate(
+        val dka = DkaGuard(settings.config(), glucoseText).evaluate(
             settings.buildInput(i.nowMs, i.bgHistory, i.insulinDelivered3h, i.iob, i.cobGrams, i.lastSiteChangeMs, 0, i.tdd)
         )
         notifier.update(dka, settings.notifyOnWatch(), i.nowMs)
@@ -65,7 +73,7 @@ class AimiDkaCoordinator(
             val proposed = rt.rate ?: i.runningTempRateUph.takeIf { i.runningTempMinutes > 0 }
             if (proposed != null) {
                 val dkaActive = dka.risk != DkaRisk.NONE
-                val f = SemaglutideBasalFloor.apply(proposed, i.scheduledBasalUph, i.bgMgdl, rt.eventualBG, cfg, i.maxBasalUph, dkaActive)
+                val f = SemaglutideBasalFloor.apply(proposed, i.scheduledBasalUph, i.bgMgdl, rt.eventualBG, cfg, i.maxBasalUph, dkaActive, glucoseText)
                 if (f.applied) {
                     rt.rate = f.rateUph
                     if ((rt.duration ?: 0) <= 0) rt.duration = 30

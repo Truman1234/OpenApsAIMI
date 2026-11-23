@@ -41,8 +41,10 @@ object DkaKetoneStore {
 class AimiDkaSettings(private val preferences: Preferences, private val context: Context) {
 
     fun config(): DkaConfig {
-        val high = preferences.get(AimiDkaIntKey.HighBg).toDouble()
-        val veryHigh = preferences.get(AimiDkaIntKey.VeryHighBg).toDouble().coerceAtLeast(high + 10.0)
+        // getRaw, not get: these are compared against glucose in mg/dL. Plain get() would answer in
+        // the user's display unit, so a mmol/L user would get 13.9 where the guard expects 250.
+        val high = preferences.getRaw(AimiDkaUnitDoubleKey.HighBg)
+        val veryHigh = preferences.getRaw(AimiDkaUnitDoubleKey.VeryHighBg).coerceAtLeast(high + 10.0)
         return DkaConfig(
             enabled = preferences.get(AimiDkaBooleanKey.DkaEnabled),
             restrictSmbOnSuspectedFailure = preferences.get(AimiDkaBooleanKey.DkaRestrictSmb),
@@ -59,11 +61,16 @@ class AimiDkaSettings(private val preferences: Preferences, private val context:
         val dkaMin = preferences.get(AimiDkaIntKey.FloorDkaMinPercent)
             .coerceIn(0, 20)
             .coerceAtMost(percent - 1)  // DKA floor must always be below the normal floor
+        // getRaw for the same reason as in config(): the floor compares against mg/dL.
+        val minBg = preferences.getRaw(AimiDkaUnitDoubleKey.FloorMinBg).coerceIn(70.0, 180.0)
         return FloorConfig(
             enabled = preferences.get(AimiDkaBooleanKey.DkaFloorEnabled),
             percent = percent,
-            minBgMgdl = preferences.get(AimiDkaIntKey.FloorMinBg).coerceIn(70, 180),
-            dkaMinPercent = dkaMin
+            minBgMgdl = minBg,
+            dkaMinPercent = dkaMin,
+            hardStopBgMgdl = preferences.getRaw(AimiDkaUnitDoubleKey.FloorHardStopBg)
+                .coerceIn(SemaglutideBasalFloor.MIN_HARD_STOP_BG.toDouble(), SemaglutideBasalFloor.MAX_HARD_STOP_BG.toDouble())
+                .coerceAtMost(minBg)  // the hard stop can only ever be the stricter of the two
         )
     }
 

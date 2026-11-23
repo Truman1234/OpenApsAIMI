@@ -155,6 +155,7 @@ import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaBooleanKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaCoordinator
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntentKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaUnitDoubleKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.BgPoint
 import app.aaps.core.objects.extensions.put
 import app.aaps.core.objects.extensions.store
@@ -260,6 +261,7 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
         preferences.registerPreferences(app.aaps.plugins.aps.openAPSAIMI.keys.AimiStringKey::class.java)
         preferences.registerPreferences(AimiDkaBooleanKey::class.java)
         preferences.registerPreferences(AimiDkaIntKey::class.java)
+        preferences.registerPreferences(AimiDkaUnitDoubleKey::class.java)
         preferences.registerPreferences(AimiDkaIntentKey::class.java)
 
         // Diagnostic (2026-07-22): trace the simplified PK/PD "tail power" slider key to pin the
@@ -2116,19 +2118,23 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
                 add(AimiDkaBooleanKey.DkaEnabled)
                 add(AimiDkaBooleanKey.DkaNotifyWatch)
                 add(AimiDkaBooleanKey.DkaRestrictSmb)
-                add(AimiDkaIntKey.HighBg)
-                add(AimiDkaIntKey.VeryHighBg)
+                add(AimiDkaUnitDoubleKey.HighBg)
+                add(AimiDkaUnitDoubleKey.VeryHighBg)
                 add(AimiDkaBooleanKey.DkaSickDay)
                 add(AimiDkaBooleanKey.DkaSglt2)
                 add(AimiDkaBooleanKey.DkaGlp1)
                 add(AimiDkaIntentKey.EnterKetone)
                 add(AimiDkaBooleanKey.DkaFloorEnabled)
                 add(AimiDkaIntKey.FloorPercent)
-                add(AimiDkaIntKey.FloorMinBg)
+                add(AimiDkaUnitDoubleKey.FloorMinBg)
+                // FloorDkaMinPercent existed as a key but was never put on the screen here, so the
+                // DKA override could not be set at all on this branch.
+                add(AimiDkaIntKey.FloorDkaMinPercent)
+                add(AimiDkaUnitDoubleKey.FloorHardStopBg)
             },
         )
 
-    private val dkaCoordinator by lazy { AimiDkaCoordinator(context, preferences, aapsLogger) }
+    private val dkaCoordinator by lazy { AimiDkaCoordinator(context, preferences, aapsLogger, profileUtil) }
 
     private fun aimiComposeHormonitorViewerItem(): PreferenceItem =
         ApsIntentKey.HormonitorViewer.withCompose(

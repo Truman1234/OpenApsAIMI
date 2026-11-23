@@ -78,7 +78,15 @@ data class DkaDecision(
     val reasons: List<String>
 )
 
-class DkaGuard(private val cfg: DkaConfig = DkaConfig()) {
+/**
+ * Turns a glucose value in mg/dL into text for the user, in the unit they have set.
+ * The default writes mg/dL, which is what a test or a caller without a ProfileUtil wants.
+ */
+typealias GlucoseText = (Double) -> String
+
+internal val mgdlText: GlucoseText = { "${it.toInt()} mg/dL" }
+
+class DkaGuard(private val cfg: DkaConfig = DkaConfig(), private val glucoseText: GlucoseText = mgdlText) {
 
     fun evaluate(i: DkaInput): DkaDecision {
         if (!cfg.enabled) return DkaDecision(DkaRisk.NONE, true, 1.0, emptyList(), emptyList())
@@ -103,15 +111,15 @@ class DkaGuard(private val cfg: DkaConfig = DkaConfig()) {
 
             if (reliable) {
                 if (aboveHigh >= 120) {
-                    reasons += "BG > ${cfg.highBg.toInt()} mg/dL for ${aboveHigh} min"
+                    reasons += "BG > ${glucoseText(cfg.highBg)} for ${aboveHigh} min"
                     raise(DkaRisk.WATCH)
                 }
                 if (aboveVeryHigh >= 120) {
-                    reasons += "BG > ${cfg.veryHighBg.toInt()} mg/dL for ${aboveVeryHigh} min"
+                    reasons += "BG > ${glucoseText(cfg.veryHighBg)} for ${aboveVeryHigh} min"
                     raise(DkaRisk.WARNING)
                 }
                 if (aboveVeryHigh >= 240 || current.mgdl >= cfg.extremeBg) {
-                    reasons += "Severe/prolonged hyperglycemia (${current.mgdl.toInt()} mg/dL)"
+                    reasons += "Severe/prolonged hyperglycemia (${glucoseText(current.mgdl)})"
                     raise(DkaRisk.CRITICAL)
                 }
 
