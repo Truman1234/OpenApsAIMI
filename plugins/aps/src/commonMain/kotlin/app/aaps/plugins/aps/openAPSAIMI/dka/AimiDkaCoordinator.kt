@@ -6,6 +6,7 @@ import app.aaps.core.interfaces.logging.LTag
 import app.aaps.core.interfaces.notifications.NotificationAction
 import app.aaps.core.interfaces.notifications.NotificationId
 import app.aaps.core.interfaces.notifications.NotificationManager
+import app.aaps.core.interfaces.profile.ProfileUtil
 import app.aaps.core.interfaces.resources.TextResolver
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.plugins.aps.ApsStrings
@@ -23,8 +24,15 @@ class AimiDkaCoordinator(
     private val preferences: Preferences,
     private val rh: TextResolver,
     private val notificationManager: NotificationManager,
-    private val aapsLogger: AAPSLogger
+    private val aapsLogger: AAPSLogger,
+    private val profileUtil: ProfileUtil
 ) {
+
+    /**
+     * Glucose values in the reason text follow the unit the user has set.
+     * Only the text: every comparison below stays in mg/dL.
+     */
+    private val glucoseText: GlucoseText = { profileUtil.fromMgdlToStringWithUnits(it) }
 
     data class Inputs(
         val nowMs: Long,
@@ -48,7 +56,7 @@ class AimiDkaCoordinator(
         takeOverKetoneEntry(i.nowMs)
 
         // 1) DKA risk + notification
-        val dka = DkaGuard(config()).evaluate(buildInput(i))
+        val dka = DkaGuard(config(), glucoseText).evaluate(buildInput(i))
         notify(dka, i.nowMs)
         if (dka.risk != DkaRisk.NONE) {
             aapsLogger.info(LTag.APS, "AIMI DKA ${dka.risk}: ${dka.reasons.joinToString("; ")}")
@@ -69,7 +77,7 @@ class AimiDkaCoordinator(
             val proposed = rt.rate ?: i.runningTempRateUph.takeIf { i.runningTempMinutes > 0 }
             if (proposed != null) {
                 val dkaActive = dka.risk != DkaRisk.NONE
-                val f = SemaglutideBasalFloor.apply(proposed, i.scheduledBasalUph, i.bgMgdl, rt.eventualBG, cfg, i.maxBasalUph, dkaActive)
+                val f = SemaglutideBasalFloor.apply(proposed, i.scheduledBasalUph, i.bgMgdl, rt.eventualBG, cfg, i.maxBasalUph, dkaActive, glucoseText)
                 if (f.applied) {
                     rt.rate = f.rateUph
                     if ((rt.duration ?: 0) <= 0) rt.duration = 30
@@ -110,8 +118,10 @@ class AimiDkaCoordinator(
         if (preferences.get(AimiDkaStringKey.KetoneUnitChoice) == KetoneUnit.MGDL.name) KetoneUnit.MGDL else KetoneUnit.MMOL
 
     private fun config(): DkaConfig {
-        val high = preferences.get(AimiDkaIntKey.HighBg).toDouble()
-        val veryHigh = preferences.get(AimiDkaIntKey.VeryHighBg).toDouble().coerceAtLeast(high + 10.0)
+        // getRaw, not get: these are compared against glucose in mg/dL. Plain get() would answer in
+        // the user's display unit, so a mmol/L user would get 13.9 where the guard expects 250.
+        val high = preferences.getRaw(AimiDkaUnitDoubleKey.HighBg)
+        val veryHigh = preferences.getRaw(AimiDkaUnitDoubleKey.VeryHighBg).coerceAtLeast(high + 10.0)
         return DkaConfig(
             enabled = preferences.get(AimiDkaBooleanKey.DkaEnabled),
             restrictSmbOnSuspectedFailure = preferences.get(AimiDkaBooleanKey.DkaRestrictSmb),
@@ -127,14 +137,15 @@ class AimiDkaCoordinator(
         val dkaMin = preferences.get(AimiDkaIntKey.FloorDkaMinPercent)
             .coerceIn(0, SemaglutideBasalFloor.MAX_DKA_MIN_PERCENT)
             .coerceAtMost(percent - 1)  // DKA floor must always be below the normal floor
-        val minBg = preferences.get(AimiDkaIntKey.FloorMinBg).coerceIn(70, 180)
+        // getRaw for the same reason as in config(): the floor compares against mg/dL.
+        val minBg = preferences.getRaw(AimiDkaUnitDoubleKey.FloorMinBg).coerceIn(70.0, 180.0)
         return FloorConfig(
             enabled = preferences.get(AimiDkaBooleanKey.DkaFloorEnabled),
             percent = percent,
             minBgMgdl = minBg,
             dkaMinPercent = dkaMin,
-            hardStopBgMgdl = preferences.get(AimiDkaIntKey.FloorHardStopBg)
-                .coerceIn(SemaglutideBasalFloor.MIN_HARD_STOP_BG, SemaglutideBasalFloor.MAX_HARD_STOP_BG)
+            hardStopBgMgdl = preferences.getRaw(AimiDkaUnitDoubleKey.FloorHardStopBg)
+                .coerceIn(SemaglutideBasalFloor.MIN_HARD_STOP_BG.toDouble(), SemaglutideBasalFloor.MAX_HARD_STOP_BG.toDouble())
                 .coerceAtMost(minBg)  // the hard stop can only ever be the stricter of the two
         )
     }

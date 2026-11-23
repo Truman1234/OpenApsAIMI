@@ -11,7 +11,7 @@ class SemaglutideBasalFloorTest {
 
     // The hard stop is pinned here rather than taken from the default: it is a tuning value that may
     // change, and the tests below say what the code does, not what today's default happens to be.
-    private val cfg = FloorConfig(enabled = true, percent = 50, minBgMgdl = 100, dkaMinPercent = 5, hardStopBgMgdl = 70)
+    private val cfg = FloorConfig(enabled = true, percent = 50, minBgMgdl = 100.0, dkaMinPercent = 5, hardStopBgMgdl = 70.0)
 
     private fun apply(
         proposed: Double = 0.0, scheduled: Double = 1.0, bg: Double? = 180.0, eventual: Double? = 150.0,
@@ -197,15 +197,37 @@ class SemaglutideBasalFloorTest {
     }
 
     @Test fun theHardStopKeyRangeMatchesTheBoundsTheFloorClampsWith() {
-        assertEquals(SemaglutideBasalFloor.MIN_HARD_STOP_BG, AimiDkaIntKey.FloorHardStopBg.min)
-        assertEquals(SemaglutideBasalFloor.MAX_HARD_STOP_BG, AimiDkaIntKey.FloorHardStopBg.max)
+        assertEquals(SemaglutideBasalFloor.MIN_HARD_STOP_BG, AimiDkaUnitDoubleKey.FloorHardStopBg.minMgdl)
+        assertEquals(SemaglutideBasalFloor.MAX_HARD_STOP_BG, AimiDkaUnitDoubleKey.FloorHardStopBg.maxMgdl)
+    }
+
+    /**
+     * The glucose thresholds are stored in mg/dL and the loop compares against mg/dL, so the
+     * coordinator must read them with `getRaw`. If someone switches it to plain `get`, a mmol/L
+     * user gets 5.6 where 100 is meant, every reading is then above the threshold, and the floor
+     * would run through a hypo. This states the expected scale so that mistake has a test to fail.
+     */
+    @Test fun theGlucoseThresholdsAreStoredInMgdl() {
+        AimiDkaUnitDoubleKey.entries.forEach {
+            assertTrue(it.defaultValue >= 36.0, "${it.key} looks like mmol/L: ${it.defaultValue}")
+            assertTrue(it.defaultValue >= it.minMgdl && it.defaultValue <= it.maxMgdl, it.key)
+        }
+    }
+
+    /** The note follows the user's unit, and nothing else in the result does. */
+    @Test fun theNoteUsesTheFormatterItIsGiven() {
+        val mmol: GlucoseText = { "${(it / 18.0 * 10).toInt() / 10.0} mmol/L" }
+        val r = SemaglutideBasalFloor.apply(0.0, 1.0, 65.0, 150.0, cfg, 3.0, true, mmol)
+        assertFalse(r.applied)
+        assertTrue(r.note!!.contains("mmol/L"), r.note!!)
+        assertFalse(r.note!!.contains("mg/dL"), r.note!!)
     }
 
     /** The shipped defaults, stated once so a change to either is a deliberate edit here. */
     @Test fun theShippedDefaultsAreTheTunedOnes() {
-        assertEquals(100, AimiDkaIntKey.FloorMinBg.defaultValue)
-        assertEquals(80, AimiDkaIntKey.FloorHardStopBg.defaultValue)
-        assertEquals(AimiDkaIntKey.FloorHardStopBg.defaultValue, FloorConfig().hardStopBgMgdl)
+        assertEquals(100.0, AimiDkaUnitDoubleKey.FloorMinBg.defaultValue)
+        assertEquals(80.0, AimiDkaUnitDoubleKey.FloorHardStopBg.defaultValue)
+        assertEquals(AimiDkaUnitDoubleKey.FloorHardStopBg.defaultValue, FloorConfig().hardStopBgMgdl)
     }
 
     @Test fun disabledOrNoScheduledBasalChangesNothing() {

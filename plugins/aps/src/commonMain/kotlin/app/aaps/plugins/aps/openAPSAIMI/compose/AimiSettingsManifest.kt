@@ -8,6 +8,7 @@ import app.aaps.core.keys.interfaces.NonPreferenceKey
 import app.aaps.core.keys.interfaces.StringPreferenceKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaBooleanKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaIntKey
+import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaUnitDoubleKey
 import app.aaps.plugins.aps.openAPSAIMI.dka.AimiDkaStringKey
 import app.aaps.plugins.aps.openAPSAIMI.keys.AimiLongKey
 import app.aaps.plugins.aps.openAPSAIMI.keys.AimiStringKey
@@ -586,12 +587,12 @@ internal object AimiSettingsManifest {
         AimiSettingEntry(AimiDkaBooleanKey.DkaNotifyWatch, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
         AimiSettingEntry(AimiDkaBooleanKey.DkaRestrictSmb, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
         AimiSettingEntry(AimiDkaBooleanKey.DkaFloorEnabled, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
-        AimiSettingEntry(AimiDkaIntKey.HighBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
-        AimiSettingEntry(AimiDkaIntKey.VeryHighBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaUnitDoubleKey.HighBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaUnitDoubleKey.VeryHighBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
         AimiSettingEntry(AimiDkaIntKey.FloorPercent, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
-        AimiSettingEntry(AimiDkaIntKey.FloorMinBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaUnitDoubleKey.FloorMinBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
         AimiSettingEntry(AimiDkaIntKey.FloorDkaMinPercent, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
-        AimiSettingEntry(AimiDkaIntKey.FloorHardStopBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
+        AimiSettingEntry(AimiDkaUnitDoubleKey.FloorHardStopBg, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
         AimiSettingEntry(AimiDkaBooleanKey.DkaSickDay, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
         AimiSettingEntry(AimiDkaBooleanKey.DkaSglt2, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
         AimiSettingEntry(AimiDkaBooleanKey.DkaGlp1, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
@@ -614,6 +615,7 @@ internal object AimiSettingsManifest {
         addAll(AimiLongKey.entries)
         addAll(AimiDkaBooleanKey.entries)
         addAll(AimiDkaIntKey.entries)
+        addAll(AimiDkaUnitDoubleKey.entries)
         addAll(AimiDkaStringKey.entries)
     }
 
