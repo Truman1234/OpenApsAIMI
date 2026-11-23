@@ -16,8 +16,8 @@
     <string name="aimi_dka_sick_day_summary">Illness, fever, vomiting: asks for a ketone check. Switch off when recovered.</string>
     <string name="aimi_dka_sglt2_title">I take an SGLT2 inhibitor</string>
     <string name="aimi_dka_sglt2_summary">Ketoacidosis can occur with normal glucose (euglycemic DKA)</string>
-    <string name="aimi_dka_glp1_title">I take semaglutide / a GLP-1 agonist</string>
-    <string name="aimi_dka_glp1_summary">Reduced appetite and insulin need can lead to ketosis; nausea and vomiting can mask DKA symptoms</string>
+    <string name="aimi_dka_glp1_title">I take a GLP-1 or GIP/GLP-1 medicine</string>
+    <string name="aimi_dka_glp1_summary">For example semaglutide or tirzepatide (Mounjaro). Reduced appetite and insulin need can lead to ketosis; nausea and vomiting can mask DKA symptoms.</string>
     <string name="aimi_dka_ketone_entry_title">Enter blood ketone value</string>
     <string name="aimi_dka_ketone_entry_summary">Type the value of your meter and confirm. It is used for 4 hours and is taken over at the next loop run. Choose the unit above first.</string>
     <string name="aimi_dka_ketone_unit_title">Ketone unit</string>
