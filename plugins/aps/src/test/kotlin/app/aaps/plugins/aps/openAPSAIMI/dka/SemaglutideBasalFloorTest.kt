@@ -55,7 +55,9 @@ class SemaglutideBasalFloorTest {
     }
 
     @Test fun `floor never exceeds the max basal`() {
-        val r = apply(scheduled = 4.0, c = cfg.copy(percent = 100), max = 3.0)
+        // percent 100 cannot be used to prove this: apply() clamps it to 50 first, so 4.0 U/h would
+        // give 2.0 and never reach the cap. 50% of 8.0 is 4.0, which the max of 3.0 does cut.
+        val r = apply(scheduled = 8.0, c = cfg.copy(percent = 50), max = 3.0)
         assertThat(r.rateUph).isWithin(1e-9).of(3.0)
     }
 
