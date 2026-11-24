@@ -19,7 +19,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import platform.posix.AF_INET
+import platform.posix.POLLERR
+import platform.posix.POLLHUP
 import platform.posix.POLLIN
+import platform.posix.POLLNVAL
 import platform.posix.SOCK_STREAM
 import platform.posix.SOL_SOCKET
 import platform.posix.SO_RCVTIMEO
@@ -69,6 +72,14 @@ class IosLoopbackAuthServer(private val aapsLogger: AAPSLogger) {
     private var listenSocket: Int = -1
 
     /**
+     * Bumped by every [start], so a wait can tell that a newer sign in has taken over. The socket
+     * number cannot say that: a closed descriptor is reused, and the new socket usually gets the
+     * very number the old one had.
+     */
+    @kotlin.concurrent.Volatile
+    private var generation: Int = 0
+
+    /**
      * Starts listening, and says whether it managed to.
      *
      * A port already in use is the ordinary failure - a previous sign in that was not closed - and
@@ -113,6 +124,7 @@ class IosLoopbackAuthServer(private val aapsLogger: AAPSLogger) {
         }
 
         listenSocket = fd
+        generation++
         aapsLogger.debug(LTag.CORE, "$TAG listening on 127.0.0.1:$port")
         return true
     }
@@ -136,6 +148,7 @@ class IosLoopbackAuthServer(private val aapsLogger: AAPSLogger) {
      */
     suspend fun awaitCallback(expectedState: String, timeoutMs: Long): OAuthCallback.Result? = withContext(Dispatchers.IO) {
         val listening = listenSocket
+        val mine = generation
         if (listening < 0) return@withContext null
 
         // Closed however this ends - answered, timed out, failed or cancelled. Leaving it open left a
@@ -144,20 +157,40 @@ class IosLoopbackAuthServer(private val aapsLogger: AAPSLogger) {
         try {
             var remaining = timeoutMs
             while (remaining > 0) {
+                // A newer sign in has taken the port over: start() closed this socket and opened
+                // another. Stop here. Accepting on the new socket with this wait's state would refuse
+                // the newer sign in's redirect as "state did not match" - which is what a second tap
+                // on the sign in button within the five minute wait used to do.
+                if (generation != mine) {
+                    aapsLogger.debug(LTag.CORE, "$TAG stopped waiting, a newer sign in took over")
+                    return@withContext null
+                }
                 val slice = if (remaining > POLL_SLICE_MS) POLL_SLICE_MS else remaining
+                var revents: Int = 0
                 val ready = memScoped {
                     val descriptor = alloc<pollfd>()
                     descriptor.fd = listening
                     descriptor.events = POLLIN.toShort()
                     descriptor.revents = 0
-                    poll(descriptor.ptr, 1.convert(), slice.toInt())
+                    val count = poll(descriptor.ptr, 1.convert(), slice.toInt())
+                    revents = descriptor.revents.toInt()
+                    count
                 }
                 if (ready < 0) {
                     aapsLogger.error(LTag.CORE, "$TAG stopped waiting, poll failed")
                     return@withContext null
                 }
+                // A closed or broken socket is "ready" for ever with nothing to accept; without this
+                // the loop would spin until the timeout.
+                if (revents and (POLLNVAL or POLLERR or POLLHUP) != 0) {
+                    aapsLogger.debug(LTag.CORE, "$TAG stopped waiting, the socket was closed")
+                    return@withContext null
+                }
                 if (ready > 0) {
-                    val result = acceptOne(expectedState)
+                    // Checked again: the poll may have waited on a socket that was closed and reopened
+                    // under the same number while it slept.
+                    if (generation != mine) return@withContext null
+                    val result = acceptOne(listening, expectedState)
                     // Not the callback - a favicon, say - or a callback that was not ours. Either way
                     // the real one may still arrive, so keep waiting rather than failing the sign in.
                     if (result != null && result != OAuthCallback.Result.NotTheCallback) return@withContext result
@@ -167,16 +200,17 @@ class IosLoopbackAuthServer(private val aapsLogger: AAPSLogger) {
             aapsLogger.debug(LTag.CORE, "$TAG gave up waiting for the browser")
             null
         } finally {
-            stop()
+            // Only this wait's own socket. A newer sign in's must stay open for its own wait.
+            if (generation == mine) stop()
         }
     }
 
-    private fun acceptOne(expectedState: String): OAuthCallback.Result? {
+    private fun acceptOne(listening: Int, expectedState: String): OAuthCallback.Result? {
         val client = memScoped {
             val length = alloc<socklen_tVar>()
             length.value = sizeOf<sockaddr_in>().convert()
             val from = alloc<sockaddr_in>()
-            accept(listenSocket, from.ptr.reinterpret<sockaddr>(), length.ptr)
+            accept(listening, from.ptr.reinterpret<sockaddr>(), length.ptr)
         }
         if (client < 0) return null
 

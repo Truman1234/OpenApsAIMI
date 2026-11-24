@@ -147,6 +147,27 @@ class IosLoopbackAuthServerTest {
         assertNull(waiting.await())
     }
 
+    /**
+     * Tapping sign in a second time while the first wait is still running.
+     *
+     * The first wait used to keep accepting on the new socket with the first state, so the second
+     * sign in's redirect was refused as "state did not match" and the browser showed the failure page.
+     */
+    @Test
+    fun `a newer sign in gets its own redirect`() = runTest {
+        val port = nextPort++
+        assertTrue(server.start(port))
+        val first = async { server.awaitCallback(expectedState = "first", timeoutMs = 5_000) }
+
+        assertTrue(server.start(port), "restarting on the same port failed: ${logger.errors}")
+        val second = async { server.awaitCallback(expectedState = "second", timeoutMs = 5_000) }
+        assertTrue(requestLoopback(port, "GET /oauth/callback?code=the-new-code&state=second HTTP/1.1"))
+
+        assertEquals("the-new-code", assertIs<OAuthCallback.Result.Code>(second.await()).code)
+        assertNull(first.await())
+        assertTrue(logger.errors.none { "state did not match" in it }, "the old wait took the new redirect: ${logger.errors}")
+    }
+
     /** A code with no state at all is the same refusal - absence is not a pass. */
     @Test
     fun `a code with no state is refused`() = runTest {
