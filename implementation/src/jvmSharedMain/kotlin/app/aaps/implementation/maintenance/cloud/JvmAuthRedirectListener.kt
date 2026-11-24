@@ -27,6 +27,8 @@ import java.net.SocketTimeoutException
 @Inject
 class JvmAuthRedirectListener(private val aapsLogger: AAPSLogger) : AuthRedirectListener {
 
+    /** Read from the wait on an IO thread and written by [start] on the caller's thread. */
+    @Volatile
     private var server: ServerSocket? = null
 
     override fun start(port: Int): Boolean {
@@ -63,7 +65,10 @@ class JvmAuthRedirectListener(private val aapsLogger: AAPSLogger) : AuthRedirect
             } finally {
                 // Closed however this ends. A well known port left open keeps accepting anything that
                 // arrives with a code on it, and holds the port against the next sign in.
-                stop()
+                // But only our own socket: when the user taps sign in again during the wait, start()
+                // has already opened a new one for the newer sign in, and closing that would leave
+                // its browser without an answer.
+                if (server === listening) stop()
             }
         }
 

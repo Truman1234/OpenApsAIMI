@@ -4,6 +4,7 @@ import app.aaps.shared.tests.TestBase
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import java.net.InetAddress
@@ -113,6 +114,30 @@ class JvmAuthRedirectListenerTest : TestBase() {
         sut.awaitCallback("the-state", 300)
 
         assertThat(sut.start(p)).isTrue()
+    }
+
+    /**
+     * Tapping sign in a second time while the first wait is still running.
+     *
+     * The first wait ends because its socket was closed. It must not close the new socket on its way
+     * out, or the second sign in never gets its redirect.
+     */
+    @Test
+    fun `a newer sign in keeps its socket when the older wait ends`() = runTest {
+        val p = port++
+        assertThat(sut.start(p)).isTrue()
+        val first = async { sut.awaitCallback("first", 5_000) }
+        yield()
+        // Give the first wait time to reach accept() on the first socket.
+        Thread.sleep(300)
+
+        assertThat(sut.start(p)).isTrue()
+        assertThat(first.await()).isNull()
+
+        val second = async { sut.awaitCallback("second", 5_000) }
+        assertThat(requestLoopback(p, "GET /oauth/callback?code=the-new-code&state=second HTTP/1.1")).isTrue()
+
+        assertThat((second.await() as OAuthCallback.Result.Code).code).isEqualTo("the-new-code")
     }
 
     @Test
