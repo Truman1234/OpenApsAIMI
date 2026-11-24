@@ -8,6 +8,8 @@
 	<string>$(AAPS_CIQ_URL_SCHEME)</string>
 	<key>AapsAppGroupId</key>
 	<string>$(AAPS_APP_GROUP_ID)</string>
+	<key>AppGroupID</key>
+	<string>$(AAPS_XDRIP_APP_GROUP_ID)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>app.aaps.aimi.retention</string>

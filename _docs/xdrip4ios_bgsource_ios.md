@@ -24,20 +24,34 @@ pairing between the two apps.
   shared JSON carries no reliable sensor identity, and AIMI's lag compensation is keyed on this
   enum. A wrong guess (e.g. `DEXCOM_G6`) would misapply dosing-relevant compensation.
 
-There is **no fixed default App Group ID**. In the `Truman1234/iAPS` reference build it is
-`group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup`, templated per Apple developer account at build
-time - so it cannot be hardcoded here.
+The App Group ID contains the Apple Developer Team id: xDrip4iOS uses
+`group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup`, like the `Truman1234/iAPS` reference build. So
+it cannot be one fixed string for everybody, but it can be built from the team id at build time.
 
-## Setup (per Xcode project, once)
+## Setup
 
-Both apps must be built with the **same** App Group ID, under the **same Apple Developer Team**:
+This app already does the Xcode side. `ios/app/Signing.xcconfig` sets
 
-1. This app's Xcode project: Signing & Capabilities -> add "App Groups" -> add the group ID.
-2. This app's `Info.plist`: add key `AppGroupID` (String) with that same group ID as its value.
-3. xDrip4iOS's own Xcode project: same App Group capability, same group ID.
+    AAPS_XDRIP_APP_GROUP_ID = group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup
 
-If step 2 is missing or blank, the app posts a notification telling the person to add the
-`AppGroupID` key - it does not silently fail.
+`Device.entitlements` and `Simulator.entitlements` add that group next to the widget group, and
+`Shared/Info.plist` hands it to the plugin as the `AppGroupID` key. Do NOT add the group again with
+"+ Capability" in Xcode: that creates a second entitlements file and points the target at it.
+
+What you have to do:
+
+1. Sign this app with the **same Apple Developer Team** as your xDrip4iOS build
+   (`DEVELOPMENT_TEAM` in `ios/app/Signing.local.xcconfig`).
+2. Check that your xDrip4iOS build has the same group. In the xDrip4iOS project it is in
+   `xdrip/xdripDebug.entitlements` and `xdrip/xDrip.entitlements`, under App Groups.
+3. If xDrip4iOS uses a different group, set `AAPS_XDRIP_APP_GROUP_ID` to it in
+   `Signing.local.xcconfig`.
+
+A free Personal Team has no App Groups (`Personal.entitlements`), so xDrip4iOS cannot be used as a
+source with such an account. Use Nightscout instead.
+
+If the `AppGroupID` key is missing or blank, the app posts a notification telling the person to add
+it - it does not silently fail.
 
 ## Nightscout as a BG source
 

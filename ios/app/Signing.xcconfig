@@ -54,6 +54,14 @@ AAPS_APP_GROUP_ID = group.$(AAPS_BUNDLE_ID)
 // The Live Activity still works then; the home screen widgets show "---".
 AAPS_WIDGET_ENTITLEMENTS = LiveActivity/LiveActivity.entitlements
 
+// The App Group through which xDrip4iOS shares its glucose readings (XdripSourceIosPlugin,
+// _docs/xdrip4ios_bgsource_ios.md). This is the group xDrip4iOS, Loop, Trio and iAPS all write to.
+// It contains the team id, so it only works when this app and xDrip4iOS are signed by the SAME team.
+// If your xDrip4iOS build uses another group, set this in Signing.local.xcconfig. Device.entitlements
+// and Simulator.entitlements carry it, and Shared/Info.plist hands it to the plugin as "AppGroupID".
+// A free Personal Team has no App Groups, so Personal.entitlements does not carry it.
+AAPS_XDRIP_APP_GROUP_ID = group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup
+
 #include? "Signing.local.xcconfig"
 
 // The generated version numbers, from :ios:shell:generateIosVersionXcconfig. Optional for the same

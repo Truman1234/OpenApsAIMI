@@ -38,6 +38,8 @@
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>$(AAPS_APP_GROUP_ID)</string>
+		<!-- The group xDrip4iOS writes its readings to. AAPS_XDRIP_APP_GROUP_ID is in Signing.xcconfig. -->
+		<string>$(AAPS_XDRIP_APP_GROUP_ID)</string>
 	</array>
 </dict>
 </plist>
