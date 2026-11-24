@@ -1,5 +1,6 @@
 package app.aaps.plugins.constraints.objectives.compose
 
+import app.aaps.core.interfaces.configuration.Config
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.UserEntryLogger
 import app.aaps.core.interfaces.receivers.ReceiverStatusStore
@@ -39,6 +40,7 @@ internal class ObjectivesViewModelTest {
     @Mock private lateinit var aapsLogger: AAPSLogger
     @Mock private lateinit var uel: UserEntryLogger
     @Mock private lateinit var preferences: Preferences
+    @Mock private lateinit var config: Config
 
     private lateinit var sut: ObjectivesViewModel
 
@@ -56,10 +58,14 @@ internal class ObjectivesViewModelTest {
             BooleanNonKey.ObjectivesReconnectUsed, BooleanNonKey.ObjectivesTempTargetUsed,
             BooleanNonKey.ObjectivesLoopUsed, BooleanNonKey.ObjectivesScaleUsed
         ).forEach { whenever(preferences.observe(it)).thenReturn(MutableStateFlow(false)) }
-        sut = ObjectivesViewModel(
-            objectivesPlugin, rxBus, rh, dateUtil, sntpClient, receiverStatusStore, aapsLogger, uel, preferences
-        )
+        whenever(config.isDev()).thenReturn(true)
+        whenever(config.isEngineeringMode()).thenReturn(true)
+        sut = newViewModel()
     }
+
+    private fun newViewModel() = ObjectivesViewModel(
+        objectivesPlugin, rxBus, rh, dateUtil, sntpClient, receiverStatusStore, aapsLogger, uel, preferences, config
+    )
 
     @AfterEach
     fun tearDown() = Dispatchers.resetMain()
@@ -71,6 +77,26 @@ internal class ObjectivesViewModelTest {
         assertThat(state.isFakeMode).isFalse()
         assertThat(state.confirmUnstartDialog).isNull()
         assertThat(sut.scrollToIndex.value).isEqualTo(-1)
+    }
+
+    @Test
+    fun `debug controls need a dev build and engineering mode`() {
+        assertThat(sut.uiState.value.showDebugControls).isTrue()
+
+        whenever(config.isEngineeringMode()).thenReturn(false)
+        assertThat(newViewModel().uiState.value.showDebugControls).isFalse()
+
+        whenever(config.isEngineeringMode()).thenReturn(true)
+        whenever(config.isDev()).thenReturn(false)
+        assertThat(newViewModel().uiState.value.showDebugControls).isFalse()
+    }
+
+    @Test
+    fun `fake mode cannot be switched on without debug controls`() {
+        whenever(config.isDev()).thenReturn(false)
+        val release = newViewModel()
+        release.onFakeModeToggle(true)
+        assertThat(release.uiState.value.isFakeMode).isFalse()
     }
 
     @Test
