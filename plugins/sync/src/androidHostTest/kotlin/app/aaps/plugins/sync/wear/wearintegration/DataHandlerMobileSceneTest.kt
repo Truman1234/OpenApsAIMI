@@ -56,6 +56,7 @@ import org.mockito.kotlin.whenever
 class DataHandlerMobileSceneTest : TestBaseWithProfile() {
 
     @Mock private lateinit var loop: Loop
+    @Mock private lateinit var watchHandlerPlatform: WatchHandlerPlatform
     @Mock private lateinit var processedDeviceStatusData: ProcessedDeviceStatusData
     @Mock private lateinit var receiverStatusStore: ReceiverStatusStore
     @Mock private lateinit var quickWizard: QuickWizard
@@ -85,7 +86,7 @@ class DataHandlerMobileSceneTest : TestBaseWithProfile() {
         // Real English text, so the asserts below check what the watch shows and nothing is stubbed
         val text = generatedTextResolver("sync" to SyncStringsValues::textOf)
         sut = DataHandlerMobile(
-            context, rxBus, aapsLogger, text, preferences, config,
+            watchHandlerPlatform, rxBus, aapsLogger, text, preferences, config,
             iobCobCalculator, processedTbrEbData, smbGlucoseStatusProvider, profileFunction, profileUtil,
             loop, processedDeviceStatusData, receiverStatusStore, quickWizard, trendCalculator, dateUtil,
             constraintsChecker, activePlugin, commandQueue, fabricPrivacy, uiInteraction,

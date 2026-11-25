@@ -1,8 +1,5 @@
 package app.aaps.plugins.sync.wear.wearintegration
 
-import android.app.NotificationManager
-import android.content.Context
-import android.content.res.Configuration
 import androidx.compose.ui.graphics.toArgb
 import app.aaps.core.data.configuration.Constants
 import app.aaps.core.data.iob.InMemoryGlucoseValue
@@ -119,14 +116,11 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.SupervisorJob
-import java.text.DateFormat
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.LinkedList
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.time.Clock
 
 // Quiet-period that closes a Wear-event batch. Long enough to absorb a Data Layer reconnect-flush,
 // short enough that live data stays effectively real-time.
@@ -139,10 +133,13 @@ private const val HEALTH_EVENT_QUIET_PERIOD_MS = 500L
  */
 private const val WEAR_GRAPH_HOURS = 6L
 
+/** Opaque white as an ARGB int. The colour of a prediction line with no colour of its own. */
+private const val WHITE_ARGB: Int = -1
+
 @SingleIn(AppScope::class)
 @Inject
 class DataHandlerMobile(
-    private val context: Context,
+    private val platform: WatchHandlerPlatform,
     private val rxBus: RxBus,
     private val aapsLogger: AAPSLogger,
     private val rh: TextResolver,
@@ -210,7 +207,7 @@ class DataHandlerMobile(
         // scheduled collector would drop anything sent before it started.
         rxBus.toFlow(T::class)
             .collectResilient(scope, aapsLogger, LTag.WEAR, start = CoroutineStart.UNDISPATCHED) { event ->
-                aapsLogger.debug(LTag.WEAR, "${T::class.java.simpleName} received from ${event.sourceNodeId}")
+                aapsLogger.debug(LTag.WEAR, "${T::class.simpleName} received from ${event.sourceNodeId}")
                 handler(event)
             }
     }
@@ -239,7 +236,7 @@ class DataHandlerMobile(
     ) {
         rxBus.toFlow(T::class)
             .collectResilient(scope, aapsLogger, LTag.WEAR, start = CoroutineStart.UNDISPATCHED) {
-                aapsLogger.debug(LTag.WEAR, "${T::class.java.simpleName} received from ${it.sourceNodeId}${detail(it)}")
+                aapsLogger.debug(LTag.WEAR, "${T::class.simpleName} received from ${it.sourceNodeId}${detail(it)}")
                 handler(it)
             }
     }
@@ -255,7 +252,7 @@ class DataHandlerMobile(
             if (rejectIfNotReady()) return@onControlEvent
             // A refused accept (loop paused, suggestion too old) must say so, or the watch shows it as done.
             loop.acceptChangeRequest()?.let { sendError(it) }
-            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(Constants.NOTIFICATION_ID)
+            platform.cancelOpenLoopNotification()
         }
         onEvent<EventData.ActionResendData> { resendData(it.from) }
         // The watch's word on Watch Face Push, kept by WearPlugin for the wear screen
@@ -283,7 +280,7 @@ class DataHandlerMobile(
             val statusData = buildLoopStatusData()
             sendToWear(
                 EventData.LoopStatusResponse(
-                    timeStamp = System.currentTimeMillis(),
+                    timeStamp = Clock.System.now().toEpochMilliseconds(),
                     data = statusData
                 )
             )
@@ -586,7 +583,7 @@ class DataHandlerMobile(
         }
 
         return LoopStatusData(
-            timestamp = System.currentTimeMillis(),
+            timestamp = Clock.System.now().toEpochMilliseconds(),
             loopMode = loopMode,
             apsName = if (runningModeRecord.mode.isLoopRunning())
                 (usedAPS as? PluginBase)?.name else null,
@@ -606,7 +603,7 @@ class DataHandlerMobile(
 
     private suspend fun handleTddStatus() {
         val activePump = activePlugin.activePump
-        val dummies: MutableList<TDD> = LinkedList()
+        val dummies: MutableList<TDD> = mutableListOf()
         val historyList = getTDDList(dummies)
         if (isOldData(historyList)) {
             val busy = activePump.isBusy()
@@ -618,7 +615,7 @@ class DataHandlerMobile(
             sendToWear(EventData.ConfirmAction(rh.gs(CoreUiStrings.tdd_short), message, returnCommand = null))
             if (!busy) {
                 commandQueue.loadTDDs()
-                val dummies1: MutableList<TDD> = LinkedList()
+                val dummies1: MutableList<TDD> = mutableListOf()
                 val historyList1 = getTDDList(dummies1)
                 val reloadMessage =
                     if (isOldData(historyList1))
@@ -1074,9 +1071,9 @@ class DataHandlerMobile(
 
     private fun formatGlucose(value: Double, isMgdl: Boolean): String {
         return if (isMgdl)
-            String.format(Locale.getDefault(), "%.0f mg/dL", value)
+            decimalFormatter.to0Decimal(value, " mg/dL")
         else
-            String.format(Locale.getDefault(), "%.1f mmol/L", value)
+            decimalFormatter.to1Decimal(value, " mmol/L")
     }
 
     // internal + suspend so DataHandlerMobileWearBolusTest can drive it; routes through the shared prepare/confirm.
@@ -1169,7 +1166,7 @@ class DataHandlerMobile(
         // Keeping the old TS when modes are identical lets in-flight tile taps (e.g. from a
         // just-woken watch) succeed without a "Please try again" race against onTileEnterEvent.
         if (states != lastRunningModes || lastAuthorizedRunningModeChangeTS == null) {
-            lastAuthorizedRunningModeChangeTS = System.currentTimeMillis()
+            lastAuthorizedRunningModeChangeTS = Clock.System.now().toEpochMilliseconds()
             lastRunningModes = states
         }
         sendToWear(
@@ -1260,7 +1257,7 @@ class DataHandlerMobile(
         // Preferences
         sendToWear(
             EventData.Preferences(
-                timeStamp = System.currentTimeMillis(),
+                timeStamp = Clock.System.now().toEpochMilliseconds(),
                 wearControl = preferences.get(BooleanKey.WearControl),
                 unitsMgdl = profileFunction.getUnits() == GlucoseUnit.MGDL,
                 bolusPercentage = preferences.get(IntKey.OverviewBolusPercentage),
@@ -1392,7 +1389,7 @@ class DataHandlerMobile(
         }
 
     private suspend fun sendTreatments() {
-        val now = System.currentTimeMillis()
+        val now = Clock.System.now().toEpochMilliseconds()
         val startTimeWindow = now - (60000 * 60 * 5.5).toLong()
         val basals = arrayListOf<EventData.TreatmentData.Basal>()
         val temps = arrayListOf<EventData.TreatmentData.TempBasal>()
@@ -1556,16 +1553,14 @@ class DataHandlerMobile(
     }
 
     private fun predictionColor(data: GV): Int {
-        val isDark = (context.resources.configuration.uiMode and
-            Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        val colors = if (isDark) DarkGeneralColors else LightGeneralColors
+        val colors = if (platform.isDarkTheme()) DarkGeneralColors else LightGeneralColors
         return when (data.sourceSensor) {
             SourceSensor.IOB_PREDICTION   -> colors.iobPrediction.toArgb()
             SourceSensor.COB_PREDICTION   -> colors.cobPrediction.toArgb()
             SourceSensor.A_COB_PREDICTION -> colors.aCobPrediction.toArgb()
             SourceSensor.UAM_PREDICTION   -> colors.uamPrediction.toArgb()
             SourceSensor.ZT_PREDICTION    -> colors.ztPrediction.toArgb()
-            else                          -> android.graphics.Color.WHITE
+            else                          -> WHITE_ARGB
         }
     }
 
@@ -1587,7 +1582,7 @@ class DataHandlerMobile(
             cobString = cobInfo.generateCOBString(decimalFormatter)
             cobValue = cobInfo.displayCob ?: -1.0
             currentBasal =
-                processedTbrEbData.getTempBasalIncludingConvertedExtended(System.currentTimeMillis())?.toStringShort(rh) ?: rh.gs(CoreUiStrings.pump_base_basal_rate, profile.getBasal())
+                processedTbrEbData.getTempBasalIncludingConvertedExtended(Clock.System.now().toEpochMilliseconds())?.toStringShort(rh) ?: rh.gs(CoreUiStrings.pump_base_basal_rate, profile.getBasal())
 
             //bgi
             if (glucoseStatusProvider.glucoseStatusData != null) {
@@ -1801,8 +1796,8 @@ class DataHandlerMobile(
 
     private fun isOldData(historyList: List<TDD>): Boolean {
         val startsYesterday = activePlugin.activePump.pumpDescription.supportsTDDs
-        val df: DateFormat = SimpleDateFormat("dd.MM.", Locale.getDefault())
-        return historyList.size < 3 || df.format(Date(historyList[0].timestamp)) != df.format(Date(System.currentTimeMillis() - if (startsYesterday) 1000 * 60 * 60 * 24 else 0))
+        val reference = Clock.System.now().toEpochMilliseconds() - if (startsYesterday) 1000 * 60 * 60 * 24 else 0
+        return historyList.size < 3 || !dateUtil.isSameDay(historyList[0].timestamp, reference)
     }
 
     private suspend fun getTDDList(returnDummies: List<TDD>): MutableList<TDD> {
@@ -1811,11 +1806,10 @@ class DataHandlerMobile(
         historyList = historyList.subList(0, min(10, historyList.size))
         // fill single gaps - only needed for Dana*R data
         val dummies: MutableList<TDD> = returnDummies.toMutableList()
-        val df: DateFormat = SimpleDateFormat("dd.MM.", Locale.getDefault())
         for (i in 0 until historyList.size - 1) {
             val elem1 = historyList[i]
             val elem2 = historyList[i + 1]
-            if (df.format(Date(elem1.timestamp)) != df.format(Date(elem2.timestamp + 25 * 60 * 60 * 1000))) {
+            if (!dateUtil.isSameDay(elem1.timestamp, elem2.timestamp + 25 * 60 * 60 * 1000)) {
                 val dummy = TDD(timestamp = elem1.timestamp - T.hours(24).msecs(), bolusAmount = elem1.bolusAmount / 2, basalAmount = elem1.basalAmount / 2)
                 dummies.add(dummy)
                 elem1.basalAmount /= 2.0
@@ -1835,10 +1829,9 @@ class DataHandlerMobile(
         if (historyList.isEmpty()) {
             return rh.gs(SyncStrings.no_history)
         }
-        val df: DateFormat = SimpleDateFormat("dd.MM.", Locale.getDefault())
         var message = ""
         val refTDD = profile.baseBasalSum() * 2
-        if (df.format(Date(historyList[0].timestamp)) == df.format(Date())) {
+        if (dateUtil.isSameDay(historyList[0].timestamp, Clock.System.now().toEpochMilliseconds())) {
             val tdd = historyList[0].total
             historyList.removeAt(0)
 
@@ -1869,7 +1862,7 @@ class DataHandlerMobile(
         // add TDDs:
         for (record in historyList) {
             val tdd = record.total
-            val dayLine = rh.gs(CoreUiStrings.value_with_unit, df.format(Date(record.timestamp)), rh.gs(SyncStrings.tdd_line, tdd, 100 * tdd / refTDD))
+            val dayLine = rh.gs(CoreUiStrings.value_with_unit, dateUtil.dateStringShort(record.timestamp), rh.gs(SyncStrings.tdd_line, tdd, 100 * tdd / refTDD))
             // x marks a day that is estimated, not read from the pump
             message += (if (dummies.contains(record)) rh.gs(CoreUiStrings.value_with_unit, dayLine, "x") else dayLine) + "\n"
         }

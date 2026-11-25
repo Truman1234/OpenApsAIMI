@@ -81,6 +81,7 @@ import org.mockito.kotlin.whenever
  */
 class DataHandlerMobileWearBolusTest : TestBaseWithProfile() {
     @Mock private lateinit var loop: Loop
+    @Mock private lateinit var watchHandlerPlatform: WatchHandlerPlatform
     @Mock private lateinit var processedDeviceStatusData: ProcessedDeviceStatusData
     @Mock private lateinit var receiverStatusStore: ReceiverStatusStore
     @Mock private lateinit var quickWizard: QuickWizard
@@ -99,7 +100,7 @@ class DataHandlerMobileWearBolusTest : TestBaseWithProfile() {
     private lateinit var sut: DataHandlerMobile
     @BeforeEach fun prepare() {
         sut = DataHandlerMobile(
-            context, rxBus, aapsLogger, rh, preferences, config,
+            watchHandlerPlatform, rxBus, aapsLogger, rh, preferences, config,
             iobCobCalculator, processedTbrEbData, smbGlucoseStatusProvider, profileFunction, profileUtil,
             loop, processedDeviceStatusData, receiverStatusStore, quickWizard, trendCalculator, dateUtil,
             constraintsChecker, activePlugin, commandQueue, fabricPrivacy, uiInteraction,

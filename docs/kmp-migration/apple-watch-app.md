@@ -149,7 +149,7 @@ MIT code may be used in this AGPL project.
  views  <--  WatchState  <--  WCSession  <==>  WCSession  -->  IosWatchTransport (Swift)
                                                                  |  EventData as JSON
                                                                  v
-                                               WatchDataHandler (Kotlin, commonMain)
+                                               DataHandlerMobile (Kotlin, commonMain)
                                                                  |  same checks as the phone
                                                                  v
                                                command queue / constraints / DKA guard
@@ -168,12 +168,15 @@ MIT code may be used in this AGPL project.
 
 ## Phases
 
-1. **Handler to commonMain.** Move `DataHandlerMobile` to `commonMain` as `WatchDataHandler` and put
-   the Android lines behind interfaces: `WatchTransport` (replaces `sendToWear`), the notification
-   call, the dark-mode check and the colour conversion. Android keeps working through an
-   `androidMain` implementation that does what the code does today. Move the existing
-   `DataHandlerMobile*Test` with it, so they also run on `iosSimulatorArm64Test`. No behaviour
-   change in this phase.
+1. **Handler to commonMain.** Move `DataHandlerMobile` to `commonMain`, under the same name, and put
+   the Android lines behind `WatchHandlerPlatform` (dark theme check, cancel the open loop
+   notification; Android: `AndroidWatchHandlerPlatform`). No transport interface is needed: the
+   handler already sends through `rxBus.send(EventMobileToWear(...))`, which is shared code, so the
+   iOS bridge listens to that event. Java date and number formatting is replaced by `DateUtil`,
+   `DecimalFormatter` and `kotlin.time.Clock`. The existing `DataHandlerMobile*Test` stay in
+   `androidHostTest` and now test the shared code. No behaviour change in this phase, except that
+   the day in the TDD list on the watch is now in the phone's short date format
+   (`DateUtil.dateStringShort`) instead of a fixed `dd.MM.`.
 2. **DKA fields.** Add `dkaRisk` / `dkaReason` to `EventData.Status`, fill them from the DKA guard,
    and add the DKA lines to the running-mode confirmation. Tests for both.
 3. **iOS bridge.** `IosWatchTransport` in Swift (`WCSession` delegate) and its registration in the
