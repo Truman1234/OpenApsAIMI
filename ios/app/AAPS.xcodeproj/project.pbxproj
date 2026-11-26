@@ -45,6 +45,14 @@
 		E12000000000000000000003 /* AapsHomeWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000010000000000000003 /* AapsHomeWidget.swift */; };
 		E12000000000000000000004 /* AapsActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000040000000000000002 /* AapsActivityAttributes.swift */; };
 		E12000000000000000000005 /* AapsLiveActivity2.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E10000010000000000000012 /* AapsLiveActivity2.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B10000030000000000000001 /* AapsWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000001 /* AapsWatchApp.swift */; };
+		B10000030000000000000002 /* WatchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000002 /* WatchSession.swift */; };
+		B10000030000000000000003 /* WatchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000003 /* WatchModels.swift */; };
+		B10000030000000000000004 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000004 /* MainView.swift */; };
+		B10000030000000000000005 /* ActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000005 /* ActionsView.swift */; };
+		B10000030000000000000006 /* ConfirmView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000006 /* ConfirmView.swift */; };
+		B10000030000000000000011 /* AapsWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = B10000010000000000000011 /* AapsWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B10000030000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000012 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -61,6 +69,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = E12000000000000000000022;
 			remoteInfo = AapsLiveActivity2;
+		};
+		B10000050000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA1001000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B10000040000000000000001;
+			remoteInfo = AapsWatch;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -85,6 +100,17 @@
 				E12000000000000000000005 /* AapsLiveActivity2.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000050000000000000003 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				B10000030000000000000011 /* AapsWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -114,6 +140,15 @@
 		E10000010000000000000005 /* LiveActivity.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LiveActivity.entitlements; sourceTree = "<group>"; };
 		E10000010000000000000011 /* AapsLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AapsLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E10000010000000000000012 /* AapsLiveActivity2.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AapsLiveActivity2.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000010000000000000001 /* AapsWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AapsWatchApp.swift; sourceTree = "<group>"; };
+		B10000010000000000000002 /* WatchSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSession.swift; sourceTree = "<group>"; };
+		B10000010000000000000003 /* WatchModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchModels.swift; sourceTree = "<group>"; };
+		B10000010000000000000004 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		B10000010000000000000005 /* ActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionsView.swift; sourceTree = "<group>"; };
+		B10000010000000000000006 /* ConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmView.swift; sourceTree = "<group>"; };
+		B10000010000000000000010 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10000010000000000000011 /* AapsWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AapsWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000010000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,6 +188,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B10000040000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -170,6 +212,7 @@
 				F10000040000000000000001 /* AppleWatchBridge.swift */,
 				D10000040000000000000002 /* AapsActivityAttributes.swift */,
 				E10000020000000000000001 /* LiveActivity */,
+				B10000020000000000000001 /* AapsWatch */,
 				AA2001200000000000000 /* AAPS */,
 				AA3001200000000000000 /* AAPS2 */,
 				AA1000300000000000000 /* Signing.xcconfig */,
@@ -186,6 +229,7 @@
 				AA3000100000000000000 /* AAPS2.app */,
 				E10000010000000000000011 /* AapsLiveActivity.appex */,
 				E10000010000000000000012 /* AapsLiveActivity2.appex */,
+				B10000010000000000000011 /* AapsWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -218,6 +262,21 @@
 			path = LiveActivity;
 			sourceTree = "<group>";
 		};
+		B10000020000000000000001 /* AapsWatch */ = {
+			isa = PBXGroup;
+			children = (
+				B10000010000000000000001 /* AapsWatchApp.swift */,
+				B10000010000000000000002 /* WatchSession.swift */,
+				B10000010000000000000003 /* WatchModels.swift */,
+				B10000010000000000000004 /* MainView.swift */,
+				B10000010000000000000005 /* ActionsView.swift */,
+				B10000010000000000000006 /* ConfirmView.swift */,
+				B10000010000000000000010 /* Info.plist */,
+				B10000010000000000000012 /* Assets.xcassets */,
+			);
+			path = AapsWatch;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -230,12 +289,14 @@
 				AA2000700000000000000 /* Frameworks */,
 				AA2000800000000000000 /* Resources */,
 				E11000000000000000000013 /* Embed Foundation Extensions */,
+				B10000050000000000000003 /* Embed Watch Content */,
 				AA2009500000000000000 /* Copy the Firebase config */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				E11000000000000000000021 /* PBXTargetDependency */,
+				B10000050000000000000002 /* PBXTargetDependency */,
 			);
 			name = AAPS;
 			packageProductDependencies = (
@@ -307,6 +368,23 @@
 			productReference = E10000010000000000000012 /* AapsLiveActivity2.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		B10000040000000000000001 /* AapsWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B10000040000000000000005 /* Build configuration list for PBXNativeTarget "AapsWatch" */;
+			buildPhases = (
+				B10000040000000000000002 /* Sources */,
+				B10000040000000000000003 /* Frameworks */,
+				B10000040000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AapsWatch;
+			productName = AapsWatch;
+			productReference = B10000010000000000000011 /* AapsWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -339,6 +417,7 @@
 				AA3001300000000000000 /* AAPS2 */,
 				E11000000000000000000022 /* AapsLiveActivity */,
 				E12000000000000000000022 /* AapsLiveActivity2 */,
+				B10000040000000000000001 /* AapsWatch */,
 			);
 		};
 /* End PBXProject section */
@@ -373,6 +452,14 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000040000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10000030000000000000012 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -498,6 +585,19 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B10000040000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10000030000000000000001 /* AapsWatchApp.swift in Sources */,
+				B10000030000000000000002 /* WatchSession.swift in Sources */,
+				B10000030000000000000003 /* WatchModels.swift in Sources */,
+				B10000030000000000000004 /* MainView.swift in Sources */,
+				B10000030000000000000005 /* ActionsView.swift in Sources */,
+				B10000030000000000000006 /* ConfirmView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -510,6 +610,11 @@
 			isa = PBXTargetDependency;
 			target = E12000000000000000000022 /* AapsLiveActivity2 */;
 			targetProxy = E12000000000000000000020 /* PBXContainerItemProxy */;
+		};
+		B10000050000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B10000040000000000000001 /* AapsWatch */;
+			targetProxy = B10000050000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -941,6 +1046,66 @@
 			};
 			name = Release;
 		};
+		B10000040000000000000006 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA1000300000000000000 /* Signing.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_IDENTITY[sdk=watchos*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(AAPS_BUILD_NUMBER:default=1)";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AapsWatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = AAPS;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(AAPS_BUNDLE_ID)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = "$(AAPS_MARKETING_VERSION:default=4.0.0)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(AAPS_BUNDLE_ID).watchkitapp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		B10000040000000000000007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA1000300000000000000 /* Signing.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_IDENTITY[sdk=watchos*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(AAPS_BUILD_NUMBER:default=1)";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AapsWatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = AAPS;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(AAPS_BUNDLE_ID)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = "$(AAPS_MARKETING_VERSION:default=4.0.0)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(AAPS_BUNDLE_ID).watchkitapp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -985,6 +1150,15 @@
 			buildConfigurations = (
 				E12000000000000000000024 /* Debug */,
 				E12000000000000000000025 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B10000040000000000000005 /* Build configuration list for PBXNativeTarget "AapsWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000040000000000000006 /* Debug */,
+				B10000040000000000000007 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

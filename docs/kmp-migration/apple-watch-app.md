@@ -217,11 +217,25 @@ MIT code may be used in this AGPL project.
       app in the background for a watch message.
     - `IosWatchHandlerPlatform`: dark colours always (the watch is always black), and it removes the
       `aaps-loop` notification after the watch accepted an open loop suggestion.
-4. **watchOS app.** New Xcode target (SwiftUI, watchOS 26+), same team and App Group setup. Start
-   from the iAPS views (see "Model" above) and replace their messages with `EventData`. Pages:
-    - main: BG, arrow, delta, age, IOB, COB, mode, DKA banner;
-    - details: basal, temp target, reservoir, battery, last loop run, BGI, small graph;
-    - actions: bolus / wizard, running mode, temp target, each with the confirmation from the phone.
+4. **watchOS app.** Target `AapsWatch` (`ios/app/AapsWatch/`, SwiftUI, watchOS 26), written by hand
+   into `project.pbxproj` like the Live Activity extension. Bundle id `$(AAPS_BUNDLE_ID).watchkitapp`,
+   signed through `Signing.xcconfig`, no entitlements (WatchConnectivity needs none). Only the AAPS
+   target embeds it ("Embed Watch Content" into `AAPS.app/Watch`). The layout follows the iAPS watch
+   app; the code is our own, nothing was copied, so no MIT header is needed. The icon is the AAPS
+   app icon cut to its dark disc and filled to the corners, so the round watch mask shows no rim.
+    - `WatchModels.swift`: the `EventData` JSON the watch reads, and `Command`, which writes commands
+      with `type` as the first field. The return command of a confirmation is kept as raw JSON and sent
+      back unchanged.
+    - `WatchSession.swift`: the `WCSession` on the watch. Reads the application context and the
+      `event` messages, sends commands only while the iPhone is reachable (otherwise an error screen,
+      never a queue), asks for `ActionResendData` when the app comes to the front.
+    - Pages: glucose (BG, arrow, delta, age, IOB, COB, mode, last loop, DKA banner), details
+      (3 h chart, basal, temp target, IOB detail, COB, BGI, reservoir, battery), actions.
+    - Actions: bolus (Digital Crown, 0.05 U, up to max bolus), wizard (carbs, the phone's bolus
+      percentage), temp target presets (activity, eating soon, hypo, cancel), running mode (the
+      list the phone allows now, with durations). Each sends only the pre-check; the phone answers
+      with its `ConfirmAction`, and "Confirm" sends the phone's return command back.
+    - Bolus progress with "Stop bolus".
 5. **Complications** (separate, `apple-watch-complications.md`).
 
 Phases 1 and 2 also help Wear OS (DKA state on Android watches) and can be tested on both machines.
