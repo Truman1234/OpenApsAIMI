@@ -2,6 +2,7 @@ package app.aaps.plugins.sync.wear.wearintegration
 import app.aaps.core.data.model.CarbsType
 import app.aaps.core.data.model.GlucoseUnit
 import app.aaps.core.data.model.RM
+import app.aaps.core.data.model.TE
 import app.aaps.core.data.model.TT
 import app.aaps.core.data.pump.defs.PumpDescription
 import app.aaps.core.data.ue.Sources
@@ -273,6 +274,37 @@ class DataHandlerMobileWearBolusTest : TestBaseWithProfile() {
                 EventData.ActionTempTargetPreCheck(EventData.ActionTempTargetPreCheck.TempTargetCommand.MANUAL, isMgdl = false, duration = 30, low = 5.5, high = 6.5)
             )
         }
+        verifyBlocking(batchExecutor, never()) { prepare(any(), any(), any()) }
+        assertThat(sent.returnCommand).isInstanceOf(EventData.Error::class.java)
+    }
+    // --- AIMI modes (a note through the same prepare/confirm path) -----------------------------------------
+    @Test fun `an AIMI meal mode relays a note with its keyword and duration and ships its bolusId`() = runTest {
+        stubBatchPrepared(31L, lines = listOf(ConfirmationLine(ConfirmationRole.NORMAL, "Note: lunch")))
+        val confirm = capturedConfirm { sut.handleAimiModePreCheck(EventData.ActionAimiModePreCheck("lunch")) }
+        val batch = argumentCaptor<List<BatchAction>>()
+        verifyBlocking(batchExecutor) { prepare(batch.capture(), any(), any()) }
+        val note = batch.firstValue.single() as BatchAction.TherapyEvent
+        assertThat(note.teType).isEqualTo(TE.Type.NOTE)
+        assertThat(note.note).isEqualTo("lunch")
+        assertThat(note.durationMinutes).isEqualTo(60)
+        assertThat(confirm.returnCommand).isEqualTo(EventData.ActionAimiModeConfirmed(31L))
+        // The mode's description comes first, then the lines the master wrote.
+        assertThat(confirm.lines.first().role).isEqualTo(ConfirmationRole.INFO.name)
+        assertThat(confirm.lines.last()).isEqualTo(EventData.ConfirmActionLine("NORMAL", "Note: lunch"))
+    }
+    @Test fun `stop is a one minute note`() = runTest {
+        stubBatchPrepared(32L, lines = emptyList())
+        capturedConfirm { sut.handleAimiModePreCheck(EventData.ActionAimiModePreCheck("stop")) }
+        val batch = argumentCaptor<List<BatchAction>>()
+        verifyBlocking(batchExecutor) { prepare(batch.capture(), any(), any()) }
+        val note = batch.firstValue.single() as BatchAction.TherapyEvent
+        assertThat(note.note).isEqualTo("stop")
+        assertThat(note.durationMinutes).isEqualTo(1)
+    }
+    @Test fun `a mode the watch does not offer is refused without a relay`() = runTest {
+        whenever(rh.gs(any<TextRef>(), anyVararg())).thenReturn("Unknown AIMI mode")
+        // "stress" is an AIMI context, not one of the watch's modes.
+        val sent = capturedConfirm { sut.handleAimiModePreCheck(EventData.ActionAimiModePreCheck("stress")) }
         verifyBlocking(batchExecutor, never()) { prepare(any(), any(), any()) }
         assertThat(sent.returnCommand).isInstanceOf(EventData.Error::class.java)
     }

@@ -229,12 +229,20 @@ MIT code may be used in this AGPL project.
     - `WatchSession.swift`: the `WCSession` on the watch. Reads the application context and the
       `event` messages, sends commands only while the iPhone is reachable (otherwise an error screen,
       never a queue), asks for `ActionResendData` when the app comes to the front.
-    - Pages: glucose (BG, arrow, delta, age, IOB, COB, mode, last loop, DKA banner), details
+    - Pages, swiped left and right (the Digital Crown stays for scrolling and amounts): glucose (BG, arrow, delta, age, IOB, COB, mode, last loop, DKA banner), details
       (3 h chart, basal, temp target, IOB detail, COB, BGI, reservoir, battery), actions.
     - Actions: bolus (Digital Crown, 0.05 U, up to max bolus), wizard (carbs, the phone's bolus
       percentage), temp target presets (activity, eating soon, hypo, cancel), running mode (the
       list the phone allows now, with durations). Each sends only the pre-check; the phone answers
       with its `ConfirmAction`, and "Confirm" sends the phone's return command back.
+    - AIMI modes (breakfast, lunch, dinner, snack, high carb, meal, sport, sleep, stop): new
+      `EventData.ActionAimiModePreCheck(modeId)` / `ActionAimiModeConfirmed(bolusId)`. The phone
+      (`DataHandlerMobile.handleAimiModePreCheck`) takes the `ModePreset` of the AIMI Remote Control,
+      its own duration (stop: 1 min), and parks a NOTE with the keyword through `BatchExecutor`
+      (`BatchAction.TherapyEvent`), the same note the Garmin widget writes. A meal mode starts the
+      P1/P2 prebolus, so it always goes through the phone's confirmation. Other modes are refused.
+    - Each action opens as a sheet with the system close button, and closes itself after sending.
+      The running mode list shows "No answer from the iPhone" after 15 s instead of a spinner.
     - Bolus progress with "Stop bolus".
 5. **Complications** (separate, `apple-watch-complications.md`).
 

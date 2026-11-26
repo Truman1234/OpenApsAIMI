@@ -2,22 +2,43 @@ import SwiftUI
 
 /// The third page: what the watch can ask the phone to do. Each action is only a request. The phone
 /// checks it and sends back a confirmation screen; nothing happens before the user confirms that.
+///
+/// Each action opens as a sheet. watchOS draws a close button (×) on a sheet, so the way back is
+/// always visible, and the sheet closes by itself once the request is sent.
 struct ActionsPage: View {
 
     @EnvironmentObject private var session: WatchSession
+    @State private var open: Action?
 
     private var controlOn: Bool { session.preferences?.wearControl ?? false }
 
+    enum Action: String, Identifiable {
+        case bolus, wizard, aimiMode, tempTarget, runningMode
+        var id: String { rawValue }
+    }
+
     var body: some View {
         List {
-            NavigationLink { BolusView() } label: { Label("Bolus", systemImage: "drop.fill") }
-            NavigationLink { WizardView() } label: { Label("Wizard", systemImage: "fork.knife") }
-            NavigationLink { TempTargetView() } label: { Label("Temp target", systemImage: "target") }
-            NavigationLink { RunningModeView() } label: { Label("Running mode", systemImage: "arrow.triangle.2.circlepath") }
+            Button { open = .bolus } label: { Label("Bolus", systemImage: "drop.fill") }
+            Button { open = .wizard } label: { Label("Wizard", systemImage: "fork.knife") }
+            Button { open = .aimiMode } label: { Label("AIMI modes", systemImage: "sparkles") }
+            Button { open = .tempTarget } label: { Label("Temp target", systemImage: "target") }
+            Button { open = .runningMode } label: { Label("Running mode", systemImage: "arrow.triangle.2.circlepath") }
             if !controlOn {
                 Text("Wear control is off on the iPhone. The phone will refuse these actions.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+            }
+        }
+        .sheet(item: $open) { action in
+            NavigationStack {
+                switch action {
+                case .bolus: BolusView()
+                case .wizard: WizardView()
+                case .aimiMode: AimiModeView()
+                case .tempTarget: TempTargetView()
+                case .runningMode: RunningModeView()
+                }
             }
         }
     }
@@ -99,6 +120,47 @@ private struct WizardView: View {
     }
 }
 
+// MARK: AIMI modes
+
+/// The AIMI modes: the meals start the P1/P2 prebolus, sport and sleep change how AIMI doses, stop ends
+/// them. The phone uses each mode's own duration and shows a confirmation before it stores anything.
+private struct AimiModeView: View {
+
+    @EnvironmentObject private var session: WatchSession
+    @Environment(\.dismiss) private var dismiss
+
+    /// One AIMI mode: the `ModePreset.id` of the phone, its label and icon.
+    private struct Mode: Identifiable {
+        let id: String
+        let title: LocalizedStringKey
+        let icon: String
+    }
+
+    private let modes = [
+        Mode(id: "breakfast", title: "Breakfast", icon: "sunrise"),
+        Mode(id: "lunch", title: "Lunch", icon: "sun.max"),
+        Mode(id: "dinner", title: "Dinner", icon: "moon"),
+        Mode(id: "snack", title: "Snack", icon: "carrot"),
+        Mode(id: "highcarb", title: "High carb", icon: "birthday.cake"),
+        Mode(id: "meal", title: "Meal", icon: "fork.knife"),
+        Mode(id: "sport", title: "Sport", icon: "figure.run"),
+        Mode(id: "sleep", title: "Sleep", icon: "bed.double"),
+        Mode(id: "stop", title: "Stop modes", icon: "stop.circle"),
+    ]
+
+    var body: some View {
+        List(modes) { mode in
+            Button {
+                session.aimiMode(mode.id)
+                dismiss()
+            } label: {
+                Label(mode.title, systemImage: mode.icon)
+            }
+        }
+        .navigationTitle("AIMI modes")
+    }
+}
+
 // MARK: Temp target
 
 private struct TempTargetView: View {
@@ -134,6 +196,8 @@ private struct RunningModeView: View {
 
     @EnvironmentObject private var session: WatchSession
     @Environment(\.dismiss) private var dismiss
+    /// Set when the phone has not answered within 15 seconds.
+    @State private var noAnswer = false
 
     var body: some View {
         List {
@@ -150,13 +214,25 @@ private struct RunningModeView: View {
                         }
                     }
                 }
+            } else if noAnswer {
+                Text("No answer from the iPhone.").foregroundStyle(.secondary)
+                Button("Try again") { request() }
             } else {
                 ProgressView()
             }
         }
         .navigationTitle("Running mode")
         // The phone sends only the modes that are allowed now, with the one-time id that must come back.
-        .onAppear { session.requestRunningModes() }
+        .onAppear { request() }
+    }
+
+    private func request() {
+        noAnswer = false
+        session.requestRunningModes()
+        Task {
+            try? await Task.sleep(for: .seconds(15))
+            if session.runningModes == nil { noAnswer = true }
+        }
     }
 }
 

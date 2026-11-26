@@ -245,6 +245,18 @@ sealed class EventData : Event() {
     @Serializable
     data class ActionTempTargetConfirmed(val bolusId: Long) : EventData()
 
+    /**
+     * Watch → phone: start an AIMI mode (a meal, sport, sleep) or stop the running ones. [modeId] is the
+     * `ModePreset.id` of the AIMI Remote Control, for example "lunch" or "stop". The phone uses the
+     * preset's own duration and answers with a [ConfirmAction].
+     */
+    @Serializable
+    data class ActionAimiModePreCheck(val modeId: String) : EventData()
+
+    /** The return command of an AIMI mode confirmation: commits the parked note by its one-time id. */
+    @Serializable
+    data class ActionAimiModeConfirmed(val bolusId: Long) : EventData()
+
     @Serializable
     data class ActionBolusConfirmed(val bolusId: Long) : EventData()
 

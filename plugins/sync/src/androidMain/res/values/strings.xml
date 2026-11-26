@@ -263,6 +263,8 @@
     <string name="wear_action_loop_state_invalid">Invalid loop state requested</string>
 
     <string name="wear_action_running_mode_title">Running mode</string>
+    <string name="wear_aimi_mode">AIMI mode</string>
+    <string name="wear_aimi_mode_unknown" comment="Error on the watch. %1$s=the mode id the watch sent, for example lunch">Unknown AIMI mode: %1$s</string>
     <string name="wear_dka_risk_line" comment="Shown before the user stops or lowers insulin from the watch. %1$s=DKA risk level as AAPS shows it: WATCH, WARNING or CRITICAL">DKA risk: %1$s</string>
 
     <string name="garmin_request_key">Request Key</string>

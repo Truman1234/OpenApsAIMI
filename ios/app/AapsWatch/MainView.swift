@@ -1,8 +1,9 @@
 import Charts
 import SwiftUI
 
-/// Three pages, scrolled with the Digital Crown: glucose, details, actions. The layout follows the
-/// iAPS watch app (one glance page, then the rest); the code is our own.
+/// Three pages, swiped left and right: glucose, details, actions. The Digital Crown stays free for
+/// scrolling a page and for setting amounts. The layout follows the iAPS watch app (one glance page,
+/// then the rest); the code is our own.
 struct MainView: View {
 
     @EnvironmentObject private var session: WatchSession
@@ -14,7 +15,7 @@ struct MainView: View {
                 DetailsPage()
                 ActionsPage()
             }
-            .tabViewStyle(.verticalPage)
+            .tabViewStyle(.page)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     if session.isWaiting { ProgressView() }

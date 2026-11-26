@@ -15,6 +15,7 @@ import app.aaps.core.data.model.Scene
 import app.aaps.core.data.model.SceneLifecycle
 import app.aaps.core.data.model.SourceSensor
 import app.aaps.core.data.model.TB
+import app.aaps.core.data.model.TE
 import app.aaps.core.data.model.TDD
 import app.aaps.core.data.model.TT
 import app.aaps.core.data.model.TrendArrow
@@ -111,6 +112,7 @@ import app.aaps.core.ui.compose.LightGeneralColors
 import app.aaps.core.ui.extensions.generateCOBString
 import app.aaps.core.ui.extensions.toStringShort
 import app.aaps.plugins.sync.SyncStrings
+import app.aaps.plugins.sync.nsclientV3.remotecontrol.ModePresets
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -133,6 +135,9 @@ private const val HEALTH_EVENT_QUIET_PERIOD_MS = 500L
  * together with those settings, never on its own.
  */
 private const val WEAR_GRAPH_HOURS = 6L
+
+/** The AIMI modes the watch offers: the meals, sport, sleep and stop. The ids of `ModePresets`. */
+private val WATCH_AIMI_MODES = setOf("breakfast", "lunch", "dinner", "snack", "highcarb", "meal", "sport", "sleep", ModePresets.STOP_ID)
 
 /** Running modes that stop or lower insulin. Their confirmation shows the DKA risk. */
 private val INSULIN_LOWERING_MODES = setOf(RM.Mode.SUSPENDED_BY_USER, RM.Mode.DISABLED_LOOP, RM.Mode.DISCONNECTED_PUMP)
@@ -307,6 +312,12 @@ class DataHandlerMobile(
             // Commit the parked TT through the relay (MASTER → local applyTempTarget set/cancel; CLIENT → master applies).
             contacting() // CLIENT: show the spinner during the commit round-trip too (no-op on master).
             onCommitResult(batchExecutor.commit(it.bolusId, Sources.Wear, rh.gs(CoreUiStrings.temporary_target)))
+        }
+        onControlEvent<EventData.ActionAimiModePreCheck> { handleAimiModePreCheck(it) }
+        onControlEvent<EventData.ActionAimiModeConfirmed> {
+            // Commit the parked note through the relay (MASTER → local insert; CLIENT → master inserts it).
+            contacting()
+            onCommitResult(batchExecutor.commit(it.bolusId, Sources.Wear, rh.gs(SyncStrings.wear_aimi_mode)))
         }
         onControlEvent<EventData.ActionBolusPreCheck> { handleBolusPreCheck(it) }
         onControlEvent<EventData.ActionBolusConfirmed> {
@@ -1084,6 +1095,36 @@ class DataHandlerMobile(
             decimalFormatter.to0Decimal(value, " mg/dL")
         else
             decimalFormatter.to1Decimal(value, " mmol/L")
+    }
+
+    /**
+     * An AIMI mode from the watch: a note with the mode's keyword (for example `lunch`), its duration on the
+     * note, as the Garmin widget writes it (`LoopHubImpl.postTherapyMode`). AIMI's `Therapy` reads that note.
+     * A meal mode starts the P1/P2 prebolus, so it goes through the same prepare/confirm path as a temp
+     * target: the phone writes the confirmation, and nothing is stored before the user confirms it.
+     */
+    internal suspend fun handleAimiModePreCheck(action: EventData.ActionAimiModePreCheck) {
+        val mode = ModePresets.ALL_MODES.firstOrNull { it.id == action.modeId && it.id in WATCH_AIMI_MODES }
+        if (mode == null) {
+            sendError(rh.gs(SyncStrings.wear_aimi_mode_unknown, action.modeId))
+            return
+        }
+        // "stop" ends the running modes. One minute, the same as the Garmin widget writes.
+        val durationMin = if (mode.id == ModePresets.STOP_ID) 1 else mode.defaultDurationMin
+        val label = rh.gs(mode.name)
+        val note = BatchAction.TherapyEvent(
+            teType = TE.Type.NOTE,
+            timestamp = Clock.System.now().toEpochMilliseconds(),
+            durationMinutes = durationMin,
+            note = mode.therapyKeyword,
+            source = Sources.Wear
+        )
+        contacting()
+        shipPrepared(
+            batchExecutor.prepare(listOf(note), Sources.Wear, label),
+            label,
+            firstLines = listOf(EventData.ConfirmActionLine(ConfirmationRole.INFO.name, rh.gs(mode.description)))
+        ) { EventData.ActionAimiModeConfirmed(it) }
     }
 
     // internal + suspend so DataHandlerMobileWearBolusTest can drive it; routes through the shared prepare/confirm.

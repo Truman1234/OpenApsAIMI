@@ -58,6 +58,11 @@ final class WatchSession: NSObject, ObservableObject {
         send(Command.json("ActionTempTargetPreCheck", ["command": command]))
     }
 
+    /// `modeId` is a `ModePreset.id` of the phone, for example "lunch" or "stop".
+    func aimiMode(_ modeId: String) {
+        send(Command.json("ActionAimiModePreCheck", ["modeId": modeId]))
+    }
+
     func requestRunningModes() {
         runningModes = nil
         send(Command.json("RunningModeRequest", ["timeStamp": Command.nowMs]))
@@ -98,7 +103,12 @@ final class WatchSession: NSObject, ObservableObject {
     }
 
     private func showLocalError(_ text: String) {
-        confirm = ConfirmRequest(json: ["title": String(localized: "Error"), "message": text])
+        // The action sheet that sent the command is closing right now, and SwiftUI does not show a
+        // second sheet during that. Wait until it is gone.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            confirm = ConfirmRequest(json: ["title": String(localized: "Error"), "message": text])
+        }
     }
 
     // MARK: Incoming
