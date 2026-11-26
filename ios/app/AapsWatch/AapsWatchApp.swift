@@ -8,7 +8,12 @@ import SwiftUI
 @main
 struct AapsWatchApp: App {
 
-    @StateObject private var session = WatchSession()
+    init() {
+        // Activate the session at once, also for a launch in the background.
+        _ = WatchSession.shared
+    }
+
+    @StateObject private var session = WatchSession.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -19,6 +24,11 @@ struct AapsWatchApp: App {
         .onChange(of: scenePhase) { _, phase in
             // Fresh data each time the app comes to the front. The context may be minutes old.
             if phase == .active { session.requestData() }
+        }
+        // watchOS starts the app in the background to hand over a complication update from the iPhone.
+        // The session is already active (`WatchSession.shared`); keep the app alive until the data is in.
+        .backgroundTask(.watchConnectivity) {
+            await WatchSession.shared.waitForPendingContent()
         }
     }
 }

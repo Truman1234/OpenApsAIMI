@@ -1,6 +1,7 @@
 import Foundation
 import WatchConnectivity
 import WatchKit
+import WidgetKit
 import os
 
 /// The watch side of WatchConnectivity, and everything the watch knows.
@@ -9,6 +10,9 @@ import os
 /// - the application context: the newest JSON of each kind of data, one key per kind
 ///   (`SingleBg`, `Status`, `GraphData`, `Preferences`, ...);
 /// - messages under the key `event`: confirmations, errors, bolus progress, the running mode list.
+/// - the widget state for the complications, under the key `widgetState`, in the application context
+///   and, a few times an hour, as a complication transfer (`transferCurrentComplicationUserInfo`). It is
+///   written to the App Group file and the complications are reloaded.
 ///
 /// The watch sends commands as messages under the same key. Only while the iPhone is reachable: a
 /// command that cannot be sent now is never queued, the user gets an error instead.
@@ -19,6 +23,14 @@ final class WatchSession: NSObject, ObservableObject {
 
     nonisolated static let log = Logger(subsystem: "app.aaps.watch", category: "Session")
     nonisolated static let eventKey = "event"
+    /// The key of the widget state, on both sides (`SwiftAppleWatchCompanion.widgetStateKey`).
+    nonisolated static let widgetStateKey = "widgetState"
+    /// The `kind` of the complication (`AapsWatchComplication.kind`, in the other target).
+    nonisolated static let complicationKind = "AapsWatchComplication"
+
+    /// One session for the whole app. It is made when the app starts, also when watchOS starts it in
+    /// the background to deliver a complication update, before any screen exists.
+    static let shared = WatchSession()
 
     @Published private(set) var bg: SingleBg?
     @Published private(set) var graph: [SingleBg] = []
@@ -137,8 +149,38 @@ final class WatchSession: NSObject, ObservableObject {
     // MARK: Incoming
 
     fileprivate func apply(context: [String: Any]) {
-        for value in context.values {
-            if let json = value as? String { handle(json) }
+        for (key, value) in context {
+            guard let json = value as? String else { continue }
+            if key == Self.widgetStateKey { saveWidgetState(json) } else { handle(json) }
+        }
+    }
+
+    /// Writes the widget state for the complications. An older reading never replaces a newer one,
+    /// because the context and the complication transfer can arrive in any order. WidgetKit is asked to
+    /// reload only for a new reading; a new loop result alone is only written.
+    fileprivate func saveWidgetState(_ json: String) {
+        let newTime = Self.bgTime(of: json)
+        let oldTime = AapsWidgetStore.readData().flatMap { String(data: $0, encoding: .utf8) }.flatMap(Self.bgTime(of:))
+        if let newTime, let oldTime, newTime < oldTime { return }
+        guard AapsWidgetStore.write(json) else {
+            Self.log.info("No App Group container, the complications are not updated")
+            return
+        }
+        if newTime != oldTime { WidgetCenter.shared.reloadTimelines(ofKind: Self.complicationKind) }
+    }
+
+    nonisolated private static func bgTime(of json: String) -> Double? {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return object["bgTime"] as? Double
+    }
+
+    /// Waits while the iPhone still has data on the way, at most 10 seconds. watchOS starts the app in
+    /// the background for a complication transfer and ends it when this returns.
+    func waitForPendingContent() async {
+        let end = Date().addingTimeInterval(10)
+        while let session, session.hasContentPending, Date() < end {
+            try? await Task.sleep(for: .milliseconds(200))
         }
     }
 
@@ -222,6 +264,12 @@ extension WatchSession: WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         Task { @MainActor in self.apply(context: applicationContext) }
+    }
+
+    /// A complication transfer from the iPhone. It carries only the widget state.
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+        guard let json = userInfo[Self.widgetStateKey] as? String else { return }
+        Task { @MainActor in self.saveWidgetState(json) }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {

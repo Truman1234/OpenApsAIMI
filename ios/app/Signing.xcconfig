@@ -46,12 +46,15 @@ AAPS_BUNDLE_ID = app.aaps.client
 // Team with its own bundle id gets its own group. Device.entitlements and Simulator.entitlements carry it.
 AAPS_APP_GROUP_ID = group.$(AAPS_BUNDLE_ID)
 
-// The entitlements of the widget extensions (AapsLiveActivity, AapsLiveActivity2): only the App Group
-// above. A free Personal Team has no App Groups, so it sets this empty in Signing.local.xcconfig:
+// The entitlements of the widget extensions (AapsLiveActivity, AapsLiveActivity2) and of the watch
+// app and its complications (AapsWatch, AapsWatchWidget): only the App Group above. On the watch the
+// group is the watch's own container; the watch app writes the complication state there. A free
+// Personal Team has no App Groups, so it sets this empty in Signing.local.xcconfig:
 //
 //     AAPS_WIDGET_ENTITLEMENTS =
 //
-// The Live Activity still works then; the home screen widgets show "---".
+// The Live Activity and the watch app still work then; the home screen widgets and the watch
+// complications show "---".
 AAPS_WIDGET_ENTITLEMENTS = LiveActivity/LiveActivity.entitlements
 
 // The App Group through which xDrip4iOS shares its glucose readings (XdripSourceIosPlugin,

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The watch complications (AapsWatchWidget). GENERATE_INFOPLIST_FILE stays on, so Xcode merges the
+	  bundle name, version and id into this file. Only the App Group and the extension point are here.
+	-->
+	<!-- The App Group the complications read from. The watch app writes the file there. -->
+	<key>AapsAppGroupId</key>
+	<string>$(AAPS_APP_GROUP_ID)</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.widgetkit-extension</string>
+	</dict>
+</dict>
+</plist>

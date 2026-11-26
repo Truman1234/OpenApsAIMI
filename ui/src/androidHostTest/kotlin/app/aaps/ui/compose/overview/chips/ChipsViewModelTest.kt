@@ -80,5 +80,7 @@ internal class ChipsViewModelTest {
         assertThat(sut.sensitivityUiState.value.ratio).isEqualTo(1.0)
         assertThat(sut.sensitivityUiState.value.isEnabled).isTrue()
         assertThat(sut.sensitivityUiState.value.hasData).isFalse()
+        // No AIMI mode until someone collects the line (and the notes are read).
+        assertThat(sut.activeModeText.value).isNull()
     }
 }

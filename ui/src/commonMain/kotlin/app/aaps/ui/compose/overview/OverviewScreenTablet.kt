@@ -98,6 +98,7 @@ fun OverviewScreenTablet(
     val pluginBadge by chipsViewModel.pluginBadge.collectAsStateWithLifecycle()
     val iobUiState by chipsViewModel.iobUiState.collectAsStateWithLifecycle()
     val cobUiState by chipsViewModel.cobUiState.collectAsStateWithLifecycle()
+    val activeModeText by chipsViewModel.activeModeText.collectAsStateWithLifecycle()
     val statusState by statusViewModel.uiState.collectAsStateWithLifecycle()
 
     var statusExpanded by rememberSaveable { mutableStateOf(true) }
@@ -236,7 +237,8 @@ fun OverviewScreenTablet(
             ) {
                 GraphsSection(
                     graphViewModel = graphViewModel, isSimpleMode = isSimpleMode, iobText = iobUiState.text, cobText = cobUiState.text,
-                    overlaidBarsHeight = overlaidBarsHeight
+                    overlaidBarsHeight = overlaidBarsHeight,
+                    modeText = activeModeText
                 )
             }
         }

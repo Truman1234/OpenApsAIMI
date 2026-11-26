@@ -1,7 +1,29 @@
-# Apple Watch complications (plan for later)
+# Apple Watch complications
 
-Status: **not started, nothing decided.** Written on 2026-11-16 to keep the research. Read
-`widget-live-activity.md` first: this work builds on the same widget state.
+Status: **first version built on 2026-11-26, not yet tested on a watch.** The research below is from
+2026-11-16. Read `widget-live-activity.md` first: this work builds on the same widget state.
+
+## What was built
+
+- **Target `AapsWatchWidget`** (watchOS WidgetKit extension, `<bundle id>.watchkitapp.widget`), embedded
+  in `AapsWatch`. Families: circular (BG, arrow, age), rectangular (BG, arrow, delta, age, IOB, COB),
+  inline (BG and arrow), corner (BG, age as the label). A tap opens the watch app; watchOS does that.
+- **One state, one stale rule.** The complications read the same `WidgetStateJson` as the iPhone home
+  widgets, with the same `AapsWidgetProvider` (moved to `Shared/LiveActivity/AapsWidgetShared.swift`) and
+  the same `ContentState.isStale(at:)`. `AapsActivityAttributes.swift` compiles on watchOS now (the
+  `ActivityAttributes` conformance is iOS only). All texts still come from Kotlin.
+- **iPhone (Swift only, no Kotlin change).** `SwiftHomeWidgetCompanion` hands every saved state to
+  `SwiftAppleWatchCompanion.sendWidgetState`. It always goes into the application context (key
+  `widgetState`). `ComplicationBudget` decides when it also goes as
+  `transferCurrentComplicationUserInfo`: only a new reading; at once on a change of range (low, in range,
+  high) or a move of 18 mg/dL or more; otherwise the transfers left are spread until midnight (the Loop
+  method). With 5 or fewer left only a change of range is sent.
+- **Watch app.** `WatchSession` writes the state to its own App Group file (`AapsWidgetStore`) and reloads
+  the complication for a new reading. An older reading never replaces a newer one. The session is a
+  singleton made in `AapsWatchApp.init`, and `.backgroundTask(.watchConnectivity)` keeps the app alive
+  until the data is in, so a transfer works while the app is closed.
+- **Signing.** The watch app and the complication use `AAPS_WIDGET_ENTITLEMENTS` (the App Group) like the
+  iPhone widgets. Without App Groups (free Personal Team) the complications show "---".
 
 ## What we already have
 

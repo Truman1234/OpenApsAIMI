@@ -3,6 +3,7 @@ package app.aaps.ui.compose.overview.chips
 import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.aaps.core.data.model.TE
 import app.aaps.core.interfaces.InterfacesStrings
 import app.aaps.core.interfaces.aps.Loop
 import app.aaps.core.interfaces.configuration.Config
@@ -26,6 +27,7 @@ import app.aaps.core.objects.extensions.displayedIobUnits
 import app.aaps.core.objects.extensions.profileDisplayedIob
 import app.aaps.core.ui.CoreUiStrings
 import app.aaps.core.ui.extensions.displayText
+import app.aaps.ui.compose.dashboard.aimi.aimiActiveModeLine
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedFactory
 import dev.zacsweers.metro.AssistedInject
@@ -34,6 +36,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
@@ -79,6 +82,22 @@ class ChipsViewModel(
             delay(150_000L) // 2.5 minutes
         }
     }.shareIn(viewModelScope, SharingStarted.WhileSubscribed(5000), replay = 1)
+
+    /**
+     * The AIMI mode that runs now ("Mode: Lunch (45 min)"), or null: the same line as the AIMI and Glass
+     * homes (`aimiActiveModeLine`). It counts down every minute and changes at once with a new note.
+     * The notes are only observed while someone collects this, so a test that never reads it needs no stub.
+     */
+    val activeModeText: StateFlow<String?> = merge(
+        flow {
+            while (true) {
+                emit(Unit)
+                delay(60_000L)
+            }
+        },
+        flow { emitAll(persistenceLayer.observeChanges(TE::class)) }.map { },
+    ).map { aimiActiveModeLine(persistenceLayer, rh, dateUtil.now()) }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = null)
 
     private val iobRefresh =
         if (config.AAPSCLIENT) merge(iobCobTicker, rxBus.toFlow(EventNsClientStatusUpdated::class).map { })

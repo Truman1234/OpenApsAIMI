@@ -16,6 +16,12 @@ import AapsShared
 /// - `sendLive`: a message for right now (a confirmation screen, an error). Sent only while the watch
 ///   app is reachable, otherwise dropped. Never queued: an old confirmation must not show up later.
 ///
+/// The complications: the same widget state as the iPhone home widgets (`WidgetStateJson`), handed over
+/// by `SwiftHomeWidgetCompanion` (`sendWidgetState`). It always goes into the application context, and
+/// now and then also as a complication transfer, which wakes the watch and redraws the complication.
+/// Apple allows only about 50 of those a day, so they are spread over the day like Loop does
+/// (`ComplicationBudget`), with an extra one when the glucose changes range or moves a lot.
+///
 /// In: the watch sends one `EventData` as JSON in a message, under the key `event`.
 ///
 /// The session is activated in `init`, not in `start`. iOS may start the app in the background to
@@ -29,6 +35,9 @@ final class SwiftAppleWatchCompanion: NSObject, AppleWatchCompanion, WCSessionDe
     /// The message key, on both sides.
     static let eventKey = "event"
 
+    /// The key of the widget state, on both sides (`WatchSession.widgetStateKey`).
+    static let widgetStateKey = "widgetState"
+
     private static let pendingMaxAge: TimeInterval = 30
     private static let pendingMaxCount = 10
 
@@ -36,6 +45,7 @@ final class SwiftAppleWatchCompanion: NSObject, AppleWatchCompanion, WCSessionDe
     private var callback: AppleWatchCallback?
     private var state: [String: Any] = [:]
     private var pending: [(received: Date, json: String)] = []
+    private var lastComplication: ComplicationBudget.Sent?
 
     private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
 
@@ -88,6 +98,27 @@ final class SwiftAppleWatchCompanion: NSObject, AppleWatchCompanion, WCSessionDe
         lock.lock()
         callback = nil
         lock.unlock()
+    }
+
+    /// The widget state for the complications. Into the application context always; as a complication
+    /// transfer only when `ComplicationBudget` says so.
+    func sendWidgetState(json: String) {
+        sendState(key: Self.widgetStateKey, json: json)
+        guard let session, session.activationState == .activated, session.isPaired, session.isWatchAppInstalled,
+              session.isComplicationEnabled,
+              let reading = ComplicationBudget.Reading(json: json)
+        else { return }
+        let now = Date()
+        lock.lock()
+        let last = lastComplication
+        let send = ComplicationBudget.shouldSend(
+            reading, last: last, remaining: session.remainingComplicationUserInfoTransfers, now: now
+        )
+        if send { lastComplication = ComplicationBudget.Sent(reading: reading, at: now) }
+        lock.unlock()
+        guard send else { return }
+        session.transferCurrentComplicationUserInfo([Self.widgetStateKey: json])
+        Self.log.info("Complication update sent, \(session.remainingComplicationUserInfoTransfers) left today")
     }
 
     // MARK: WCSessionDelegate
@@ -152,5 +183,56 @@ final class SwiftAppleWatchCompanion: NSObject, AppleWatchCompanion, WCSessionDe
         let current = callback
         lock.unlock()
         current?.watchStateChanged(paired: session.isPaired, appInstalled: session.isWatchAppInstalled)
+    }
+}
+
+/// When the iPhone may wake the watch complication. Apple allows about 50 complication transfers a
+/// day and a CGM sends up to 288 readings, so they are spread over the rest of the day (the Loop
+/// method), with an extra one when it matters.
+enum ComplicationBudget {
+
+    /// A move of at least this much (1 mmol/L) is sent at once.
+    static let bigMoveMgdl = 18.0
+    /// With this few transfers left, only a change of range is sent, so the evening still gets some.
+    static let reserve = 5
+
+    /// What the complication needs to know about a widget state.
+    struct Reading {
+        let bgTime: Double
+        let bgMgdl: Double?
+        /// `LOW`, `IN_RANGE` or `HIGH`.
+        let range: String
+
+        /// Nil without a reading: there is nothing new to show.
+        init?(json: String) {
+            guard let data = json.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let bgTime = object["bgTime"] as? Double
+            else { return nil }
+            self.bgTime = bgTime
+            bgMgdl = object["bgMgdl"] as? Double
+            range = object["range"] as? String ?? ""
+        }
+    }
+
+    struct Sent {
+        let reading: Reading
+        let at: Date
+    }
+
+    /// Only a new reading is sent. A change of range or a big move goes at once (while more than
+    /// `reserve` are left); otherwise the transfers left are spread evenly until midnight.
+    static func shouldSend(_ reading: Reading, last: Sent?, remaining: Int, now: Date, calendar: Calendar = .current) -> Bool {
+        guard remaining > 0 else { return false }
+        guard let last else { return true }
+        guard reading.bgTime > last.reading.bgTime else { return false }
+        let rangeChanged = reading.range != last.reading.range
+        if rangeChanged { return true }
+        if remaining <= reserve { return false }
+        if let new = reading.bgMgdl, let old = last.reading.bgMgdl, abs(new - old) >= bigMoveMgdl { return true }
+        guard let midnight = calendar.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0), matchingPolicy: .nextTime)
+        else { return false }
+        let interval = midnight.timeIntervalSince(now) / Double(remaining + 1)
+        return now.timeIntervalSince(last.at) >= interval
     }
 }

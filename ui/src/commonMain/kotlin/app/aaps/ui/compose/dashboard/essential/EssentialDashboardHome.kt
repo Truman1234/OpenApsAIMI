@@ -59,6 +59,7 @@ import app.aaps.core.ui.compose.navigation.NavigationRequest
 import app.aaps.core.ui.compose.stringResource
 import app.aaps.ui.UiStrings
 import app.aaps.ui.compose.dashboard.DisplayForecast
+import app.aaps.ui.compose.dashboard.aimi.AimiActiveModeText
 import app.aaps.ui.compose.dashboard.glass.DashboardV2ToolAction
 import app.aaps.ui.compose.dashboard.glass.aimiContextNavigationRequest
 import app.aaps.ui.compose.dashboard.glass.GlassHomeViewModel
@@ -372,6 +373,11 @@ fun EssentialDashboardHome(
                     color = AapsTheme.generalColors.bgLow,
                     modifier = Modifier.padding(top = AapsTheme.spacing.extraSmall),
                 )
+            }
+
+            // The AIMI mode that runs now, right above the glucose chart, as on the other homes.
+            state.activeModeText?.let {
+                AimiActiveModeText(text = it, modifier = Modifier.padding(top = AapsTheme.spacing.small))
             }
 
             Spacer(Modifier.height(AapsTheme.spacing.medium))

@@ -52,6 +52,8 @@ struct AapsApp: App {
         LiveActivityCompanionKt.installLiveActivityCompanion(companion: AapsApp.liveActivityCompanion)
         HomeWidgetCompanionKt.installHomeWidgetCompanion(companion: AapsApp.homeWidgetCompanion)
         AppleWatchCompanionKt.installAppleWatchCompanion(companion: AapsApp.appleWatchCompanion)
+        // The watch complications show the same state as the home widgets.
+        AapsApp.homeWidgetCompanion.onSave = { AapsApp.appleWatchCompanion.sendWidgetState(json: $0) }
         // Must happen here. iOS only lets background task handlers be registered before the app
         // finishes launching, and `makeUIViewController` below runs later. This call needs no
         // graph; the Kotlin side queues the tasks once its graph is built.

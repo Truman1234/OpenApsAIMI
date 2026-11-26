@@ -72,6 +72,7 @@ import app.aaps.core.ui.compose.NumberInputRow
 import app.aaps.core.ui.compose.rowAction
 import app.aaps.core.ui.compose.stringResource
 import app.aaps.ui.UiStrings
+import app.aaps.ui.compose.dashboard.aimi.AimiActiveModeText
 import com.patrykandpatrick.vico.compose.cartesian.Scroll
 import com.patrykandpatrick.vico.compose.cartesian.Zoom
 import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
@@ -228,7 +229,12 @@ fun GraphsSection(
     iobText: String? = null,
     cobText: String? = null,
     /** Height of the bars drawn over the end of this section (the overview's preview mode), added to the space at its end. */
-    overlaidBarsHeight: Dp = 0.dp
+    overlaidBarsHeight: Dp = 0.dp,
+    /**
+     * The AIMI mode that runs now, shown above the graphs. Like [iobText] a CURRENT value: the overview
+     * passes it, the history browser must not.
+     */
+    modeText: String? = null,
 ) {
     val dateUtil = LocalDateUtil.current
     val savedGraphConfig by graphViewModel.graphConfigFlow.collectAsStateWithLifecycle()
@@ -481,6 +487,7 @@ fun GraphsSection(
             .stopsBgFling(bgScrollForwarder)
             .closesInspectPillOnTouch(inspect)
     ) {
+        modeText?.let { AimiActiveModeText(it) }
         // Treatment Belt Graph - running mode background + therapy events. A hold or a tap shows the pill.
         LeftToRight {
             TreatmentBeltGraphCompose(

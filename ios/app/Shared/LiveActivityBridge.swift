@@ -80,8 +80,13 @@ final class SwiftHomeWidgetCompanion: NSObject, HomeWidgetCompanion {
     private let queue = DispatchQueue(label: "app.aaps.homewidget", qos: .utility)
     private var reportedNoContainer = false
 
+    /// Also gets every saved state: the Apple Watch complications show the same state. Set once, in
+    /// `AapsApp.init`, before Kotlin starts.
+    var onSave: ((String) -> Void)?
+
     func save(stateJson: String, reload: Bool) {
         queue.async { [self] in
+            onSave?(stateJson)
             guard AapsWidgetStore.write(stateJson) else {
                 if !reportedNoContainer {
                     reportedNoContainer = true

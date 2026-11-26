@@ -1,13 +1,18 @@
+#if os(iOS)
 import ActivityKit
+#endif
 import Foundation
 import os
 
 /// The Live Activity data, shared by the app (which starts and updates the activity) and the widget
-/// extension (which draws it). Target membership: AAPS, AAPS2 and both Live Activity extensions.
+/// extension (which draws it). Target membership: AAPS, AAPS2, both Live Activity extensions, and on
+/// the watch AapsWatch and AapsWatchWidget (the complications read the same state).
 ///
 /// It imports no Kotlin. The extension is a separate process and cannot load the AapsShared
 /// framework, so everything it shows travels in `ContentState`.
-struct AapsActivityAttributes: ActivityAttributes {
+///
+/// watchOS has no ActivityKit, so the `ActivityAttributes` conformance is added below for iOS only.
+struct AapsActivityAttributes {
 
     /// When this activity was started. The app recreates an activity older than 60 minutes while it
     /// is in the foreground, because iOS ends a Live Activity after 8 hours.
@@ -91,6 +96,10 @@ struct AapsActivityAttributes: ActivityAttributes {
     }
 }
 
+#if os(iOS)
+extension AapsActivityAttributes: ActivityAttributes {}
+#endif
+
 /// The file through which the app hands the widget state to the home and lock screen widgets.
 /// Shared by the app (which writes it) and the widget extension (which reads it), so the place of the
 /// file is written down only here.
@@ -128,7 +137,8 @@ enum AapsWidgetStore {
     }
 
     /// The bundle id of the app that owns the data. In the extension (`<app id>.LiveActivity`) it is the
-    /// id of the app the extension is embedded in.
+    /// id of the app the extension is embedded in. On the watch the app is `<app id>.watchkitapp` and its
+    /// complication extension `<app id>.watchkitapp.widget`, so both read the same file.
     static var appBundleId: String? {
         guard let id = Bundle.main.bundleIdentifier else { return nil }
         guard Bundle.main.bundleURL.pathExtension == "appex" else { return id }
