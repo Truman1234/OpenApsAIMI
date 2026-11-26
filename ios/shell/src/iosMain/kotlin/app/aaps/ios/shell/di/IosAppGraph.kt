@@ -68,13 +68,14 @@ import app.aaps.ui.compose.overview.chips.ChipsViewModel
 import app.aaps.ui.compose.overview.graphs.GraphViewModel
 import app.aaps.ui.search.BuiltInSearchables
 import app.aaps.core.interfaces.di.APS
+import app.aaps.core.interfaces.di.NotNSClient
+import app.aaps.core.interfaces.di.PumpDriver
 import app.aaps.implementation.maintenance.KeepAliveChecks
 import app.aaps.implementation.profile.ProfileSwitchScheduler
 import app.aaps.plugins.aps.loop.runningMode.IosRunningModeExpiryScheduler
 import app.aaps.plugins.aps.loop.runningMode.RunningModeReconciler
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
-import dev.zacsweers.metro.Includes
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metrox.viewmodel.MetroViewModelMultibindings
@@ -94,6 +95,11 @@ import kotlinx.coroutines.CoroutineScope
  * a binding iOS has no implementation for yet, logs loudly when touched, and refuses to invent an
  * answer that a screen would act on. They are listed in `_docs/ios_blockers.md` and are meant to be
  * deleted one at a time.
+ *
+ * [CoreObjectsGraph] and [ClientGraphBindings] are plain binding containers rather than contributed
+ * ones, so the graph names them - the same way `AppRootGraph` takes `CoreObjectsGraph` on Android.
+ * Both are objects, so they go in `bindingContainers`: Metro calls their `@Provides` directly and
+ * needs no instance from the factory.
  */
 /*
  * `OpenAPSAIMIPlugin` is IN this graph since 2026-10-18. It was held out while iOS could not
@@ -109,12 +115,14 @@ import kotlinx.coroutines.CoroutineScope
  * `AimiStorage` and `HormonitorStudyExporterProvider` are in `IosAimiPlatformBindings`; the HealthKit
  * physio sources in `IosAimiPhysioBindings`; `AimiKeyValueCache` is `IosAimiKeyValueCache`.
  *
- * The phone is a master (`IosConfig`), so these plugins really reach a pump and a sensor: the iOS
- * Medtrum driver (`IosMedtrumPlugin`), the Omnipod Dash driver (`IosOmnipodDashPlugin`, from
- * `:pump:omnipod:dashctl`) and the Dexcom ONE+ / G7 driver (`DexcomOnePlusPlugin`) are contributed to
- * the plugin map below, beside `VirtualPumpPlugin` and `NSClientSourcePlugin`.
+ * In the master app (`IosConfig`) these plugins really reach a pump and a sensor: the iOS Medtrum
+ * driver (`IosMedtrumPlugin`) and the Omnipod Dash driver (`IosOmnipodDashPlugin`, from
+ * `:pump:omnipod:dashctl`) are in the `@PumpDriver` bucket below, and the Dexcom ONE+ / G7 driver
+ * (`DexcomOnePlusPlugin`) is in the plain plugin map beside `VirtualPumpPlugin` and
+ * `NSClientSourcePlugin`. The follower app (AAPSClient) uses the same graph; `IosAppStartup` leaves the
+ * `@APS`, `@PumpDriver` and `@NotNSClient` buckets out of its plugin list.
  */
-@DependencyGraph(AppScope::class)
+@DependencyGraph(AppScope::class, bindingContainers = [CoreObjectsGraph::class, ClientGraphBindings::class])
 interface IosAppGraph : MetroViewModelMultibindings {
 
     // Everything AapsAppRoot needs.
@@ -205,16 +213,22 @@ interface IosAppGraph : MetroViewModelMultibindings {
     /**
      * Plugins that register themselves with `@ContributesIntoMap`, keyed by their order.
      *
-     * `IosAppStartup` merges [contributedApsPlugins] into this list when `config.APS`, the same rule
-     * as `MetroGraphs.allPlugins` on Android. The `@PumpDriver` and `@NotNSClient` qualifiers are
-     * Android-only annotations, so no plugin compiled for iOS can carry them; the iOS pump drivers
-     * register in this unqualified bucket instead.
+     * `IosAppStartup` merges the qualified buckets below into this list, each only when the build
+     * should have it, the same rule as `MetroGraphs.allPlugins` on Android.
      */
     val contributedPlugins: Map<Int, PluginBase>
 
     /** Plugins that belong only in a build that runs the loop - `ObjectivesPlugin` among them. */
     @APS
     val contributedApsPlugins: Map<Int, PluginBase>
+
+    /** The pump drivers (Medtrum, Omnipod Dash). Merged only when `config.PUMPDRIVERS`. */
+    @PumpDriver
+    val contributedPumpDriverPlugins: Map<Int, PluginBase>
+
+    /** Plugins a follower must not have (Tidepool). Merged only when not `config.AAPSCLIENT`. */
+    @NotNSClient
+    val contributedNotNsClientPlugins: Map<Int, PluginBase>
 
     /** Started by `IosAppStartup`, as `MainApp` starts them on Android. */
     val runningModeReconciler: RunningModeReconciler
@@ -311,13 +325,7 @@ interface IosAppGraph : MetroViewModelMultibindings {
     @DependencyGraph.Factory
     fun interface Factory {
 
-        /**
-         * [CoreObjectsGraph] is a `@BindingContainer`, so its `@Provides` are only visible to a
-         * graph that includes it - the same way `AppRootGraph` takes it on Android.
-         */
         fun create(
-            @Includes coreObjects: CoreObjectsGraph,
-            @Includes clientBindings: ClientGraphBindings,
             /**
              * The Nightscout socket, handed in by the app because it is written in Swift.
              *

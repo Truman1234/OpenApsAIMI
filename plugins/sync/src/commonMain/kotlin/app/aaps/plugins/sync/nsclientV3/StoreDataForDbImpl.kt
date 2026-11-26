@@ -59,8 +59,8 @@ class StoreDataForDbImpl(
     private val preferences: Preferences,
     private val config: Config,
     private val nsClientRepository: NSClientRepository,
-    // Plain CoroutineScope, not @ApplicationScope: that qualifier is javax and cannot appear in
-    // commonMain. AppCoroutineBindings.unqualifiedAppScope binds the very same scope without it, so
+    // Plain CoroutineScope, the same object as @ApplicationScope:
+    // AppCoroutineBindings.unqualifiedAppScope binds the very same scope without it, so
     // this is still the one application scope, not a second one.
     private val appScope: CoroutineScope
 ) : StoreDataForDb {
@@ -237,6 +237,7 @@ class StoreDataForDbImpl(
             ended.add(TB::class.label, result.ended.size)
             nsIdUpdated.add(TB::class.label, result.updatedNsId.size)
             durationUpdated.add(TB::class.label, result.updatedDuration.size)
+            updated.add(TB::class.label, result.updated.size)
             sendLog("TemporaryBasal", TB::class.label)
             delay(pause)
         }

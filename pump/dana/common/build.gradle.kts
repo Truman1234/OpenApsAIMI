@@ -51,8 +51,7 @@ kotlin {
                 // Everything that is Android only today (screens, Room, keys with R.string) lives here
                 // until it is moved to commonMain step by step.
                 api(libs.androidx.room.runtime)
-                implementation(project.dependencies.platform(libs.androidx.compose.bom))
-                implementation(libs.androidx.compose.ui.tooling.preview)
+                implementation(libs.jetbrains.compose.ui.tooling.preview)
                 implementation(libs.androidx.lifecycle.runtime.compose)
             }
         }

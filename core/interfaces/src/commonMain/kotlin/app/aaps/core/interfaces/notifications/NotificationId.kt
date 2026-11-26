@@ -350,18 +350,34 @@ enum class NotificationId(
     DKA_WARNING(IMPORTANT, LOOP),
     DKA_CRITICAL(URGENT, LOOP),
 
-    /** The user stopped AAPS on this phone (`AapsStop`). Shown until it is started again. */
+    /** The user stopped AAPS on this phone (`AapsStop`). Shown until it is started again. Appended last on purpose. */
     AAPS_STOPPED(IMPORTANT, SYSTEM),
 
     /**
      * xDrip4iOS source on iPhone: the App Group is not set up, so no readings can ever arrive.
      *
-     * Appended last on purpose. Both this entry and [AAPS_STOPPED] were written as the last one,
-     * on two branches, and the merge has to pick an order: the system id is the ordinal, so the
-     * entry that was already on the branch this one was merged into keeps its place and the entry
-     * that only existed here takes the new highest id. Nothing that was already posted changes id.
+     * Appended last on purpose. Entries written as "the last one" on two branches meet in a merge, and
+     * the merge has to pick an order: the system id is the ordinal, so the entries that were already on
+     * the branch being merged into keep their place, and the entries that only existed on the other
+     * branch take the next free ids. Nothing that was already posted changes id. That is why this entry
+     * stays here and the two AIMI safe hold entries from upstream come after it.
      */
-    XDRIP_IOS_APP_GROUP_MISSING(IMPORTANT, CGM);
+    XDRIP_IOS_APP_GROUP_MISSING(IMPORTANT, CGM),
+
+    /**
+     * AIMI caught an error on several loop runs in a row (a "safe hold"): no insulin change was
+     * decided, so the running temp basal just continues. Silent: shown from about 15 min. Taken
+     * away by the next normal run. Appended last on purpose.
+     */
+    AIMI_SAFE_HOLD(IMPORTANT, LOOP),
+
+    /**
+     * The same safe holds have gone on for about 30 min: a whole temp basal period with no loop
+     * control, while the pump may run a high temp during a fall or a near-zero one during a rise.
+     * An acute insulin-delivery problem, so an alarm. Taken away by the next normal run. Appended
+     * last on purpose.
+     */
+    AIMI_SAFE_HOLD_ALARM(URGENT, LOOP);
 
     companion object {
 

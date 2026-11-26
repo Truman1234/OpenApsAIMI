@@ -323,6 +323,48 @@ class CommandQueueImplementationTest : TestBaseWithProfile() {
     }
 
     /**
+     * A command took longer than the connection limit and the link was lost during it: the next command still gets a
+     * try to connect. The time of the commands already run used to count as connection time, so the queue dropped the
+     * next one at once as "timed out", with no try. Seen on an Omnipod 5 pod out of range: a bolus of 4.5 minutes, and
+     * the status read queued after it was dropped in the same second.
+     */
+    @Test
+    fun `after a long command that lost the link the next command still tries to connect`() = runTest {
+        // A status read is a success only with pump data from the last minute.
+        testPumpPlugin.lastData = System.currentTimeMillis()
+        lateinit var executor: CommandExecutor
+        commandQueue = CommandQueueImplementation(
+            aapsLogger, rxBus, text, constraintChecker, profileFunction, activePlugin, config, dateUtil,
+            fabricPrivacy, notificationManager, persistenceLayer, decimalFormatter, { pumpEnactResultProvider() },
+            pumpSync, preferences, profileSwitchSilentGate, localAlertUtilsProvider, smsCommunicatorProvider,
+            { executor }, testScope, bolusProgressData, smbPause, { uiInteraction }
+        )
+        executor = CommandExecutor(
+            aapsLogger, fabricPrivacy, commandQueue, rxBus, activePlugin, text, preferences, config, bolusProgressData, TestCommandExecutionPlatform(), notificationManager
+        )
+        // 1 s instead of the real 2 minutes, and a bolus of 2.5 s: longer than the limit.
+        executor.maxConnectionSeconds = 1
+        var readStatusResult: PumpEnactResult? = null
+        testPumpPlugin.duringBolus = {
+            // Queued while the bolus runs, so it waits for it.
+            CoroutineScope(Dispatchers.IO).launch { readStatusResult = commandQueue.readStatus("test") }
+            delay(2_500)
+            testPumpPlugin.connected = false
+        }
+
+        var bolusResult: PumpEnactResult? = null
+        CoroutineScope(Dispatchers.IO).launch { bolusResult = commandQueue.bolus(DetailedBolusInfo()) }
+        var waitedMs = 0
+        while (readStatusResult == null && waitedMs < 10_000) {
+            Thread.sleep(100); waitedMs += 100
+        }
+
+        assertThat(bolusResult?.success).isTrue()
+        assertThat(testPumpPlugin.connectCalls).isAtLeast(1)
+        assertThat(readStatusResult?.success).isTrue()
+    }
+
+    /**
      * The queue does not reach the pump before the app has finished starting. Until then there is no profile, so the
      * records a command brings were dropped by PumpSync for good: seen on a real pump, whose status read at app start
      * read a bolus from the pump history and lost it. Every driver queues a status read while the app starts, through
@@ -1091,7 +1133,7 @@ class CommandQueueImplementationTest : TestBaseWithProfile() {
         assertThat(smbResult).isNotNull()
         assertThat(smbResult!!.success).isFalse()
         // Not a delivery failure: the loop runs again, and no bolus error alarm
-        assertThat(smbResult!!.cancelled).isTrue()
+        assertThat(smbResult.cancelled).isTrue()
         // The progress belongs to the manual bolus now
         assertThat(bolusProgressData.state.value?.isSMB).isFalse()
     }
@@ -1180,7 +1222,7 @@ class CommandQueueImplementationTest : TestBaseWithProfile() {
         assertThat(commandQueue.size()).isEqualTo(0)
         assertThat(smbResult!!.success).isFalse()
         // Not a delivery failure: the loop runs again with a temp basal, and no alarm rings
-        assertThat(smbResult!!.cancelled).isTrue()
+        assertThat(smbResult.cancelled).isTrue()
     }
 
     @Test
@@ -1787,7 +1829,7 @@ class CommandQueueImplementationTest : TestBaseWithProfile() {
         assertThat(commandQueue.size()).isEqualTo(0)
         assertThat(result).isNotNull()
         assertThat(result!!.success).isFalse()
-        assertThat(result!!.enacted).isFalse()
+        assertThat(result.enacted).isFalse()
     }
 
     /**
@@ -1880,7 +1922,7 @@ class CommandQueueImplementationTest : TestBaseWithProfile() {
 
         assertThat(failed!!.cancelled).isTrue()
         assertThat(noOp!!.cancelled).isTrue()
-        assertThat(noOp!!.success).isTrue()
+        assertThat(noOp.success).isTrue()
     }
 
     /**
@@ -1898,7 +1940,7 @@ class CommandQueueImplementationTest : TestBaseWithProfile() {
         yield()
 
         assertThat(result!!.success).isFalse()
-        assertThat(result!!.cancelled).isFalse()
+        assertThat(result.cancelled).isFalse()
     }
 
     // region stuck command alarm (#5209)
@@ -1983,7 +2025,7 @@ class CommandQueueImplementationTest : TestBaseWithProfile() {
         assertThat(result).isNotNull()
         assertThat(result!!.success).isFalse()
         // A stop by the user is not a delivery failure, so it must not ring the bolus error alarm.
-        assertThat(result!!.cancelled).isTrue()
+        assertThat(result.cancelled).isTrue()
         verify(persistenceLayer, never()).insertOrUpdateCarbs(anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull())
     }
 
@@ -2002,7 +2044,7 @@ class CommandQueueImplementationTest : TestBaseWithProfile() {
         assertThat(commandQueue.size()).isEqualTo(1)
         assertThat(replaced).isNotNull()
         assertThat(replaced!!.success).isFalse()
-        assertThat(replaced!!.cancelled).isTrue()
+        assertThat(replaced.cancelled).isTrue()
         verify(persistenceLayer, never()).insertOrUpdateCarbs(anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull())
     }
 

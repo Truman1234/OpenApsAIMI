@@ -125,8 +125,8 @@
     <string name="pref_title_alert_cgm_sensor_issue_delay">Sensor issue for at least</string>
     <string name="pref_title_alert_cgm_warmup_done">Notify when sensor warm-up is done</string>
     <string name="pref_summary_alert_cgm_warmup_done">Notify when a new sensor sends its first usable reading. Only for BG sources that report their sensor state.</string>
-    <string name="pref_title_alert_cgm_second_sensor_ready">Notify when a second sensor is ready</string>
-    <string name="pref_summary_alert_cgm_second_sensor_ready">Notify when a pre-soaked second sensor is ready and you can switch to it. Only for BG sources that support a second sensor.</string>
+    <string name="pref_title_alert_cgm_second_sensor_ready">Notify when the pre-soak sensor is ready</string>
+    <string name="pref_summary_alert_cgm_second_sensor_ready">Notify when the pre-soak sensor is ready and you can switch to it. Only for BG sources that support a pre-soak sensor.</string>
 
     <!-- BG Source preferences -->
     <string name="pref_title_bg_source_upload_to_ns">Upload BG data to NS</string>
@@ -136,6 +136,8 @@
     <!-- APS preferences -->
     <string name="pref_title_aps_use_dynamic_sensitivity">Use dynamic sensitivity</string>
     <string name="pref_summary_aps_use_dynamic_sensitivity">Use DynamicISF for sensitivity adjustment instead of Autosens.</string>
+    <string name="pref_title_aps_publish_displayed_iob">Upload displayed IOB</string>
+    <string name="pref_summary_aps_publish_displayed_iob">Add the IOB shown on this phone to the device status. The APS IOB stays as it is.</string>
     <string name="pref_title_aps_use_autosens">Use Autosens</string>
     <string name="pref_title_aps_use_smb">Enable SMB</string>
     <string name="pref_summary_aps_use_smb">Enable Super Micro Bolus. SMB delivers insulin immediately to respond to rising blood glucose.</string>
@@ -213,6 +215,8 @@
     <string name="pref_summary_ns_receive_running_mode">Accept running mode changes from Nightscout.</string>
     <string name="pref_title_ns_receive_tbr_eb">Receive TBR/EB from NS</string>
     <string name="pref_summary_ns_receive_tbr_eb">Accept temp basal rates and extended boluses from Nightscout.</string>
+    <string name="pref_title_ns_accept_treatment_corrections">Accept treatment corrections from NS</string>
+    <string name="pref_summary_ns_accept_treatment_corrections">On a follower, apply a later correction of a temp basal or a bolus from Nightscout. The start time is not moved.</string>
     <string name="pref_title_ns_notifications_from_alarms">NS alarms</string>
     <string name="pref_title_ns_notifications_from_announcements">NS announcements</string>
     <string name="pref_title_ns_use_cellular">Use cellular data</string>
@@ -522,7 +526,7 @@
     <string name="pref_title_aimi_autodrive_v3_authoritative">Autodrive V3 authoritative SMB</string>
     <string name="pref_summary_aimi_autodrive_v3_authoritative">When Autodrive V3 is active and issues a safe SMB/TBR, do not recompute SMB with the legacy MPC/PI blender (prevents post-hypo overshoot). Disable only for debugging.</string>
     <string name="pref_title_aimi_peak_governor_enabled">TAP-G peak governor</string>
-    <string name="pref_summary_aimi_peak_governor_enabled">When adaptive PK/PD is on, blend the insulin profile peak with the learned PKPD peak for loop peakTime (see research doc TAP_G_PEAK_GOVERNOR_RFC). When off, the peak also gets no shift from the current context (stress, meal, after a hypo).</string>
+    <string name="pref_summary_aimi_peak_governor_enabled">When adaptive PK/PD is on, blend the insulin profile peak with the learned PKPD peak for loop peakTime (see research doc TAP_G_PEAK_GOVERNOR_RFC). The peak gets a shift from the current context (stress, meal, after a hypo) only when this switch and adaptive PK/PD are both on.</string>
     <string name="pref_title_aimi_tree_meal_rise_frontload">Meal-rise front-loader (early SMB)</string>
     <string name="pref_summary_aimi_tree_meal_rise_frontload">On a corroborated meal rise (tree = NEED_MORE_INSULIN, BG above target, rising), let Harmonia apply the early SMB lift even when sensor confidence is low — instead of waiting for established hyper. Only ever softens the authority (never a hard bolus); real hypo, free-fall and safety blocks are never overridden. Off by default: it overrides the sensor-confidence gate. Fix the sensor source first if you can.</string>
     <string name="pref_title_aimi_sensor_confidence_cgm_first">Sensor confidence: CGM-first</string>
@@ -573,6 +577,8 @@
     <string name="pref_summary_aimi_t3c_autodrive_basal_authority">Under T3C brittle mode, fuse Autodrive’s temporary basal demand with the T3C PI controller. SMB from Autodrive is never delivered (basal-only). The physiological tree can unlock a higher basal ceiling and faster ramp on a confirmed rise. Off disables fusion (PI-only + shadow Autodrive).</string>
     <string name="pref_title_aimi_t3c_hyper_basal_floor">T3C: Hyper basal floor</string>
     <string name="pref_summary_aimi_t3c_hyper_basal_floor">Under T3C brittle mode, when glucose has stayed at or above 160 mg/dL for at least 20 minutes, hold the basal at your configured Max basal rate so sensor noise cannot collapse the correction to zero. Basal only (no SMB). Releases automatically once glucose falls back below 160 mg/dL. On by default. This is not medical advice — review your settings with your care team.</string>
+    <string name="pref_title_aimi_t3c_transition_guard">T3C: Cut basal when a long high starts to fall</string>
+    <string name="pref_summary_aimi_t3c_transition_guard">Under T3C brittle mode, when glucose stayed high and stable for more than 20 minutes and then starts to fall, lower the basal at once (to zero at a fall of 1.2 mg/dL per 5 minutes). This guards against a low when insulin resistance ends suddenly. Off by default: the decision log records what it would do. This is not medical advice — review your settings with your care team.</string>
     <string name="pref_title_aimi_t3c_cfrd_mode">T3C: CFRD mode</string>
     <string name="pref_summary_aimi_t3c_cfrd_mode">Cystic fibrosis–related diabetes adaptations under T3C: higher LGS safety floor, delayed COB absorption for malabsorption, and inflammation-aware basal aggressiveness. Basal-only (no SMB). On by default when T3C brittle mode is used. This is not medical advice — review with your CF/diabetes care team.</string>
     <string name="pref_title_aimi_t3c_cfrd_exacerbation">T3C CFRD: pulmonary exacerbation</string>
@@ -590,6 +596,8 @@
     <string name="pref_title_aimi_tpo_llm_confirm_enabled">TPO: require LLM confirmation</string>
     <string name="pref_summary_aimi_tpo_llm_confirm_enabled">When on, AIMI applies a TPO session only if the advisor LLM confirms the clinical context (uses the same API keys as AI Coach). When off, algorithm triggers apply directly.</string>
     <string name="pref_title_aimi_tpo_notify_on_apply">TPO: notify on session start</string>
+    <string name="pref_title_aimi_manual_boost_percent">Manual boost strength</string>
+    <string name="pref_summary_aimi_manual_boost_percent">How much a manual boost raises max SMB in hyper, max basal and the Autodrive max basal, in percent of your values, for 60 minutes. The values never pass their own maximum or the age limit.</string>
     <string name="pref_summary_aimi_tpo_notify_on_apply">Shows a system notification when a 45 min protection session starts or ends. Tap to open OpenAPS AIMI preferences.</string>
     <string name="pref_title_aimi_dyn_isf_trajectory_max_fraction">DynISF trajectory: max ISF change per tick</string>
     <string name="pref_summary_aimi_dyn_isf_trajectory_max_fraction">Cap on relative ISF adjustment from trajectory (e.g. 0.06 = at most about 6% tighter ISF on a strong rise, or 6% looser on a strong fall). Lower = safer, smaller benefit.</string>
@@ -672,7 +680,7 @@
     <string name="pref_title_oaps_aimi_pkpd_enabled">AIMI PKPD enabled</string>
     <string name="pref_title_oaps_aimi_intelligence_snapshot_export">AIMI intelligence snapshot export</string>
     <string name="pref_title_oaps_aimi_dia_governor_enabled">AIMI DIA governor enabled</string>
-    <string name="pref_summary_oaps_aimi_dia_governor_enabled">When adaptive PK/PD is on, blend the insulin profile DIA with the learned PK/PD DIA. When off, the DIA is the profile DIA: no learned DIA and no shift from the current context (stress, meal, after a hypo).</string>
+    <string name="pref_summary_oaps_aimi_dia_governor_enabled">When adaptive PK/PD is on, blend the insulin profile DIA with the learned PK/PD DIA. When off, the DIA is the profile DIA: no learned DIA and no shift from the current context. The DIA gets a shift from the current context (stress, meal, after a hypo) only when this switch and adaptive PK/PD are both on.</string>
     <string name="pref_title_oaps_aimi_prediction_authority_shadow">AIMI prediction authority shadow</string>
     <string name="pref_summary_oaps_aimi_prediction_authority_shadow">Used only when AIMI prediction authority is off: AIMI computes the prediction and writes it in the log, but does not use it for dosing.</string>
     <string name="pref_title_oaps_aimi_prediction_authority_enabled">AIMI prediction authority enabled</string>
@@ -702,6 +710,8 @@
     <string name="pref_title_aimi_physio_sleep_data_enable">Use sleep data</string>
     <string name="pref_summary_aimi_physio_sleep_data_enable">On: AIMI uses the sleep from your watch (sleep debt, poor night) and can give a little less insulin after a bad night. Off: sleep data is ignored.</string>
     <string name="pref_title_aimi_physio_hrv_data_enable">Use heart rate variability (HRV)</string>
+    <string name="pref_title_aimi_physio_night_hr_enable">React to an unusual night heart rate</string>
+    <string name="pref_summary_aimi_physio_night_hr_enable">On: after a night with a heart rate clearly above your usual night, AIMI follows your glucose more closely for the rest of the day, in both directions. Off: the night heart rate is only shown.</string>
     <string name="pref_summary_aimi_physio_hrv_data_enable">On: AIMI uses the HRV from your watch to detect stress or fatigue, which can change the insulin dose a little. Off: HRV is ignored.</string>
     <string name="pref_title_aimi_physio_llm_analysis_enable">AIMI physio LLM analysis enable</string>
     <string name="pref_title_aimi_hrv_baseline_per_night">AIMI HRV baseline per night</string>
