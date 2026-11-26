@@ -10,9 +10,7 @@ import app.aaps.core.interfaces.rx.events.EventNsClientStatusUpdated
 import app.aaps.core.interfaces.alerts.EatReminder
 import app.aaps.core.interfaces.alerts.EatReminderState
 import app.aaps.core.interfaces.scenes.SceneAutomationApi
-import app.aaps.plugins.sync.tidepool.utils.RateLimit
 import app.aaps.plugins.sync.wear.wearintegration.DataHandlerMobile
-import app.aaps.plugins.sync.wear.wearintegration.DataLayerListenerServiceMobileHelper
 import app.aaps.shared.tests.TestBaseWithProfile
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CoroutineScope
@@ -28,38 +26,34 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mock
-import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
-class WearPluginTest : TestBaseWithProfile() {
+class WatchUpdatesTest : TestBaseWithProfile() {
 
     @Mock lateinit var dataHandlerMobile: DataHandlerMobile
-    @Mock lateinit var dataLayerListenerServiceMobileHelper: DataLayerListenerServiceMobileHelper
     @Mock lateinit var persistenceLayer: PersistenceLayer
     @Mock lateinit var scenes: SceneAutomationApi
     @Mock lateinit var eatReminder: EatReminder
 
-    private lateinit var wearPlugin: WearPlugin
-    private lateinit var rateLimit: RateLimit
+    private lateinit var watchUpdates: WatchUpdates
 
     private val temporaryTargets = MutableSharedFlow<List<TT>>()
     private val runningModes = MutableSharedFlow<List<RM>>()
     private val eatReminderState = MutableStateFlow<EatReminderState?>(null)
 
     @BeforeEach fun prepare() {
-        rateLimit = RateLimit(dateUtil)
         whenever(eatReminder.state).thenReturn(eatReminderState)
-        wearPlugin = WearPlugin(aapsLogger, rh, preferences, rxBus, context, dataHandlerMobile, dataLayerListenerServiceMobileHelper, config, BolusProgressData(ch, CoroutineScope(Dispatchers.Unconfined)), persistenceLayer, scenes, eatReminder, mock())
+        watchUpdates = WatchUpdates(aapsLogger, rh, preferences, rxBus, dataHandlerMobile, BolusProgressData(ch, CoroutineScope(Dispatchers.Unconfined)), persistenceLayer, scenes, eatReminder)
         whenever(persistenceLayer.observeChanges(TT::class)).thenReturn(temporaryTargets)
         whenever(persistenceLayer.observeChanges(RM::class)).thenReturn(runningModes)
     }
 
-    /** Collects [WearPlugin.resendRequests] in virtual time; the database flows send their first value as on a phone. */
+    /** Collects [WatchUpdates.resendRequests] in virtual time; the database flows send their first value as on a phone. */
     private suspend fun TestScope.collectResends(): MutableList<String> {
         val reasons = mutableListOf<String>()
-        val flow = wearPlugin.resendRequests(backgroundScope)
+        val flow = watchUpdates.resendRequests(backgroundScope)
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { flow.collect { reasons.add(it) } }
         runCurrent()
         // observeChanges sends the current state when it is collected; that is not a change
@@ -76,7 +70,7 @@ class WearPluginTest : TestBaseWithProfile() {
     @Test
     fun `an event right after the start is not lost`() = runTest {
         val reasons = mutableListOf<String>()
-        val flow = wearPlugin.resendRequests(backgroundScope)
+        val flow = watchUpdates.resendRequests(backgroundScope)
         loopGui()
 
         backgroundScope.launch { flow.collect { reasons.add(it) } }
@@ -126,7 +120,7 @@ class WearPluginTest : TestBaseWithProfile() {
         val reasons = collectResends()
 
         loopGui()
-        advanceTimeBy(WearPlugin.RESEND_DEBOUNCE - 100.milliseconds)
+        advanceTimeBy(WatchUpdates.RESEND_DEBOUNCE - 100.milliseconds)
         runCurrent()
         assertThat(reasons).isEmpty()
         advanceTimeBy(200.milliseconds)

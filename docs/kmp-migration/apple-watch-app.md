@@ -146,23 +146,38 @@ MIT code may be used in this AGPL project.
 ```
  watchOS app (SwiftUI)                         iPhone app
  ---------------------                         ----------
- views  <--  WatchState  <--  WCSession  <==>  WCSession  -->  IosWatchTransport (Swift)
+ views  <--  WatchState  <--  WCSession  <==>  WCSession  -->  SwiftAppleWatchCompanion (Swift)
                                                                  |  EventData as JSON
                                                                  v
-                                               DataHandlerMobile (Kotlin, commonMain)
+                                               AppleWatchPlugin + AppleWatchLink (Kotlin, iosMain)
+                                                                 |  rxBus
+                                                                 v
+                                               WatchUpdates + DataHandlerMobile (Kotlin, commonMain)
                                                                  |  same checks as the phone
                                                                  v
                                                command queue / constraints / DKA guard
 ```
 
 - **Transport:** JSON (`EventData.serialize()` / `deserialize()`). Readable when debugging, and the
-  messages are small. ProtoBuf only if size becomes a problem.
-- **Phone to watch, data:** `updateApplicationContext` for the latest `SingleBg` + `Status` (only the
-  newest state counts, so it is replaced, not queued). This does not wake the watch app, but the
-  values are fresh as soon as it is opened.
-- **Watch to phone, commands, and the answers:** `sendMessage` with a reply handler. It works only
-  while both sides can be reached. That is fine, because the user has the app open while giving a
-  command, and it gives the "no answer means not done" rule for free.
+  messages are small. ProtoBuf only if size becomes a problem. The JSON field `type` is the full
+  Kotlin class name, for example `app.aaps.core.interfaces.rx.weardata.EventData.SingleBg`.
+- **Phone to watch, data (`STATE`):** `SingleBg`, `GraphData`, `TreatmentData`, `Status`,
+  `Preferences`, `QuickWizard`, `UserAction`, `SceneList`, `ActiveSceneState`. The phone keeps the
+  newest JSON of each kind and sends all of them together with `updateApplicationContext`, one key
+  per kind (the class name, e.g. `Status`). Only the newest context counts, so nothing is queued.
+  This does not wake the watch app, but the values are fresh as soon as it is opened.
+- **Phone to watch, answers (`LIVE`):** everything else (`ConfirmAction`, `BolusProgress`,
+  `RunningModeList`, `OpenLoopRequest`, errors ...). `sendMessage` under the key `event`, only while
+  the watch app is reachable, otherwise dropped. Never queued: an old confirmation must not show up
+  later.
+- **Not sent:** the custom watchface messages of Wear OS.
+- **Watch to phone, commands:** `sendMessage` with one `EventData` as JSON under the key `event`. The
+  reply handler only ends the call; the answer comes as its own `LIVE` message, as on Wear OS. This
+  works only while both sides can be reached. That is fine, because the user has the app open while
+  giving a command, and it gives the "no answer means not done" rule for free. A message that
+  reaches the iPhone before the Kotlin plugin has started is kept for at most 30 seconds.
+- **Watch size limit:** the application context has a size limit. If `GraphData` is too big, Swift
+  logs "Application context not sent". Check this in phase 4 and shorten the graph if needed.
 - **Complications** later, with `transferCurrentComplicationUserInfo` and a daily budget, as written
   in `apple-watch-complications.md`.
 
@@ -183,8 +198,25 @@ MIT code may be used in this AGPL project.
    ("DKA risk: WATCH") first in the confirmation of `LOOP_USER_SUSPEND`, `LOOP_DISABLE` and
    `PUMP_DISCONNECT` while the risk is raised. On an AAPS client the line does not show, because the
    client runs no DKA guard of its own.
-3. **iOS bridge.** `IosWatchTransport` in Swift (`WCSession` delegate) and its registration in the
-   iOS graph. Testable without a watch: the bridge is thin, the logic is in phase 1.
+3. **iOS bridge.** `WearPlugin` stays an Android plugin: its settings page (`WearComposeContent`,
+   custom watchface import) is Android Compose. So iOS gets its own plugin, as for Garmin:
+    - `WatchUpdates` (commonMain, new): when the watch gets new data (bolus progress, changed watch
+      settings, the debounced resend after BG / loop / NS / temp target / running mode / eat
+      reminder, scenes, tiles). Pulled out of `WearPlugin` without a change in behaviour; Android
+      `WearPlugin` now calls it. The resend tests moved with it (`WatchUpdatesTest`).
+    - `AppleWatchPlugin` (iosMain, SYNC, slot 350): starts `WatchUpdates` and the bridge. It uses the
+      Wear settings (`WearControl`, the wizard switches, notify on SMB), so a settings file from an
+      Android phone keeps them. "Wear control" is off by default, so the watch can only show data
+      until the user switches it on.
+    - `AppleWatchLink` (iosMain): the routing rules above, tested in `AppleWatchLinkTest` (iosTest).
+      Commands from the watch go on the bus only while the plugin is on, with the sender
+      `apple-watch`; `DataHandlerMobile` then handles them like any Wear OS command.
+    - `AppleWatchCompanion` / `AppleWatchCallback` / `installAppleWatchCompanion()` (iosMain) and
+      `SwiftAppleWatchCompanion` (`ios/app/Shared/AppleWatchBridge.swift`), installed in
+      `AapsApp.swift` for both targets. The session is activated at launch, because iOS may start the
+      app in the background for a watch message.
+    - `IosWatchHandlerPlatform`: dark colours always (the watch is always black), and it removes the
+      `aaps-loop` notification after the watch accepted an open loop suggestion.
 4. **watchOS app.** New Xcode target (SwiftUI, watchOS 26+), same team and App Group setup. Start
    from the iAPS views (see "Model" above) and replace their messages with `EventData`. Pages:
     - main: BG, arrow, delta, age, IOB, COB, mode, DKA banner;

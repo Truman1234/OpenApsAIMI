@@ -36,6 +36,11 @@ struct AapsApp: App {
     /// widget plugin. See LiveActivityBridge.swift.
     private static let homeWidgetCompanion = SwiftHomeWidgetCompanion()
 
+    /// One Apple Watch bridge for the life of the process. Created here, early, because it activates
+    /// the WatchConnectivity session: iOS may start the app in the background for a watch message.
+    /// See AppleWatchBridge.swift.
+    private static let appleWatchCompanion = SwiftAppleWatchCompanion()
+
     init() {
         CrashlyticsCrashReporter.start()
         // Install the Swift AVFoundation implementation before the Kotlin graph can construct an
@@ -46,6 +51,7 @@ struct AapsApp: App {
         ConnectIqCompanionKt.installConnectIqCompanion(companion: AapsApp.connectIqCompanion)
         LiveActivityCompanionKt.installLiveActivityCompanion(companion: AapsApp.liveActivityCompanion)
         HomeWidgetCompanionKt.installHomeWidgetCompanion(companion: AapsApp.homeWidgetCompanion)
+        AppleWatchCompanionKt.installAppleWatchCompanion(companion: AapsApp.appleWatchCompanion)
         // Must happen here. iOS only lets background task handlers be registered before the app
         // finishes launching, and `makeUIViewController` below runs later. This call needs no
         // graph; the Kotlin side queues the tasks once its graph is built.
