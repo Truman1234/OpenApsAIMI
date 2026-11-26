@@ -177,8 +177,12 @@ MIT code may be used in this AGPL project.
    `androidHostTest` and now test the shared code. No behaviour change in this phase, except that
    the day in the TDD list on the watch is now in the phone's short date format
    (`DateUtil.dateStringShort`) instead of a fixed `dd.MM.`.
-2. **DKA fields.** Add `dkaRisk` / `dkaReason` to `EventData.Status`, fill them from the DKA guard,
-   and add the DKA lines to the running-mode confirmation. Tests for both.
+2. **DKA fields.** The DKA guard writes each result to `DkaStatus` (`core:interfaces`, kept in memory by
+   `DkaStatusImpl`; a result older than 15 minutes counts as none). `DataHandlerMobile` sends it as
+   `dkaRisk` / `dkaReason` at the end of `EventData.Status`, and puts a `WARNING` line
+   ("DKA risk: WATCH") first in the confirmation of `LOOP_USER_SUSPEND`, `LOOP_DISABLE` and
+   `PUMP_DISCONNECT` while the risk is raised. On an AAPS client the line does not show, because the
+   client runs no DKA guard of its own.
 3. **iOS bridge.** `IosWatchTransport` in Swift (`WCSession` delegate) and its registration in the
    iOS graph. Testable without a watch: the bridge is thin, the logic is in phase 1.
 4. **watchOS app.** New Xcode target (SwiftUI, watchOS 26+), same team and App Group setup. Start

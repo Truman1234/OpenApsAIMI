@@ -4,6 +4,7 @@ import app.aaps.core.data.model.ActiveSceneState
 import app.aaps.core.data.model.EPS
 import app.aaps.core.data.model.PS
 import app.aaps.core.data.time.T
+import app.aaps.core.interfaces.aps.DkaStatus
 import app.aaps.core.interfaces.aps.Loop
 import app.aaps.core.interfaces.bolus.BatchExecutor
 import app.aaps.core.interfaces.bolus.MasterActionExecutor
@@ -38,6 +39,7 @@ class DataHandlerMobileProfileInfoTest : TestBaseWithProfile() {
 
     @Mock private lateinit var loop: Loop
     @Mock private lateinit var watchHandlerPlatform: WatchHandlerPlatform
+    @Mock private lateinit var dkaStatus: DkaStatus
     @Mock private lateinit var processedDeviceStatusData: ProcessedDeviceStatusData
     @Mock private lateinit var receiverStatusStore: ReceiverStatusStore
     @Mock private lateinit var quickWizard: QuickWizard
@@ -64,7 +66,7 @@ class DataHandlerMobileProfileInfoTest : TestBaseWithProfile() {
             loop, processedDeviceStatusData, receiverStatusStore, quickWizard, trendCalculator, dateUtil,
             constraintsChecker, activePlugin, commandQueue, fabricPrivacy, uiInteraction,
             persistenceLayer, importExportPrefs, decimalFormatter, pumpStatusProvider,
-            ch, runningModeGuard, masterActionExecutor, batchExecutor, wizardExecutor
+            ch, runningModeGuard, masterActionExecutor, batchExecutor, wizardExecutor, dkaStatus
         )
     }
 

@@ -8,6 +8,8 @@ import app.aaps.core.data.ue.Sources
 import app.aaps.core.data.ui.ConfirmationLine
 import app.aaps.core.data.ui.ConfirmationRole
 import app.aaps.core.interfaces.aps.AutosensDataStore
+import app.aaps.core.interfaces.aps.DkaStatus
+import app.aaps.core.interfaces.aps.DkaStatusSnapshot
 import app.aaps.core.interfaces.aps.Loop
 import app.aaps.core.interfaces.automation.Automation
 import app.aaps.core.interfaces.bolus.BatchAction
@@ -49,6 +51,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mock
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyVararg
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doAnswer
@@ -82,6 +85,7 @@ import org.mockito.kotlin.whenever
 class DataHandlerMobileWearBolusTest : TestBaseWithProfile() {
     @Mock private lateinit var loop: Loop
     @Mock private lateinit var watchHandlerPlatform: WatchHandlerPlatform
+    @Mock private lateinit var dkaStatus: DkaStatus
     @Mock private lateinit var processedDeviceStatusData: ProcessedDeviceStatusData
     @Mock private lateinit var receiverStatusStore: ReceiverStatusStore
     @Mock private lateinit var quickWizard: QuickWizard
@@ -105,7 +109,7 @@ class DataHandlerMobileWearBolusTest : TestBaseWithProfile() {
             loop, processedDeviceStatusData, receiverStatusStore, quickWizard, trendCalculator, dateUtil,
             constraintsChecker, activePlugin, commandQueue, fabricPrivacy, uiInteraction,
             persistenceLayer, importExportPrefs, decimalFormatter, pumpStatusProvider,
-            ch, runningModeGuard, masterActionExecutor, batchExecutor, wizardExecutor
+            ch, runningModeGuard, masterActionExecutor, batchExecutor, wizardExecutor, dkaStatus
         )
         sut.automation = automation
         // Confirm-title + error-title + client-reject string all go through the single-arg gs().
@@ -310,6 +314,36 @@ class DataHandlerMobileWearBolusTest : TestBaseWithProfile() {
         verifyBlocking(batchExecutor) { prepare(eq(listOf(BatchAction.RunningMode(RM.Mode.CLOSED_LOOP, 0))), any(), any()) }
         assertThat(confirm.returnCommand).isEqualTo(EventData.RunningModeConfirmed(555L))
         assertThat(confirm.lines).containsExactly(EventData.ConfirmActionLine("PRIMARY", "Running mode: Closed Loop"))
+    }
+    // --- DKA warning on modes that lower insulin ---------------------------------------------------------------
+    private fun dkaIs(risk: String) {
+        whenever(dkaStatus.current(any(), any())).thenReturn(DkaStatusSnapshot(risk, "reason", 0L))
+        whenever(rh.gs(any<TextRef>(), anyVararg())).thenAnswer { "DKA risk: ${it.arguments[1]}" }
+    }
+    @Test fun `suspending the loop during a DKA risk shows a warning line first`() = runTest {
+        dkaIs("WATCH")
+        val list = negotiateRunningModes(listOf(RM.Mode.CLOSED_LOOP, RM.Mode.SUSPENDED_BY_USER))
+        val idx = list.states.indexOfFirst { it.state == AvailableRunningMode.RunningMode.LOOP_USER_SUSPEND }
+        stubBatchPrepared(556L, lines = listOf(ConfirmationLine(ConfirmationRole.PRIMARY, "Running mode: Suspended")))
+        val confirm = capturedConfirm { sut.handleRunningModeSelected(EventData.RunningModeSelected(list.timeStamp, idx, 60)) }
+        assertThat(confirm.lines).containsExactly(
+            EventData.ConfirmActionLine("WARNING", "DKA risk: WATCH"),
+            EventData.ConfirmActionLine("PRIMARY", "Running mode: Suspended")
+        ).inOrder()
+    }
+    @Test fun `the DKA line is only for modes that lower insulin`() {
+        dkaIs("WARNING")
+        assertThat(sut.dkaWarningLines(RM.Mode.SUSPENDED_BY_USER)).hasSize(1)
+        assertThat(sut.dkaWarningLines(RM.Mode.DISABLED_LOOP)).hasSize(1)
+        assertThat(sut.dkaWarningLines(RM.Mode.DISCONNECTED_PUMP)).hasSize(1)
+        assertThat(sut.dkaWarningLines(RM.Mode.CLOSED_LOOP)).isEmpty()
+        assertThat(sut.dkaWarningLines(RM.Mode.OPEN_LOOP)).isEmpty()
+    }
+    @Test fun `no DKA line without a raised risk or without a result`() {
+        dkaIs("NONE")
+        assertThat(sut.dkaWarningLines(RM.Mode.SUSPENDED_BY_USER)).isEmpty()
+        whenever(dkaStatus.current(any(), any())).thenReturn(null)
+        assertThat(sut.dkaWarningLines(RM.Mode.SUSPENDED_BY_USER)).isEmpty()
     }
     @Test fun `running mode selected with a stale nonce is rejected before the relay`() = runTest {
         negotiateRunningModes(listOf(RM.Mode.CLOSED_LOOP))

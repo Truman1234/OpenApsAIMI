@@ -23,6 +23,7 @@ import app.aaps.core.data.ue.Sources
 import app.aaps.core.data.ui.ConfirmationLine
 import app.aaps.core.data.ui.ConfirmationRole
 import app.aaps.core.interfaces.InterfacesStrings
+import app.aaps.core.interfaces.aps.DkaStatus
 import app.aaps.core.interfaces.aps.GlucoseStatus
 import app.aaps.core.interfaces.aps.Loop
 import app.aaps.core.interfaces.automation.Automation
@@ -133,6 +134,9 @@ private const val HEALTH_EVENT_QUIET_PERIOD_MS = 500L
  */
 private const val WEAR_GRAPH_HOURS = 6L
 
+/** Running modes that stop or lower insulin. Their confirmation shows the DKA risk. */
+private val INSULIN_LOWERING_MODES = setOf(RM.Mode.SUSPENDED_BY_USER, RM.Mode.DISABLED_LOOP, RM.Mode.DISCONNECTED_PUMP)
+
 /** Opaque white as an ARGB int. The colour of a prediction line with no colour of its own. */
 private const val WHITE_ARGB: Int = -1
 
@@ -174,6 +178,7 @@ class DataHandlerMobile(
     // masterActionExecutor stays on the wear path for Fill ONLY (no relay command for Fill).
     private val batchExecutor: BatchExecutor,
     private val wizardExecutor: WizardExecutor,
+    private val dkaStatus: DkaStatus,
 ) {
 
     @Inject lateinit var automation: Automation
@@ -959,13 +964,18 @@ class DataHandlerMobile(
      * failure becomes a [sendError]. [title] is the watch's curved header. On a CLIENT the confirm is marked
      * [EventData.ConfirmAction.deferConfirm] so the watch waits for the master's real commit terminal (no false "sent").
      */
-    private fun shipPrepared(progress: ActionProgress, title: String, returnCommand: (bolusId: Long) -> EventData) {
+    private fun shipPrepared(
+        progress: ActionProgress,
+        title: String,
+        firstLines: List<EventData.ConfirmActionLine> = emptyList(),
+        returnCommand: (bolusId: Long) -> EventData
+    ) {
         when (progress) {
             is ActionProgress.Prepared -> sendToWear(
                 EventData.ConfirmAction(
                     title, message = "",
                     returnCommand = returnCommand(progress.id),
-                    lines = progress.lines.map { EventData.ConfirmActionLine(it.role.name, it.text) },
+                    lines = firstLines + progress.lines.map { EventData.ConfirmActionLine(it.role.name, it.text) },
                     deferConfirm = config.AAPSCLIENT,
                     wizardDetail = progress.wizardDetail,
                 )
@@ -1216,8 +1226,20 @@ class DataHandlerMobile(
         contacting()
         shipPrepared(
             batchExecutor.prepare(listOf(BatchAction.RunningMode(mode, action.duration ?: 0)), Sources.Wear, label),
-            label
+            label,
+            firstLines = dkaWarningLines(mode)
         ) { EventData.RunningModeConfirmed(it) }
+    }
+
+    /**
+     * A warning line for the confirmation of a running mode that lowers insulin, while the DKA guard sees a
+     * risk. The user should see it before stopping insulin from the watch. It only informs: the phone still
+     * decides, as for any other mode change.
+     */
+    internal fun dkaWarningLines(mode: RM.Mode): List<EventData.ConfirmActionLine> {
+        if (mode !in INSULIN_LOWERING_MODES) return emptyList()
+        val dka = dkaStatus.current(Clock.System.now().toEpochMilliseconds())?.takeIf { it.isRaised } ?: return emptyList()
+        return listOf(EventData.ConfirmActionLine(ConfirmationRole.WARNING.name, rh.gs(SyncStrings.wear_dka_risk_line, dka.risk)))
     }
 
     internal suspend fun handleRunningModeConfirmed(action: EventData.RunningModeConfirmed) {
@@ -1650,6 +1672,8 @@ class DataHandlerMobile(
         val runningModeRecord = loop.runningModeRecord()
         // The "time to eat" timer, on a client the copy of the master's
         val eatReminderState = eatReminder.state.value
+        // The DKA guard's last result; null with another APS plugin or when the loop has not run for a while
+        val dka = dkaStatus.current(Clock.System.now().toEpochMilliseconds())
 
         sendToWear(
             EventData.Status(
@@ -1676,7 +1700,9 @@ class DataHandlerMobile(
                 modeEndTime = runningModeRecord.endTimeForWatch(),
                 modeFromScene = runningModeRecord.id == activeSceneSync.getActiveState()?.scopedRecords?.rmId,
                 eatReminderStartedAt = eatReminderState?.startedAt,
-                eatReminderEndsAt = eatReminderState?.endsAt
+                eatReminderEndsAt = eatReminderState?.endsAt,
+                dkaRisk = dka?.risk,
+                dkaReason = dka?.reason
             )
         )
     }

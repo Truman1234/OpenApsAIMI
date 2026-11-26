@@ -46,6 +46,7 @@ import app.aaps.core.data.time.T
 import app.aaps.core.interfaces.aps.APS
 import app.aaps.core.interfaces.aps.APSResult
 import app.aaps.core.interfaces.aps.AutosensResult
+import app.aaps.core.interfaces.aps.DkaStatus
 import app.aaps.core.interfaces.aps.IobTotal
 import app.aaps.core.interfaces.aps.CurrentTemp
 import app.aaps.core.interfaces.aps.OapsProfileAimi
@@ -278,6 +279,7 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
     private val aiCoachingService: AiCoachingService,
     private val sharing: AimiSharing,
     private val aimiHttp: AimiHttp,
+    private val dkaStatus: DkaStatus,
 ) : PluginBase(
     PluginDescription()
         .mainType(PluginType.APS)
@@ -1180,7 +1182,7 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
     }
 
 
-    private val dkaCoordinator by lazy { AimiDkaCoordinator(preferences, rh, notificationManager, aapsLogger, profileUtil) }
+    private val dkaCoordinator by lazy { AimiDkaCoordinator(preferences, rh, notificationManager, aapsLogger, profileUtil, dkaStatus) }
 
     override suspend fun invoke(initiator: String, tempBasalFallback: Boolean): Unit = withContext(Dispatchers.Default) {
         aapsLogger.debug(LTag.APS, "invoke from $initiator tempBasalFallback: $tempBasalFallback")

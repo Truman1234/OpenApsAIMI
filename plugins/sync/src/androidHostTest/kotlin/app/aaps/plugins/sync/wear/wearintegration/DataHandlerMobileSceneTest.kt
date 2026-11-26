@@ -4,6 +4,7 @@ import app.aaps.core.data.model.ActiveSceneState
 import app.aaps.core.data.model.Scene
 import app.aaps.core.data.model.SceneLifecycle
 import app.aaps.core.data.ui.ConfirmationRole
+import app.aaps.core.interfaces.aps.DkaStatus
 import app.aaps.core.interfaces.aps.Loop
 import app.aaps.core.interfaces.automation.Automation
 import app.aaps.core.interfaces.bolus.BatchExecutor
@@ -57,6 +58,7 @@ class DataHandlerMobileSceneTest : TestBaseWithProfile() {
 
     @Mock private lateinit var loop: Loop
     @Mock private lateinit var watchHandlerPlatform: WatchHandlerPlatform
+    @Mock private lateinit var dkaStatus: DkaStatus
     @Mock private lateinit var processedDeviceStatusData: ProcessedDeviceStatusData
     @Mock private lateinit var receiverStatusStore: ReceiverStatusStore
     @Mock private lateinit var quickWizard: QuickWizard
@@ -91,7 +93,7 @@ class DataHandlerMobileSceneTest : TestBaseWithProfile() {
             loop, processedDeviceStatusData, receiverStatusStore, quickWizard, trendCalculator, dateUtil,
             constraintsChecker, activePlugin, commandQueue, fabricPrivacy, uiInteraction,
             persistenceLayer, importExportPrefs, decimalFormatter, pumpStatusProvider,
-            ch, runningModeGuard, masterActionExecutor, batchExecutor, wizardExecutor
+            ch, runningModeGuard, masterActionExecutor, batchExecutor, wizardExecutor, dkaStatus
         )
         sut.automation = automation
         sut.scenes = scenes

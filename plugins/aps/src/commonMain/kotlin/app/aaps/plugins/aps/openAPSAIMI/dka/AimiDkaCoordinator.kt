@@ -1,5 +1,7 @@
 package app.aaps.plugins.aps.openAPSAIMI.dka
 
+import app.aaps.core.interfaces.aps.DkaStatus
+import app.aaps.core.interfaces.aps.DkaStatusSnapshot
 import app.aaps.core.interfaces.aps.RT
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
@@ -25,7 +27,9 @@ class AimiDkaCoordinator(
     private val rh: TextResolver,
     private val notificationManager: NotificationManager,
     private val aapsLogger: AAPSLogger,
-    private val profileUtil: ProfileUtil
+    private val profileUtil: ProfileUtil,
+    /** Gets every result, so the watch can show it. Null in tests that do not need it. */
+    private val dkaStatus: DkaStatus? = null
 ) {
 
     /**
@@ -58,6 +62,7 @@ class AimiDkaCoordinator(
         // 1) DKA risk + notification
         val dka = DkaGuard(config(), glucoseText).evaluate(buildInput(i))
         notify(dka, i.nowMs)
+        dkaStatus?.update(DkaStatusSnapshot(dka.risk.name, dka.reasons.joinToString("; ").ifEmpty { null }, i.nowMs))
         if (dka.risk != DkaRisk.NONE) {
             aapsLogger.info(LTag.APS, "AIMI DKA ${dka.risk}: ${dka.reasons.joinToString("; ")}")
             rt.reason.append("\nDKA ${dka.risk}: ${dka.reasons.joinToString("; ")}")

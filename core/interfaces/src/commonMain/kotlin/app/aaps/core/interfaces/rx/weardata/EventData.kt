@@ -462,7 +462,11 @@ sealed class EventData : Event() {
         // The "time to eat" timer: when it was started and when it rings. Null when none runs, or from an older sender.
         // The watch draws the end in its BG graph and rings itself at that time.
         val eatReminderStartedAt: Long? = null,
-        val eatReminderEndsAt: Long? = null
+        val eatReminderEndsAt: Long? = null,
+        // The AIMI DKA guard's last result: risk level name (NONE, WATCH, WARNING, CRITICAL) and its reasons.
+        // Null when no DKA guard ran in the last 15 minutes (another APS plugin), or from an older sender.
+        val dkaRisk: String? = null,
+        val dkaReason: String? = null
     ) : EventData(), EventDataSet
 
     @Serializable
