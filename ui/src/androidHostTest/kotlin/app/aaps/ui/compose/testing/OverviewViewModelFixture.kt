@@ -167,6 +167,8 @@ internal class OverviewViewModelFixture(private val screen: AapsScreenFixture) {
             whenever(iobCobCalculator.calculateIobFromBolus()).thenReturn(IobTotal(NOW))
             whenever(iobCobCalculator.calculateIobFromTempBasalsIncludingConvertedExtended()).thenReturn(IobTotal(NOW))
             whenever(iobCobCalculator.getCobInfo(any())).thenReturn(CobInfo(NOW, null, 0.0))
+            // The AIMI mode line (ChipsViewModel.activeModeText) reads the notes: none here.
+            whenever(persistenceLayer.getTherapyEventDataFromTime(any(), any(), any())).thenReturn(emptyList())
         }
         whenever(iobCobCalculator.ads).thenReturn(mock<AutosensDataStore>())
         val autosensEnabled: Constraint<Boolean> = mock()
