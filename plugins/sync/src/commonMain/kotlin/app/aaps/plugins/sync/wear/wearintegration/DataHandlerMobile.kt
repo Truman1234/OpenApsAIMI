@@ -950,7 +950,7 @@ class DataHandlerMobile(
         returnCommand: (bolusId: Long) -> EventData
     ) {
         contacting()
-        shipPrepared(batchExecutor.prepare(listOf(bolus), Sources.Wear, label), label, returnCommand)
+        shipPrepared(batchExecutor.prepare(listOf(bolus), Sources.Wear, label), label, returnCommand = returnCommand)
     }
 
     /** Show the watch's transient "Contacting master…" spinner while a CLIENT→master round-trip is in flight (no-op on a master). */
