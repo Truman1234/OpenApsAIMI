@@ -85,6 +85,11 @@ private struct GlucosePage: View {
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    if let aimi = status.aimiModeText(now: context.date) {
+                        Label(aimi, systemImage: "figure.walk.motion")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
                     if status.dkaRaised { DkaBanner(status: status) }
                 }
             }

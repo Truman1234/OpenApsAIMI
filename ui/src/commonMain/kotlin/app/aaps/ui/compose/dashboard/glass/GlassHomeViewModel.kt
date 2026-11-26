@@ -37,6 +37,7 @@ import app.aaps.core.objects.extensions.ApsResultSource
 import app.aaps.core.objects.extensions.isInProgress
 import app.aaps.core.ui.CoreUiStrings
 import app.aaps.core.ui.compose.pump.tickerFlow
+import app.aaps.ui.compose.dashboard.aimi.aimiActiveModeLine
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
@@ -217,6 +218,7 @@ class GlassHomeViewModel(
             effectiveBasalText = effectiveBasalText,
             loopStatusText = rh.gs(loopModeLabel(loopMode)),
             loopIsRunning = !loopMode.pausesLoopExecution(),
+            activeModeText = aimiActiveModeLine(persistenceLayer, rh, now),
             stepsText = stepsText,
             hrText = hrText,
             tir = tir,
@@ -284,6 +286,8 @@ data class GlassHomeStatus(
     /** Null until the first refresh: the pill then shows its default "Loop" label. */
     val loopStatusText: String? = null,
     val loopIsRunning: Boolean = true,
+    /** The AIMI mode that runs now, "Mode: Lunch (45 min)"; null when none runs. */
+    val activeModeText: String? = null,
     val stepsText: String = "--",
     val hrText: String = "--",
     val tir: GlassTir? = null,

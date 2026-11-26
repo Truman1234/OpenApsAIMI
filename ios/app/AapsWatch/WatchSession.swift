@@ -58,9 +58,19 @@ final class WatchSession: NSObject, ObservableObject {
         send(Command.json("ActionTempTargetPreCheck", ["command": command]))
     }
 
+    /// A temp target the user set: one value for low and high, in the phone's unit.
+    func tempTarget(target: Double, isMgdl: Bool, minutes: Int) {
+        send(Command.json("ActionTempTargetPreCheck", [
+            "command": "MANUAL", "isMgdl": isMgdl, "low": target, "high": target, "duration": minutes,
+        ]))
+    }
+
     /// `modeId` is a `ModePreset.id` of the phone, for example "lunch" or "stop".
-    func aimiMode(_ modeId: String) {
-        send(Command.json("ActionAimiModePreCheck", ["modeId": modeId]))
+    /// `minutes` 0 means the phone uses the preset's own duration.
+    func aimiMode(_ modeId: String, minutes: Int = 0) {
+        var fields: [String: Any] = ["modeId": modeId]
+        if minutes > 0 { fields["durationMinutes"] = minutes }
+        send(Command.json("ActionAimiModePreCheck", fields))
     }
 
     func requestRunningModes() {
@@ -84,6 +94,16 @@ final class WatchSession: NSObject, ObservableObject {
         guard !request.isInfoOnly, let raw = request.returnCommand else { return }
         // A master runs the command at once and answers only with an error. A client waits for the master.
         send(Command.json(raw: raw), expectsAnswer: request.deferConfirm)
+        if (raw["type"] as? String)?.hasSuffix(".RunningModeConfirmed") == true { refreshRunningModesLater() }
+    }
+
+    /// The phone needs a moment to switch the mode. Then the list is fetched again,
+    /// silently, so the open list shows the modes that are allowed now.
+    private func refreshRunningModesLater() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            send(Command.json("RunningModeRequest", ["timeStamp": Command.nowMs]), expectsAnswer: false, showError: false)
+        }
     }
 
     /// [expectsAnswer]: the phone answers with a screen (a confirmation or an error), so a spinner shows until then.

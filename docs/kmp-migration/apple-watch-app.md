@@ -244,6 +244,25 @@ MIT code may be used in this AGPL project.
     - Each action opens as a sheet with the system close button, and closes itself after sending.
       The running mode list shows "No answer from the iPhone" after 15 s instead of a spinner.
     - Bolus progress with "Stop bolus".
+    - The running AIMI mode: `EventData.Status` carries `aimiMode` (the translated name) and
+      `aimiModeEndsAt`. The phone takes the newest running mode from
+      `RemoteControlCommands.activeModes` (stop is not shown). The glucose page shows
+      "Lunch · 45 min" and counts down on the watch. A new note sends the status again at once
+      (`WatchUpdates` watches TE changes), so the watch does not wait for the next loop.
+    - After a running mode change, the watch asks for the list again by itself after 4 s, silently,
+      so an open list shows the modes that are allowed now.
+    - Custom AIMI mode: a "Custom" button opens a sheet. Swipe left and right between the 8 modes
+      (not stop), scroll a wheel up and down for the duration (15 min to 12 h, 15 min steps, starting
+      at the preset duration). `ActionAimiModePreCheck.durationMinutes` carries it (0 = the preset's
+      duration, so older watches still work). The phone refuses values outside 15..720 min and shows
+      the duration in its confirmation.
+    - Custom temp target: one sheet with two wheels side by side, target (72 to 180 mg/dL or 4.0 to
+      10.0 mmol/L, in the phone's unit) and duration (15 min to 12 h). It sends the existing
+      `ActionTempTargetPreCheck` `MANUAL` command with low = high; the phone checks the limits.
+    - Both custom sheets: the system X (top left) cancels, ✓ (top right) sends, then the phone's normal
+      confirmation follows. Wheels, not one swipe per step: a 12 h duration would need 48 swipes.
+    - The phone's glass dashboard shows the same AIMI mode line (`aimiActiveModeLine`, shared with
+      the AIMI dashboard).
 5. **Complications** (separate, `apple-watch-complications.md`).
 
 Phases 1 and 2 also help Wear OS (DKA state on Android watches) and can be tested on both machines.

@@ -290,7 +290,7 @@ class AimiDashboardViewModel(
             predictionLine = predictionLine(request, now),
             iobActivityLine = rh.gs(UiStrings.dashboard_adjustment_iob_activity, iobText, autosensPercent),
             decisionLine = decisionLine(request),
-            modeLine = modeLine(now),
+            modeLine = aimiActiveModeLine(persistenceLayer, rh, now),
             safetyLine = safetyLine(bgMgdl, glucoseStatus?.shortAvgDelta, request?.isHypoRisk == true),
             pumpReservoirText = activePlugin.activePump.reservoirLevel.value?.cU?.takeIf { it > 0 }
                 ?.let { rh.gs(InterfacesStrings.format_insulin_units, it) } ?: dash,
@@ -372,19 +372,6 @@ class AimiDashboardViewModel(
         return rh.gs(UiStrings.dashboard_adjustment_safety, rh.gs(level), shown)
     }
 
-    /** The newest meal or activity mode note of the last 12 h that is still running, as on DEV. */
-    private suspend fun modeLine(now: Long): String? {
-        val events = persistenceLayer.getTherapyEventDataFromTime(now - MODE_LOOKBACK_MS, TE.Type.NOTE, false)
-        val (event, mode) = events
-            .mapNotNull { event ->
-                val mode = AimiDashboardRules.modeForNote(event.note) ?: return@mapNotNull null
-                if (event.timestamp + event.duration - now <= 0) null else event to mode
-            }
-            .maxByOrNull { it.first.timestamp } ?: return null
-        val remaining = event.timestamp + event.duration - now
-        return rh.gs(UiStrings.dashboard_adjustment_mode, rh.gs(mode), formatDeviceAge(rh, remaining))
-    }
-
     private fun pulseTitle(lastApsRun: Long?, now: Long): String {
         val run = lastApsRun?.takeIf { it > 0L } ?: return rh.gs(UiStrings.dashboard_aimi_pulse_title)
         return rh.gs(UiStrings.dashboard_aimi_pulse_title_with_age, formatDeviceAge(rh, now - run))
@@ -427,7 +414,6 @@ class AimiDashboardViewModel(
 
         /** DEV showed the context badge when the stored AIMI context is longer than this (not "" or "[]"). */
         const val CONTEXT_MIN_LENGTH = 5
-        const val MODE_LOOKBACK_MS = 12 * 60 * 60 * 1000L
         const val TREND_THRESHOLD = 0.5
         const val NO_VALUE = "—"
         const val NO_BASAL = "---"

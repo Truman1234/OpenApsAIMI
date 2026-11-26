@@ -113,6 +113,7 @@ import app.aaps.core.ui.extensions.generateCOBString
 import app.aaps.core.ui.extensions.toStringShort
 import app.aaps.plugins.sync.SyncStrings
 import app.aaps.plugins.sync.nsclientV3.remotecontrol.ModePresets
+import app.aaps.plugins.sync.nsclientV3.remotecontrol.RemoteControlCommands
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -136,8 +137,14 @@ private const val HEALTH_EVENT_QUIET_PERIOD_MS = 500L
  */
 private const val WEAR_GRAPH_HOURS = 6L
 
+/** How far back a mode note can start and still be running: the longest mode (sleep) is 8 h. */
+private const val AIMI_MODE_LOOKBACK_MS = 12 * 60 * 60 * 1000L
+
 /** The AIMI modes the watch offers: the meals, sport, sleep and stop. The ids of `ModePresets`. */
 private val WATCH_AIMI_MODES = setOf("breakfast", "lunch", "dinner", "snack", "highcarb", "meal", "sport", "sleep", ModePresets.STOP_ID)
+
+/** The durations a watch may choose for an AIMI mode: 15 min to 12 h. */
+private val WATCH_AIMI_DURATION_MIN = 15..720
 
 /** Running modes that stop or lower insulin. Their confirmation shows the DKA risk. */
 private val INSULIN_LOWERING_MODES = setOf(RM.Mode.SUSPENDED_BY_USER, RM.Mode.DISABLED_LOOP, RM.Mode.DISCONNECTED_PUMP)
@@ -1109,9 +1116,22 @@ class DataHandlerMobile(
             sendError(rh.gs(SyncStrings.wear_aimi_mode_unknown, action.modeId))
             return
         }
+        val isStop = mode.id == ModePresets.STOP_ID
+        if (!isStop && action.durationMinutes != 0 && action.durationMinutes !in WATCH_AIMI_DURATION_MIN) {
+            sendError(rh.gs(SyncStrings.wear_aimi_mode_duration_error, WATCH_AIMI_DURATION_MIN.first, WATCH_AIMI_DURATION_MIN.last))
+            return
+        }
         // "stop" ends the running modes. One minute, the same as the Garmin widget writes.
-        val durationMin = if (mode.id == ModePresets.STOP_ID) 1 else mode.defaultDurationMin
+        val durationMin = when {
+            isStop                     -> 1
+            action.durationMinutes > 0 -> action.durationMinutes
+            else                       -> mode.defaultDurationMin
+        }
         val label = rh.gs(mode.name)
+        val lines = buildList {
+            add(EventData.ConfirmActionLine(ConfirmationRole.INFO.name, rh.gs(mode.description)))
+            if (!isStop) add(EventData.ConfirmActionLine(ConfirmationRole.INFO.name, rh.gs(SyncStrings.wear_aimi_mode_duration, durationMin)))
+        }
         val note = BatchAction.TherapyEvent(
             teType = TE.Type.NOTE,
             timestamp = Clock.System.now().toEpochMilliseconds(),
@@ -1123,7 +1143,7 @@ class DataHandlerMobile(
         shipPrepared(
             batchExecutor.prepare(listOf(note), Sources.Wear, label),
             label,
-            firstLines = listOf(EventData.ConfirmActionLine(ConfirmationRole.INFO.name, rh.gs(mode.description)))
+            firstLines = lines
         ) { EventData.ActionAimiModeConfirmed(it) }
     }
 
@@ -1715,6 +1735,11 @@ class DataHandlerMobile(
         val eatReminderState = eatReminder.state.value
         // The DKA guard's last result; null with another APS plugin or when the loop has not run for a while
         val dka = dkaStatus.current(Clock.System.now().toEpochMilliseconds())
+        // The AIMI mode that runs now, the newest, by the rules of the AIMI Remote Control. "stop" only ends the others.
+        val nowMs = Clock.System.now().toEpochMilliseconds()
+        val aimiMode = RemoteControlCommands.activeModes(
+            persistenceLayer.getTherapyEventDataFromTime(nowMs - AIMI_MODE_LOOKBACK_MS, TE.Type.NOTE, false), nowMs
+        ).firstOrNull { it.mode.id != ModePresets.STOP_ID }
 
         sendToWear(
             EventData.Status(
@@ -1743,7 +1768,9 @@ class DataHandlerMobile(
                 eatReminderStartedAt = eatReminderState?.startedAt,
                 eatReminderEndsAt = eatReminderState?.endsAt,
                 dkaRisk = dka?.risk,
-                dkaReason = dka?.reason
+                dkaReason = dka?.reason,
+                aimiMode = aimiMode?.let { rh.gs(it.mode.name) },
+                aimiModeEndsAt = aimiMode?.let { it.startedAt + it.durationMs }
             )
         )
     }

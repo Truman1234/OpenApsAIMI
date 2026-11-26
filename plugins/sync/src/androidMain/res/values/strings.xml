@@ -264,6 +264,8 @@
 
     <string name="wear_action_running_mode_title">Running mode</string>
     <string name="wear_aimi_mode">AIMI mode</string>
+    <string name="wear_aimi_mode_duration" comment="A line in the confirmation on the watch. %1$d=minutes, for example 90">Duration: %1$d min</string>
+    <string name="wear_aimi_mode_duration_error" comment="Error on the watch. %1$d=shortest, %2$d=longest duration in minutes, for example 15 and 720">The duration must be between %1$d and %2$d min.</string>
     <string name="wear_aimi_mode_unknown" comment="Error on the watch. %1$s=the mode id the watch sent, for example lunch">Unknown AIMI mode: %1$s</string>
     <string name="wear_dka_risk_line" comment="Shown before the user stops or lowers insulin from the watch. %1$s=DKA risk level as AAPS shows it: WATCH, WARNING or CRITICAL">DKA risk: %1$s</string>
 

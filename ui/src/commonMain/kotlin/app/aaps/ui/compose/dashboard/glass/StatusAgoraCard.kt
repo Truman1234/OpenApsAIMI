@@ -283,6 +283,19 @@ internal fun StatusAgoraCard(
                 CgmLinkBannerText(banner)
             }
 
+            // The AIMI mode that runs now, the same line as the AIMI dashboard. Only while one runs.
+            state.activeModeText?.let { modeText ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = modeText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TEMP_TARGET_ACCENT,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             val bottomRowPills = GLASS_PILL_CATALOG.filter { it.location == GlassPillLocation.BOTTOM_ROW && it.id in selectedPills }
             if (bottomRowPills.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))

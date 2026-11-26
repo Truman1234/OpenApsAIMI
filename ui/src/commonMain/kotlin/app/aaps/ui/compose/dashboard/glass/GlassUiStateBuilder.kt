@@ -61,6 +61,7 @@ internal fun buildGlassUiState(
         sensorLabel = lights?.sensorStatus?.label,
         loopStatusText = homeStatus?.loopStatusText,
         loopIsRunning = homeStatus?.loopIsRunning ?: defaults.loopIsRunning,
+        activeModeText = homeStatus?.activeModeText,
         iobText = iobText ?: NO_VALUE,
         isTempTargetActive = homeStatus?.isTempTargetActive ?: false,
         targetText = homeStatus?.targetText ?: NO_VALUE,

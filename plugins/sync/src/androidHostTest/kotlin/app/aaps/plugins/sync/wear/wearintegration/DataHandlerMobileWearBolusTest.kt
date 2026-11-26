@@ -280,6 +280,7 @@ class DataHandlerMobileWearBolusTest : TestBaseWithProfile() {
     // --- AIMI modes (a note through the same prepare/confirm path) -----------------------------------------
     @Test fun `an AIMI meal mode relays a note with its keyword and duration and ships its bolusId`() = runTest {
         stubBatchPrepared(31L, lines = listOf(ConfirmationLine(ConfirmationRole.NORMAL, "Note: lunch")))
+        whenever(rh.gs(any<TextRef>(), anyVararg())).thenReturn("Duration: 60 min")
         val confirm = capturedConfirm { sut.handleAimiModePreCheck(EventData.ActionAimiModePreCheck("lunch")) }
         val batch = argumentCaptor<List<BatchAction>>()
         verifyBlocking(batchExecutor) { prepare(batch.capture(), any(), any()) }
@@ -300,6 +301,22 @@ class DataHandlerMobileWearBolusTest : TestBaseWithProfile() {
         val note = batch.firstValue.single() as BatchAction.TherapyEvent
         assertThat(note.note).isEqualTo("stop")
         assertThat(note.durationMinutes).isEqualTo(1)
+    }
+    @Test fun `a chosen duration replaces the preset duration`() = runTest {
+        stubBatchPrepared(33L, lines = emptyList())
+        whenever(rh.gs(any<TextRef>(), anyVararg())).thenReturn("Duration: 60 min")
+        capturedConfirm { sut.handleAimiModePreCheck(EventData.ActionAimiModePreCheck("sport", durationMinutes = 195)) }
+        val batch = argumentCaptor<List<BatchAction>>()
+        verifyBlocking(batchExecutor) { prepare(batch.capture(), any(), any()) }
+        val note = batch.firstValue.single() as BatchAction.TherapyEvent
+        assertThat(note.note).isEqualTo("sport")
+        assertThat(note.durationMinutes).isEqualTo(195)
+    }
+    @Test fun `a duration over 12 hours is refused without a relay`() = runTest {
+        whenever(rh.gs(any<TextRef>(), anyVararg())).thenReturn("Wrong duration")
+        val sent = capturedConfirm { sut.handleAimiModePreCheck(EventData.ActionAimiModePreCheck("sleep", durationMinutes = 735)) }
+        verifyBlocking(batchExecutor, never()) { prepare(any(), any(), any()) }
+        assertThat(sent.returnCommand).isInstanceOf(EventData.Error::class.java)
     }
     @Test fun `a mode the watch does not offer is refused without a relay`() = runTest {
         whenever(rh.gs(any<TextRef>(), anyVararg())).thenReturn("Unknown AIMI mode")

@@ -1,6 +1,7 @@
 package app.aaps.plugins.sync.wear
 
 import app.aaps.core.data.model.RM
+import app.aaps.core.data.model.TE
 import app.aaps.core.data.model.TT
 import app.aaps.core.interfaces.db.PersistenceLayer
 import app.aaps.core.interfaces.pump.BolusProgressData
@@ -41,6 +42,7 @@ class WatchUpdatesTest : TestBaseWithProfile() {
 
     private val temporaryTargets = MutableSharedFlow<List<TT>>()
     private val runningModes = MutableSharedFlow<List<RM>>()
+    private val therapyEvents = MutableSharedFlow<List<TE>>()
     private val eatReminderState = MutableStateFlow<EatReminderState?>(null)
 
     @BeforeEach fun prepare() {
@@ -48,6 +50,7 @@ class WatchUpdatesTest : TestBaseWithProfile() {
         watchUpdates = WatchUpdates(aapsLogger, rh, preferences, rxBus, dataHandlerMobile, BolusProgressData(ch, CoroutineScope(Dispatchers.Unconfined)), persistenceLayer, scenes, eatReminder)
         whenever(persistenceLayer.observeChanges(TT::class)).thenReturn(temporaryTargets)
         whenever(persistenceLayer.observeChanges(RM::class)).thenReturn(runningModes)
+        whenever(persistenceLayer.observeChanges(TE::class)).thenReturn(therapyEvents)
     }
 
     /** Collects [WatchUpdates.resendRequests] in virtual time; the database flows send their first value as on a phone. */
@@ -59,6 +62,7 @@ class WatchUpdatesTest : TestBaseWithProfile() {
         // observeChanges sends the current state when it is collected; that is not a change
         temporaryTargets.emit(emptyList())
         runningModes.emit(emptyList())
+        therapyEvents.emit(emptyList())
         runCurrent()
         return reasons
     }
@@ -162,5 +166,20 @@ class WatchUpdatesTest : TestBaseWithProfile() {
         runCurrent()
 
         assertThat(reasons).containsExactly("EatReminderChange")
+    }
+
+    /** An AIMI mode is a note. The watch shows the running one, so a new note goes out without waiting for the loop. */
+    @Test
+    fun `a new note is resent, its first value is not a change`() = runTest {
+        val reasons = collectResends()
+        advanceTimeBy(10.seconds)
+        runCurrent()
+        assertThat(reasons).isEmpty()
+
+        therapyEvents.emit(emptyList())
+        advanceTimeBy(5.seconds)
+        runCurrent()
+
+        assertThat(reasons).containsExactly("TherapyEventChange")
     }
 }

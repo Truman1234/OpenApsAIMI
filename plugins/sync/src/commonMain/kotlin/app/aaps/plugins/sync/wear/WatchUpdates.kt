@@ -1,6 +1,7 @@
 package app.aaps.plugins.sync.wear
 
 import app.aaps.core.data.model.RM
+import app.aaps.core.data.model.TE
 import app.aaps.core.data.model.TT
 import app.aaps.core.interfaces.alerts.EatReminder
 import app.aaps.core.interfaces.db.PersistenceLayer
@@ -163,6 +164,8 @@ class WatchUpdates(
         // running-mode complication and tile do not wait for the next loop run. A wear-side
         // change already refreshes through handleRunningModeConfirmed.
         forward(persistenceLayer.observeChanges<RM>().drop(1), "RunningModeChange")
+        // An AIMI mode is a note: the watch shows the running one, so a new or ended note goes out at once
+        forward(persistenceLayer.observeChanges<TE>().drop(1), "TherapyEventChange")
         return requests.receiveAsFlow().debounce(RESEND_DEBOUNCE)
     }
 

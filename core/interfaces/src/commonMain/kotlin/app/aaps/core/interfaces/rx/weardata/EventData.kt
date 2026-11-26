@@ -247,11 +247,12 @@ sealed class EventData : Event() {
 
     /**
      * Watch → phone: start an AIMI mode (a meal, sport, sleep) or stop the running ones. [modeId] is the
-     * `ModePreset.id` of the AIMI Remote Control, for example "lunch" or "stop". The phone uses the
-     * preset's own duration and answers with a [ConfirmAction].
+     * `ModePreset.id` of the AIMI Remote Control, for example "lunch" or "stop". [durationMinutes] is
+     * the duration the user chose; 0 means the preset's own duration. "stop" ignores it. The phone
+     * answers with a [ConfirmAction].
      */
     @Serializable
-    data class ActionAimiModePreCheck(val modeId: String) : EventData()
+    data class ActionAimiModePreCheck(val modeId: String, val durationMinutes: Int = 0) : EventData()
 
     /** The return command of an AIMI mode confirmation: commits the parked note by its one-time id. */
     @Serializable
@@ -478,7 +479,11 @@ sealed class EventData : Event() {
         // The AIMI DKA guard's last result: risk level name (NONE, WATCH, WARNING, CRITICAL) and its reasons.
         // Null when no DKA guard ran in the last 15 minutes (another APS plugin), or from an older sender.
         val dkaRisk: String? = null,
-        val dkaReason: String? = null
+        val dkaReason: String? = null,
+        // The AIMI mode that runs now (a meal, sport, sleep ...), the newest one: its name, ready to show, and when it
+        // ends (epoch ms). Null when none runs, or from an older sender.
+        val aimiMode: String? = null,
+        val aimiModeEndsAt: Long? = null
     ) : EventData(), EventDataSet
 
     @Serializable

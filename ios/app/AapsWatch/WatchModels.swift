@@ -51,12 +51,23 @@ struct Status: Decodable {
     let modeEndTime: Int64?
     let dkaRisk: String?
     let dkaReason: String?
+    /// The running AIMI mode, already translated on the phone, or nil when none runs.
+    let aimiMode: String?
+    /// When the running AIMI mode ends, in ms since 1970.
+    let aimiModeEndsAt: Int64?
 
     /// The time of the last loop run, or nil when there was none.
     var lastLoop: Date? { openApsStatus > 0 ? Date(timeIntervalSince1970: Double(openApsStatus) / 1000) : nil }
 
     /// True when the DKA guard sees a risk. "NONE" or no value means no risk.
     var dkaRaised: Bool { (dkaRisk ?? "NONE") != "NONE" }
+
+    /// The running AIMI mode with the minutes left, or nil when none runs at [now].
+    func aimiModeText(now: Date) -> String? {
+        guard let aimiMode, let aimiModeEndsAt else { return nil }
+        let left = Int((Double(aimiModeEndsAt) / 1000 - now.timeIntervalSince1970) / 60)
+        return left > 0 ? String(localized: "\(aimiMode) · \(left) min") : nil
+    }
 }
 
 struct WatchPreferences: Decodable {

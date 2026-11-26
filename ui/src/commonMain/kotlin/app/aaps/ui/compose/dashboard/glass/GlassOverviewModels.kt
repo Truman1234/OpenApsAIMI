@@ -43,6 +43,8 @@ data class GlassUiState(
     /** Null shows the default "Loop" label. */
     val loopStatusText: String? = null,
     val loopIsRunning: Boolean = true,
+    /** The AIMI mode that runs now, "Mode: Lunch (45 min)"; null when none runs and the line is hidden. */
+    val activeModeText: String? = null,
     val iobText: String = "--",
     val isTempTargetActive: Boolean = false,
     val targetText: String = "--",

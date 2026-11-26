@@ -122,42 +122,120 @@ private struct WizardView: View {
 
 // MARK: AIMI modes
 
+/// One AIMI mode: the `ModePreset.id` of the phone, its label, icon and preset duration.
+/// `presetMinutes` is a copy of `ModePreset.defaultDurationMin`. It is only the start value of the
+/// custom wheel; the preset buttons let the phone use its own value.
+private struct AimiMode: Identifiable {
+    let id: String
+    let title: LocalizedStringKey
+    let icon: String
+    let presetMinutes: Int
+}
+
+private let aimiModes = [
+    AimiMode(id: "breakfast", title: "Breakfast", icon: "sunrise", presetMinutes: 60),
+    AimiMode(id: "lunch", title: "Lunch", icon: "sun.max", presetMinutes: 60),
+    AimiMode(id: "dinner", title: "Dinner", icon: "moon", presetMinutes: 60),
+    AimiMode(id: "snack", title: "Snack", icon: "carrot", presetMinutes: 30),
+    AimiMode(id: "highcarb", title: "High carb", icon: "birthday.cake", presetMinutes: 90),
+    AimiMode(id: "meal", title: "Meal", icon: "fork.knife", presetMinutes: 60),
+    AimiMode(id: "sport", title: "Sport", icon: "figure.run", presetMinutes: 120),
+    AimiMode(id: "sleep", title: "Sleep", icon: "bed.double", presetMinutes: 480),
+    AimiMode(id: "stop", title: "Stop modes", icon: "stop.circle", presetMinutes: 0),
+]
+
+/// The durations of the custom sheets: 15 min to 12 h in 15 min steps.
+private let customDurations = Array(stride(from: 15, through: 720, by: 15))
+
+/// "45 min", "2 h" or "1 h 30".
+private func durationText(_ minutes: Int) -> String {
+    let hours = minutes / 60
+    let rest = minutes % 60
+    if hours == 0 { return String(localized: "\(rest) min") }
+    if rest == 0 { return String(localized: "\(hours) h") }
+    return String(localized: "\(hours) h \(rest)")
+}
+
 /// The AIMI modes: the meals start the P1/P2 prebolus, sport and sleep change how AIMI doses, stop ends
-/// them. The phone uses each mode's own duration and shows a confirmation before it stores anything.
+/// them. A preset button lets the phone use the mode's own duration; "Custom" lets the user choose it.
+/// The phone shows a confirmation before it stores anything.
 private struct AimiModeView: View {
 
     @EnvironmentObject private var session: WatchSession
     @Environment(\.dismiss) private var dismiss
-
-    /// One AIMI mode: the `ModePreset.id` of the phone, its label and icon.
-    private struct Mode: Identifiable {
-        let id: String
-        let title: LocalizedStringKey
-        let icon: String
-    }
-
-    private let modes = [
-        Mode(id: "breakfast", title: "Breakfast", icon: "sunrise"),
-        Mode(id: "lunch", title: "Lunch", icon: "sun.max"),
-        Mode(id: "dinner", title: "Dinner", icon: "moon"),
-        Mode(id: "snack", title: "Snack", icon: "carrot"),
-        Mode(id: "highcarb", title: "High carb", icon: "birthday.cake"),
-        Mode(id: "meal", title: "Meal", icon: "fork.knife"),
-        Mode(id: "sport", title: "Sport", icon: "figure.run"),
-        Mode(id: "sleep", title: "Sleep", icon: "bed.double"),
-        Mode(id: "stop", title: "Stop modes", icon: "stop.circle"),
-    ]
+    @State private var custom = false
 
     var body: some View {
-        List(modes) { mode in
+        List {
             Button {
-                session.aimiMode(mode.id)
-                dismiss()
+                custom = true
             } label: {
-                Label(mode.title, systemImage: mode.icon)
+                Label("Custom", systemImage: "slider.horizontal.3")
+            }
+            ForEach(aimiModes) { mode in
+                Button {
+                    session.aimiMode(mode.id)
+                    dismiss()
+                } label: {
+                    Label(mode.title, systemImage: mode.icon)
+                }
             }
         }
         .navigationTitle("AIMI modes")
+        .sheet(isPresented: $custom) {
+            NavigationStack {
+                CustomAimiModeView { modeId, minutes in
+                    session.aimiMode(modeId, minutes: minutes)
+                    custom = false
+                    dismiss()
+                }
+            }
+        }
+    }
+}
+
+/// Swipe left and right to pick the mode, scroll the wheel up and down for the duration.
+/// X (top left, from the system) cancels, ✓ (top right) sends.
+private struct CustomAimiModeView: View {
+
+    let send: (String, Int) -> Void
+
+    /// "stop" has no duration, so it is not here.
+    private let modes = aimiModes.filter { $0.presetMinutes > 0 }
+    @State private var selected = aimiModes[0].id
+    @State private var minutes: [String: Int] = Dictionary(uniqueKeysWithValues: aimiModes.map { ($0.id, $0.presetMinutes) })
+
+    var body: some View {
+        TabView(selection: $selected) {
+            ForEach(modes) { mode in
+                VStack(spacing: 2) {
+                    Label(mode.title, systemImage: mode.icon)
+                        .font(.headline)
+                    Picker("Duration", selection: duration(of: mode.id)) {
+                        ForEach(customDurations, id: \.self) { Text(durationText($0)).tag($0) }
+                    }
+                    .pickerStyle(.wheel)
+                    .labelsHidden()
+                }
+                .tag(mode.id)
+            }
+        }
+        .tabViewStyle(.page)
+        .navigationTitle("Custom")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    send(selected, minutes[selected] ?? 60)
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+                .accessibilityLabel("Send")
+            }
+        }
+    }
+
+    private func duration(of modeId: String) -> Binding<Int> {
+        Binding(get: { minutes[modeId] ?? 60 }, set: { minutes[modeId] = $0 })
     }
 }
 
@@ -167,15 +245,30 @@ private struct TempTargetView: View {
 
     @EnvironmentObject private var session: WatchSession
     @Environment(\.dismiss) private var dismiss
+    @State private var custom = false
 
     var body: some View {
         List {
+            Button {
+                custom = true
+            } label: {
+                Label("Custom", systemImage: "slider.horizontal.3")
+            }
             button("Activity", "PRESET_ACTIVITY", "figure.walk")
             button("Eating soon", "PRESET_EATING", "fork.knife")
             button("Hypo", "PRESET_HYPO", "exclamationmark.triangle")
             button("Cancel temp target", "CANCEL", "xmark.circle")
         }
         .navigationTitle("Temp target")
+        .sheet(isPresented: $custom) {
+            NavigationStack {
+                CustomTempTargetView(isMgdl: session.preferences?.unitsMgdl ?? true) { target, isMgdl, minutes in
+                    session.tempTarget(target: target, isMgdl: isMgdl, minutes: minutes)
+                    custom = false
+                    dismiss()
+                }
+            }
+        }
     }
 
     /// `command` is a Kotlin `ActionTempTargetPreCheck.TempTargetCommand` name. The phone uses its own
@@ -187,6 +280,63 @@ private struct TempTargetView: View {
         } label: {
             Label(title, systemImage: icon)
         }
+    }
+}
+
+/// Two wheels side by side, so both values are in view before ✓: the target on the left,
+/// the duration on the right. X (top left, from the system) cancels, ✓ (top right) sends.
+/// The phone checks the target again (`HardLimits.LIMIT_TEMP_MIN_BG`) and shows its confirmation.
+private struct CustomTempTargetView: View {
+
+    let isMgdl: Bool
+    let send: (Double, Bool, Int) -> Void
+
+    /// 72 to 180 mg/dL, or 4.0 to 10.0 mmol/L: the range the phone accepts for a single value.
+    /// Stored as whole mg/dL or tenths of mmol/L, so the wheel has no rounding problems.
+    private var targets: [Int] { isMgdl ? Array(72...180) : Array(40...100) }
+    @State private var target: Int
+    @State private var minutes = 60
+
+    init(isMgdl: Bool, send: @escaping (Double, Bool, Int) -> Void) {
+        self.isMgdl = isMgdl
+        self.send = send
+        _target = State(initialValue: isMgdl ? 110 : 60)
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            VStack(spacing: 0) {
+                Text(isMgdl ? "mg/dL" : "mmol/L").font(.caption2).foregroundStyle(.secondary)
+                Picker("Target", selection: $target) {
+                    ForEach(targets, id: \.self) { Text(targetText($0)).tag($0) }
+                }
+                .pickerStyle(.wheel)
+                .labelsHidden()
+            }
+            VStack(spacing: 0) {
+                Text("Duration").font(.caption2).foregroundStyle(.secondary)
+                Picker("Duration", selection: $minutes) {
+                    ForEach(customDurations, id: \.self) { Text(durationText($0)).tag($0) }
+                }
+                .pickerStyle(.wheel)
+                .labelsHidden()
+            }
+        }
+        .navigationTitle("Custom")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    send(isMgdl ? Double(target) : Double(target) / 10, isMgdl, minutes)
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+                .accessibilityLabel("Send")
+            }
+        }
+    }
+
+    private func targetText(_ value: Int) -> String {
+        isMgdl ? "\(value)" : (Double(value) / 10).formatted(.number.precision(.fractionLength(1)))
     }
 }
 
