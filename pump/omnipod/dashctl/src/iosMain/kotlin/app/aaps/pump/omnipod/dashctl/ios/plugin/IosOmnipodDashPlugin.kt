@@ -14,6 +14,7 @@ import app.aaps.core.interfaces.rx.bus.RxBus
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.core.ui.compose.ToolbarConfig
 import app.aaps.core.ui.compose.icons.IcPluginOmnipod
+import app.aaps.core.ui.compose.pump.KeepScreenOnEffect
 import app.aaps.pump.omnipod.dashctl.DashStrings
 import app.aaps.pump.omnipod.dashctl.ui.DashOverviewContent
 import app.aaps.pump.omnipod.dashctl.ui.DashPodWizardModel
@@ -23,6 +24,7 @@ import app.aaps.pump.omnipod.dashctl.ui.DashWizardRequest
 import app.aaps.pump.omnipod.dashctl.ui.dashSettingsScreen
 import app.aaps.core.keys.interfaces.PreferenceItem
 import kotlin.time.Clock
+import app.aaps.core.interfaces.di.PumpDriver
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
 import app.aaps.core.interfaces.notifications.NotificationManager
@@ -86,12 +88,14 @@ import dev.zacsweers.metro.IntKey as MetroIntKey
  *
  * `@MetroIntKey(1080)` is the number of the Android `OmnipodDashPumpPlugin`, so both platforms order
  * Dash in the same place. They never meet: this file is in iosMain of `:pump:omnipod:dashctl`, which
- * the Android app does not use. No `@PumpDriver` qualifier, as `IosMedtrumPlugin`: `IosAppGraph`
- * puts the iOS pump drivers in the unqualified `Map<Int, PluginBase>` bucket.
+ * the Android app does not use. `@PumpDriver`, as on Android and as `IosMedtrumPlugin`:
+ * `IosAppStartup` merges this bucket only when `config.PUMPDRIVERS`.
  *
- * The iPhone is a full master phone: this plugin drives the pod itself, never through AAPSClient.
+ * Only the master app offers this plugin, and there it drives the pod itself. The follower app
+ * (AAPSClient) has no pump drivers.
  */
 @ContributesIntoMap(AppScope::class, binding = binding<PluginBase>())
+@PumpDriver
 @MetroIntKey(1080)
 @SingleIn(AppScope::class)
 @Inject
@@ -149,11 +153,11 @@ class IosOmnipodDashPlugin(
      * One wizard per opened screen. Its work runs on [IosDashDriverHost.wizardScope], not on the scope
      * of the screen, so leaving the screen cannot stop a part in the middle or skip the records after
      * it. The toolbar is the wizard's while it shows (no back arrow), and the iPhone does not lock
-     * during the wizard ([DashKeepScreenOn]), as Android `KeepScreenOnEffect`.
+     * during the wizard ([KeepScreenOnEffect], shared with Android).
      */
     @Composable
     private fun PodWizard(request: DashWizardRequest, setToolbarConfig: (ToolbarConfig) -> Unit, onClose: () -> Unit) {
-        DashKeepScreenOn()
+        KeepScreenOnEffect()
         val model = remember(request) {
             DashPodWizardModel(
                 pod = host.wizardPod,

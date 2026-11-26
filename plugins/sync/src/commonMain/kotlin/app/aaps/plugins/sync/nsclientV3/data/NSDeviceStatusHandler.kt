@@ -16,6 +16,7 @@ import app.aaps.core.interfaces.workflow.CalculationWorkflow
 import app.aaps.core.keys.BooleanNonKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.nssdk.localmodel.devicestatus.NSDeviceStatus
+import app.aaps.core.utils.safeGetDoubleAllowNull
 import app.aaps.core.utils.safeGetString
 import app.aaps.core.utils.safeGetStringAllowNull
 import app.aaps.plugins.sync.nsclientV3.NSClientV3Plugin
@@ -94,7 +95,7 @@ class NSDeviceStatusHandler(
     private val overviewData: OverviewData,
     private val calculationWorkflow: CalculationWorkflow,
     private val rxBus: RxBus,
-    // Plain CoroutineScope: @ApplicationScope is a javax qualifier and cannot appear in commonMain.
+    // Plain CoroutineScope: AppCoroutineBindings binds the one application scope under this type too.
     private val appScope: CoroutineScope,
     private val nsClientV3Plugin: () -> NSClientV3Plugin,
     private val apsResultProvider: () -> APSResult,
@@ -269,7 +270,15 @@ class NSDeviceStatusHandler(
                 }
                 // check if this is new data
                 if (clock > processedDeviceStatusData.openAPSData.clockSuggested) {
-                    suggested?.let { rt -> processedDeviceStatusData.openAPSData.suggested = rt }
+                    // A document that cannot be decoded must not refresh the stored result's clock.
+                    // clockSuggested still moves, so the loop-age display and the old-loop alarm follow the master.
+                    if (suggested != null) {
+                        processedDeviceStatusData.openAPSData.suggested = suggested
+                        processedDeviceStatusData.openAPSData.clockSuggestedDecoded = clock
+                        processedDeviceStatusData.openAPSData.iob = nsDeviceStatus.openaps?.iob.safeGetDoubleAllowNull("iob")
+                        processedDeviceStatusData.openAPSData.displayedIob =
+                            nsDeviceStatus.openaps?.iob.safeGetDoubleAllowNull(ProcessedDeviceStatusData.DISPLAYED_IOB_KEY)
+                    }
                     processedDeviceStatusData.openAPSData.clockSuggested = clock
                 }
                 // Stored also when older than the newest one, see storeApsResults

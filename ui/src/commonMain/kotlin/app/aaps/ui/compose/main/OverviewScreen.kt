@@ -202,7 +202,13 @@ fun OverviewScreen(
             if (active) searchViewModel.onSearchModeActivated()
             else searchViewModel.onSearchModeDeactivated()
         },
-        onSearchResultClick = onSearchResultClick,
+        onSearchResultClick = { entry ->
+            // A search that led to a result is worth remembering; opening the result stays with the activity.
+            searchViewModel.recordCurrentQuery()
+            onSearchResultClick(entry)
+        },
+        onSearchHistoryClick = { searchViewModel.onQueryChanged(it) },
+        onSearchHistoryRemove = { searchViewModel.removeFromHistory(it) },
         onSearchPluginToggle = { plugin -> searchViewModel.togglePlugin(plugin) },
         onConfirmSearchPluginSwitch = { searchViewModel.confirmPluginSwitch() },
         onDismissSearchPluginSwitch = { searchViewModel.dismissPluginSwitch() },
@@ -300,6 +306,8 @@ fun OverviewScreen(
                     onOpenActions = { manageSheetState.show() },
                     aimiDashboardData = aimiGlassDashboardData,
                     cgmWarmupStatus = (activePlugin.activeBgSource as? CgmWarmupProvider)?.warmupStatus,
+                    autoShowNotificationSheet = autoShowNotificationSheet,
+                    onAutoShowConsumed = onAutoShowConsumed,
                 )
             }
             DashboardHomeSelection.ESSENTIAL -> { commandsAllowed ->
@@ -309,11 +317,17 @@ fun OverviewScreen(
                     statusViewModel = statusViewModel,
                     aimiDashboardData = aimiGlassDashboardData,
                     commandsAllowed = commandsAllowed,
+                    onNavigate = onNavigate,
+                    notifications = notifications,
+                    onDismissNotification = { notification -> notificationManager.dismiss(NotificationHandle(notification.instanceKey)) },
+                    onNotificationActionClick = onNotificationActionClick,
+                    autoShowNotificationSheet = autoShowNotificationSheet,
+                    onAutoShowConsumed = onAutoShowConsumed,
                     cgmWarmupStatus = (activePlugin.activeBgSource as? CgmWarmupProvider)?.warmupStatus,
                 )
             }
             DashboardHomeSelection.OVERVIEW -> null
         },
-        useGlassChrome = homeSelection == DashboardHomeSelection.GLASS || homeSelection == DashboardHomeSelection.ESSENTIAL,
+        useGlassChrome = homeSelection.usesGlassChrome,
     )
 }

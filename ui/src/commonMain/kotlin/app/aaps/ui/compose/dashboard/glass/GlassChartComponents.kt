@@ -44,11 +44,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.aaps.core.interfaces.InterfacesStrings
 import app.aaps.core.ui.CoreUiStrings
+import app.aaps.core.ui.compose.AapsTheme
 import app.aaps.core.ui.compose.stringResource
 import app.aaps.ui.UiStrings
 import kotlinx.datetime.TimeZone
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.time.Clock
 
 /** Y-axis value labels: `Paint.textSize = 28f` (pixels) on `dev_OAPSAIMI`. */
@@ -104,6 +106,10 @@ internal fun BgChartCard(
     var selectedTreatment by remember { mutableStateOf<TreatmentPoint?>(null) }
     val textMeasurer = rememberTextMeasurer()
     val timeZone = TimeZone.currentSystemDefault()
+    // Forecast colours from the app theme: the centre and its range share one colour, the insulin-only
+    // curve uses the low colour because it is only drawn when it goes low.
+    val forecastColor = AapsTheme.generalColors.uamPrediction
+    val forecastLowColor = AapsTheme.generalColors.bgLow
 
     // When new data arrives, reset the drag back to the current reading
     LaunchedEffect(readings) {
@@ -381,42 +387,42 @@ internal fun BgChartCard(
                     }
                 }
 
-                // 5b. BG predictions (extend past "now" into the fixed prediction horizon)
+                // 5b. Glucose forecast (extends past "now" into the one hour forecast horizon): the range as a
+                // soft filled area, the centre as a dashed line, and the insulin-only curve as a thin dashed
+                // line only when it is present (it is filled only when it goes low).
                 if (predictions.isNotEmpty()) {
-                    fun predictionColor(type: PredictionType): Color = when (type) {
-                        PredictionType.IOB   -> Color(0xFF64B5F6)
-                        PredictionType.COB   -> Color(0xFFFFB74D)
-                        PredictionType.A_COB -> Color(0xFFFFB74D).copy(alpha = 0.5f)
-                        PredictionType.UAM   -> Color(0xFFE6D39A)
-                        PredictionType.ZT    -> Color(0xFF4DD4D4)
+                    val byType = predictions.groupBy { it.type }.mapValues { (_, points) -> points.sortedBy { it.progress } }
+                    val lowEdge = byType[PredictionType.LOW_EDGE].orEmpty()
+                    val highEdge = byType[PredictionType.HIGH_EDGE].orEmpty()
+                    if (lowEdge.size >= 2 && highEdge.size >= 2) {
+                        val rangePath = Path().apply {
+                            moveTo(predictionX(highEdge.first().progress), mapY(highEdge.first().value))
+                            highEdge.drop(1).forEach { lineTo(predictionX(it.progress), mapY(it.value)) }
+                            lowEdge.asReversed().forEach { lineTo(predictionX(it.progress), mapY(it.value)) }
+                            close()
+                        }
+                        drawPath(path = rangePath, color = forecastColor.copy(alpha = if (isDark) 0.22f else 0.18f))
                     }
 
-                    predictions.groupBy { it.type }.forEach { (type, points) ->
-                        val sorted = points.sortedBy { it.progress }
-                        if (sorted.size >= 2) {
-                            for (i in 1 until sorted.size) {
-                                val prev = sorted[i - 1]
-                                val curr = sorted[i]
-                                drawLine(
-                                    color = predictionColor(type),
-                                    start = Offset(predictionX(prev.progress), mapY(prev.value)),
-                                    end = Offset(predictionX(curr.progress), mapY(curr.value)),
-                                    // Same 6f width as the solid history curve above, so the dashed line
-                                    // reads as a continuation of the same stroke, not a thinner overlay.
-                                    strokeWidth = 6f,
-                                    cap = StrokeCap.Round,
-                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f))
-                                )
-                            }
-                        }
-                        sorted.forEach { point ->
-                            drawCircle(
-                                color = predictionColor(type),
-                                radius = 4f,
-                                center = Offset(predictionX(point.progress), mapY(point.value))
+                    fun dashedLine(points: List<PredictionPoint>, color: Color, width: Float, dash: FloatArray) {
+                        for (i in 1 until points.size) {
+                            val prev = points[i - 1]
+                            val curr = points[i]
+                            drawLine(
+                                color = color,
+                                start = Offset(predictionX(prev.progress), mapY(prev.value)),
+                                end = Offset(predictionX(curr.progress), mapY(curr.value)),
+                                strokeWidth = width,
+                                cap = StrokeCap.Round,
+                                pathEffect = PathEffect.dashPathEffect(dash)
                             )
                         }
                     }
+
+                    // Same 6f width as the solid history curve above, so the dashed centre reads as a
+                    // continuation of the same stroke, not a thinner overlay.
+                    dashedLine(byType[PredictionType.CENTRE].orEmpty(), forecastColor, 6f, floatArrayOf(8f, 6f))
+                    dashedLine(byType[PredictionType.INSULIN_ONLY].orEmpty(), forecastLowColor, 2.5f, floatArrayOf(6f, 6f))
                 }
 
                 // 6. Hour labels on the X-axis (aligned with the IOB chart)
@@ -611,27 +617,23 @@ internal fun IobChartCard(
                 fun historyX(progress: Float): Float = progress * chartW * historyFraction
                 fun predictionX(progress: Float): Float = (historyFraction + progress * (1f - historyFraction)) * chartW
 
-                val peakIob = maxOf(
-                    iobReadings.maxByOrNull { it.iob }?.iob ?: 0f,
-                    predictions.maxByOrNull { it.iob }?.iob ?: 0f,
-                    currentIob
-                ).coerceAtLeast(0f)
-                val maxIob = when {
-                    peakIob == 0f -> 1f
-                    peakIob % 1f == 0f -> peakIob + 1f
-                    else -> ceil(peakIob)
-                }
+                // Negative IOB (after a low or a long zero temp) is drawn below a 0 line, not flattened onto it:
+                // it is how the user sees that the loop held insulin back.
+                val (minIob, maxIob) = iobChartScale(
+                    iobReadings.map { it.iob } + predictions.map { it.iob } + currentIob
+                )
 
                 fun mapY(iob: Float): Float {
-                    val clamped = iob.coerceIn(0f, maxIob)
-                    return chartH - (clamped / maxIob) * chartH
+                    val clamped = iob.coerceIn(minIob, maxIob)
+                    return chartH - ((clamped - minIob) / (maxIob - minIob)) * chartH
                 }
+                val zeroY = mapY(0f)
 
                 // Baseline at 0U
                 drawLine(
                     color = if (isDark) Color(0x1FFFFFFF) else Color(0x1F000000),
-                    start = Offset(0f, chartH),
-                    end = Offset(chartW, chartH),
+                    start = Offset(0f, zeroY),
+                    end = Offset(chartW, zeroY),
                     strokeWidth = 1f
                 )
 
@@ -657,7 +659,10 @@ internal fun IobChartCard(
                 val axisTextColor = if (isDark) Color(0xA0FFFFFF) else Color(0xB4475569)
                 val scaleCenterX = chartW + paddingRight / 2f
                 drawCenteredText(textMeasurer, glassFixedDecimals(maxIob, 1), scaleCenterX, 12f, axisTextColor, AXIS_VALUE_TEXT_PX)
-                drawCenteredText(textMeasurer, "0", scaleCenterX, chartH + 4f, axisTextColor, AXIS_VALUE_TEXT_PX)
+                drawCenteredText(textMeasurer, "0", scaleCenterX, zeroY + 4f, axisTextColor, AXIS_VALUE_TEXT_PX)
+                if (minIob < 0f) {
+                    drawCenteredText(textMeasurer, glassFixedDecimals(minIob, 1), scaleCenterX, chartH + 4f, axisTextColor, AXIS_VALUE_TEXT_PX)
+                }
 
                 if (iobReadings.size >= 2) {
                     val path = Path()
@@ -667,7 +672,7 @@ internal fun IobChartCard(
                     val firstY = mapY(iobReadings.first().iob)
 
                     path.moveTo(firstX, firstY)
-                    areaPath.moveTo(firstX, chartH)
+                    areaPath.moveTo(firstX, zeroY)
                     areaPath.lineTo(firstX, firstY)
 
                     for (i in 1 until iobReadings.size) {
@@ -686,7 +691,7 @@ internal fun IobChartCard(
 
                     val lastX = historyX(iobReadings.last().progress)
                     val lastY = mapY(iobReadings.last().iob)
-                    areaPath.lineTo(lastX, chartH)
+                    areaPath.lineTo(lastX, zeroY)
                     areaPath.close()
 
                     drawPath(
@@ -758,4 +763,21 @@ internal fun IobChartCard(
             }
         }
     }
+}
+
+/**
+ * The value range of the IOB chart: from 0 up to the next whole unit above the peak, and down to the next
+ * whole unit below the lowest value when IOB went negative. A peak that is already a whole number gets one
+ * unit of room, as before.
+ */
+internal fun iobChartScale(values: List<Float>): Pair<Float, Float> {
+    val peak = (values.maxOrNull() ?: 0f).coerceAtLeast(0f)
+    val max = when {
+        peak == 0f      -> 1f
+        peak % 1f == 0f -> peak + 1f
+        else            -> ceil(peak)
+    }
+    val lowest = (values.minOrNull() ?: 0f).coerceAtMost(0f)
+    val min = if (lowest < 0f) floor(lowest) else 0f
+    return min to max
 }

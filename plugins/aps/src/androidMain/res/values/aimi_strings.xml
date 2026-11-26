@@ -1946,6 +1946,7 @@
 <string name="honeymoon_small_slope">Honeymoon small slope.</string>
 <string name="hypo_risk_notification_text">Hypo risk: rapid drop detected. Check your glucose now.</string>
 <string name="hypo_risk_notification_title">Hypo Risk</string>
+<string name="aimi_safe_hold_notification_text" comment="%1$d=number of loop runs in a row, at least 3. Example: AIMI could not decide on the last 3 loop runs.">AIMI could not decide on the last %1$d loop runs. Meanwhile the loop gives no SMB and sets the profile basal, or a zero temp basal when glucose is low or falling fast. Check your glucose. The details are in the loop result.</string>
 <string name="insulin_effect">Insulin effect: %1$.2f</string>
 <string name="iob_high_reduction">High IOB (%1$.2f U), reduction x0.85; </string>
 <string name="last_bg_value">  • Last glucose : %1$.1f mg/dL\n</string>
@@ -2012,6 +2013,7 @@
 <string name="reason_prebolus_lunch2">&#160;Microbolusing 2/2 Lunch Mode %.2fU.</string>
 <string name="reason_prebolus_snack">&#160;Microbolusing Snack Mode %.2fU.</string>
 <string name="reason_safety_sport_meal_reduction">🏃‍♂️ Sport safety softened by meal: %1$.2fU → %2$.2fU</string>
+<string name="reason_safety_sport_boost_half" comment="%1$.2f=SMB before, %2$.2f=SMB after, in units. Example: 🏃‍♂️ Activity earlier, Boost running: SMB halved 4.40U → 2.20U">🏃‍♂️ Activity earlier, Boost running: SMB halved %1$.2fU → %2$.2fU</string>
 <string name="reason_sensor_lag">  • SensorLag > Historic ➝ x0.85\n</string>
 <string name="reason_sensor_lag_lower">  • SensorLag &lt; Historic ➝ x1.2\n</string>
 <string name="reason_set_temp_basal">; setting current basal of %1$.2f as temp.</string>
@@ -2160,6 +2162,7 @@
 <string name="aimi_essentials_hint_max_smb">Largest single small bolus (SMB).</string>
 <string name="aimi_essentials_hint_high_bg_max_smb">Largest single small bolus (SMB) when glucose is high.</string>
 <string name="aimi_essentials_hint_current_basal_multiplier">Highest temporary basal rate, as a factor of the profile basal of the current hour. When no meal mode is on, Autodrive does not act and T3C brittle mode is off, a temporary basal is never higher than this factor times the profile basal. The loop can make this limit lower for a while, for example from heart rate or sleep data. Otherwise the max basal of the active mode is the limit.</string>
+<string name="aimi_essentials_hint_manual_boost">How much a manual boost from the Essential home raises max SMB in hyper and both max basals, for 60 minutes. The limits above and the age limit still apply.</string>
 <string name="aimi_essentials_hint_max_multiplier">Highest factor the adaptive basal learner may put on the profile basal. Used only while adaptive basal is on. It is not a limit on every basal rate.</string>
 <string name="aimi_essentials_hint_lgs">The loop gives no extra insulin when glucose, now or predicted, goes below this value or below a value set by your target, whichever is higher.</string>
 <string name="aimi_essentials_hint_use_smb">Allow small automatic boluses (SMB).</string>

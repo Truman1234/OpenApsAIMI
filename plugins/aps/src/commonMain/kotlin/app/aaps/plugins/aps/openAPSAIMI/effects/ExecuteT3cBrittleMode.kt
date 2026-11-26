@@ -4,9 +4,11 @@ import app.aaps.core.interfaces.aps.CurrentTemp
 import app.aaps.core.interfaces.aps.IobTotal
 import app.aaps.core.interfaces.aps.OapsProfileAimi
 import app.aaps.core.interfaces.aps.RT
+import app.aaps.core.interfaces.utils.takeWholeChars
 import app.aaps.core.keys.BooleanKey
 import app.aaps.core.keys.DoubleKey
 import app.aaps.core.keys.interfaces.Preferences
+import app.aaps.plugins.aps.openAPSAIMI.AimiDecisionContext
 import app.aaps.plugins.aps.openAPSAIMI.aimiFmt0
 import app.aaps.plugins.aps.openAPSAIMI.aimiFmt1
 import app.aaps.plugins.aps.openAPSAIMI.aimiFmt2
@@ -18,7 +20,6 @@ import app.aaps.plugins.aps.openAPSAIMI.basal.T3cAutodriveBasalBridge
 import app.aaps.plugins.aps.openAPSAIMI.basal.T3cTrajectoryContext
 import app.aaps.plugins.aps.openAPSAIMI.patient.PhysiologicalRiskLevel
 import app.aaps.plugins.aps.openAPSAIMI.patient.PhysiologicalTreeSnapshot
-import app.aaps.plugins.aps.openAPSAIMI.physio.HealthContextSnapshot
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -34,9 +35,36 @@ internal interface AimiT3cAdaptiveFactor {
     ): Double
 }
 
-/** Wearable snapshot, read only when CFRD mode is on. May throw; the caller records the failure. */
+/**
+ * The heart rate the CFRD boost compares, read only when CFRD mode is on. May throw; the caller
+ * records the failure.
+ */
 internal fun interface AimiT3cHrSnapshot {
-    fun latest(): HealthContextSnapshot
+    fun latest(): AimiT3cHrReading
+}
+
+/**
+ * The current heart rate, and the resting heart rates it is compared with.
+ *
+ * @param awakeRestingBpm the AWAKE resting rate, as for the stress ISF floor, or null when not
+ *   measured. The old baseline, `HealthContextSnapshot.rhrResting`, is the lowest sleeping value
+ *   and a made-up 60 when nothing was measured: against 60 a normal waking heart rate of 70-85 read
+ *   as "inflammation" and added up to 35 % aggressiveness (audit 2026-11-20).
+ * @param legacyRestingBpm that old baseline, kept so the boost can only go down, see [cfrdBoostOf].
+ */
+internal data class AimiT3cHrReading(val hrNow: Int, val awakeRestingBpm: Int?, val legacyRestingBpm: Int)
+
+/**
+ * The CFRD heart rate boost of [reading]: 0 when the awake resting rate is not measured, otherwise
+ * the smaller of the boosts against the awake and the old baseline. An awake resting rate can be
+ * below the old made-up 60 (a fit person), and the boost must never be larger than it was.
+ */
+internal fun cfrdBoostOf(reading: AimiT3cHrReading): Double {
+    val awake = reading.awakeRestingBpm ?: return 0.0
+    return minOf(
+        cfrdHrInflammationBoostOf(reading.hrNow, awake),
+        cfrdHrInflammationBoostOf(reading.hrNow, reading.legacyRestingBpm),
+    )
 }
 
 /** The two lookbacks the T3C head reads, at the lines the reference reads them. */
@@ -49,6 +77,49 @@ internal interface AimiT3cLookbacks {
 internal interface AimiT3cTickTail {
     fun applyBasalNeuralLearning(rT: RT, tbrUph: Double)
     fun markFinalLoopDecision(rT: RT, currentTemp: CurrentTemp)
+}
+
+/**
+ * Evaluates T3C Safety Guard 2 ([DynamicBasalController.t3cTransitionGuard]) for the decision log,
+ * with the key on or off, and adds a console line when it fires (or would fire).
+ *
+ * @return [enabled], so the caller passes the same value to [DynamicBasalController.computeT3c].
+ */
+internal fun recordT3cTransitionGuard(
+    enabled: Boolean,
+    source: String,
+    delta: Float,
+    shortAvgDelta: Double,
+    duraISFminutes: Double,
+    duraISFaverage: Double,
+    activationThreshold: Double,
+    consoleLog: MutableList<String>,
+    record: (AimiDecisionContext.T3cGuard2Export) -> Unit,
+): Boolean {
+    val guard = DynamicBasalController.t3cTransitionGuard(
+        delta = delta,
+        shortAvgDelta = shortAvgDelta,
+        duraISFminutes = duraISFminutes,
+        duraISFaverage = duraISFaverage,
+        activationThreshold = activationThreshold,
+    )
+    record(
+        AimiDecisionContext.T3cGuard2Export(
+            enabled = enabled,
+            would_fire = guard.wouldFire,
+            would_mult = guard.multiplier,
+            dura_minutes = duraISFminutes,
+            dura_average = duraISFaverage,
+            source = source,
+        )
+    )
+    if (guard.wouldFire) {
+        consoleLog.add(
+            "T3C_GUARD2: on=$enabled mult=${aimiFmt2(guard.multiplier)} " +
+                "duraMin=${aimiFmt0(duraISFminutes)} duraAvg=${aimiFmt0(duraISFaverage)} src=$source"
+        )
+    }
+    return enabled
 }
 
 /**
@@ -86,6 +157,7 @@ internal fun decideT3cBrittleMode(
     hrSnapshot: AimiT3cHrSnapshot,
     lookbacks: AimiT3cLookbacks,
     tail: AimiT3cTickTail,
+    recordTransitionGuard: (AimiDecisionContext.T3cGuard2Export) -> Unit,
 ): RT {
     rT.reason = StringBuilder("")
     rT.deliverAt = aimiWallClockMs()
@@ -124,7 +196,7 @@ internal fun decideT3cBrittleMode(
                 "🫁 T3c CFRD: hr snapshot failed ($type) — boost 0.00"
             },
         ) { hrSnapshot.latest() }.valueOrNull()
-        if (snapshot == null) 0.0 else cfrdHrInflammationBoostOf(snapshot.hrNow, snapshot.rhrResting)
+        if (snapshot == null) 0.0 else cfrdBoostOf(snapshot)
     } else 0.0
 
     if (cfrdMode) {
@@ -207,6 +279,18 @@ internal fun decideT3cBrittleMode(
     )
     val maxBasalCapForPi = if (treeUnlock.unlock) riseBasalCap else steadyBasalCap
 
+    val transitionGuardEnabled = recordT3cTransitionGuard(
+        enabled = preferences.get(BooleanKey.OApsAIMIT3cTransitionGuard),
+        source = AimiDecisionContext.T3cGuard2Export.SOURCE_BRITTLE,
+        delta = delta,
+        shortAvgDelta = shortAvgDelta,
+        duraISFminutes = duraISFminutes,
+        duraISFaverage = duraISFaverage,
+        activationThreshold = activationThreshold,
+        consoleLog = consoleLog,
+        record = recordTransitionGuard,
+    )
+
     val computedRate = DynamicBasalController.computeT3c(
         bg = bg,
         targetBg = targetBg,
@@ -220,6 +304,7 @@ internal fun decideT3cBrittleMode(
         isf = variableSensitivity.coerceAtLeast(10.0),
         duraISFminutes = duraISFminutes,
         duraISFaverage = duraISFaverage,
+        transitionGuardEnabled = transitionGuardEnabled,
         eventualBg = if (eventualBg > 0) eventualBg else null,
         activationThreshold = activationThreshold,
         aggressiveness = aggressiveness,
@@ -243,7 +328,7 @@ internal fun decideT3cBrittleMode(
     if (autodriveBasalProposal != null && autodriveBasalProposal.strippedSmbU > 0.0) {
         consoleLog.add(
             "T3C_AD_BASAL: smb stripped ${aimiFmt2(autodriveBasalProposal.strippedSmbU)}U " +
-                "(reason=${autodriveBasalProposal.reason.take(80)})"
+                "(reason=${autodriveBasalProposal.reason.takeWholeChars(80)})"
         )
     }
     val maxBasalCap = fusion.maxBasalCapUph

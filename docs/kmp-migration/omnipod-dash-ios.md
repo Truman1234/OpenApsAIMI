@@ -245,8 +245,8 @@ missing layer. So the layer is ported first, as is, and the rest is rebuilt on i
       timeout, made again after every drop while the connection is wanted (from `IosDashPump.connect`
       to `disconnect` / `stopConnecting`), a new link and session on each connection, set up again
       after `Busy`, and CoreBluetooth state restoration with its own identifier
-      (`BleRestoreIdentifier.OMNIPOD_DASH`): the restored pod is connected again, other peripherals
-      released. Bluetooth off marks the link lost. After a failed set up the next connect waits 10 s.
+      (`BleRestoreIdentifier.OMNIPOD_DASH`): the restored pod is connected again (a link iOS kept
+      up is dropped first, see 4e), other peripherals released once Bluetooth is on. Bluetooth off marks the link lost. After a failed set up the next connect waits 10 s.
       The activation scans and pairs inside the activation (Android `pairNewPod`); every operation
       waits for the connection first (Android `observeConnectToPod`). A deactivated pod is forgotten.
       `IosDashBleHost` (iosMain) is the thin CoreBluetooth glue. Tests: `DashPodScannerTest`,
@@ -258,8 +258,8 @@ missing layer. So the layer is ported first, as is, and the rest is rebuilt on i
       (Android setter throws); the bolus wait connects again before each status read and each stop
       (`awaitConnectionHoldingLock`, with the lock the wait holds), so a stop after a drop reaches the
       pod; the connector is built last in `IosDashPump`, after every other field.
-- [ ] On a device: a recorded pod advertisement, the `didConnect` answer to a connect on a restored
-      peripheral that is still connected, background wake by the pod, the xcodebuild of the app.
+- [ ] On a device: a recorded pod advertisement, the `didDisconnect` answer to a cancel of a restored
+      peripheral that is still connected (4e), background wake by the pod, the xcodebuild of the app.
 - [ ] Android's connection counters (`incrementSuccessfulConnectionAttemptsAfterRetries`,
       `incrementFailedConnectionsAfterRetries`, `successfulConnections`): statistics for the Dash
       overview only, no dosing effect. Not kept; add them with the overview screen (phase 5), in the
@@ -445,10 +445,10 @@ phone, never AAPSClient. Android keeps `:pump:omnipod:dash` unchanged.
       arrow while it runs, as Android) and the pump screen sets its toolbar again after it; Finish on
       "Pod Activated" closes only after the insulin switch and the site save are done; the profile
       gate Activate runs once at a time; the iPhone does not lock during the wizard
-      (`DashKeepScreenOn`, `idleTimerDisabled`, the value from before put back); the settings screen
+      (`KeepScreenOnEffect` of `:core:ui`, shared with Medtrum since 2026-11-18: `idleTimerDisabled`, the value from before put back); the settings screen
       (`dashSettingsScreen`: beeps, alerts, notification sounds; the keys are now preference keys with
       the same keys, defaults, limits and switches as Android). Tests: `DashSettingsTest`,
-      `DashScreenAwakeTest`, three more in `DashPodWizardModelTest`, the settings check in
+      `ScreenAwakeTest` (now in `:core:ui`), three more in `DashPodWizardModelTest`, the settings check in
       `IosOmnipodDashPluginGraphTest`.
       The e2e test on the real `CommandQueueImplementation` is written (P4, item 6, below). Still open:
       a real pod.
@@ -814,6 +814,67 @@ features on (`IosDashBleHost`), plus the peripheral state for the watchdog
   - after a fault report and a status read that failed (pod out of range), the C00A scan runs again
     and a second report comes when the pod is back;
   - battery: the C00A scan with no duplicates should cost nothing in normal use (no match).
+
+### 4e. Parity check against Android and OmnipodKit (Trio), 2026-11-25
+
+A three-way comparison (Android, this iOS driver, OmnipodKit) found six points where the iOS driver
+was weaker than OmnipodKit. All six are fixed in `dashctl`, each with a test:
+
+- **A NAK is never a done activation step.** `DashActivation.step` stops on a NAK, so the step is
+  sent again on the next try. Before, as on Android, a refused alert command moved the activation on
+  and the pod ran without that alert. For the basal program a NAK is followed by a status read:
+  BASAL_PROGRAM_SET or later means an earlier copy was taken (its answer was lost).
+- **A lost SetUniqueId answer no longer loses the pod.** That answer is the only one with the prime
+  volumes, the prime pulse rate and the pod life. When it has none, a status decides. UID_SET means the
+  pod took it, and the fixed Dash values are used (`PodConstants.DASH_*`, 80 h), as OmnipodKit always
+  does. A later activation status means a progress write was lost: the progress is taken from the pod
+  and the activation stops, so it never primes twice. The prime step also falls back to the fixed
+  values when the step was stored without them.
+- **The prime and cannula "in flight" mark must be on disk** before their bytes go, like the open
+  command below.
+- **16.15 U bolus.** The Android fix `dec98d6397` (round, do not cut) is ported to the `dashctl` copy
+  of `ProgramBolusCommand`.
+- **One lock for the pod state.** Every change of `DashPodStateManager` holds one reentrant lock. The
+  "Silence" button and the status checker write from other threads than the queue.
+- **A failed Keychain write blocks insulin.** `DashPodStateStore.saveChecked` reports it. The open
+  command and its "sent" mark must be on disk before any byte goes, or nothing is sent; after any other
+  failed write, the next delivery command first tries to save again.
+- **Past alert timers are sent turned off** (`DashAlerts.updateAlertConfigurations`), as OmnipodKit
+  does. Android sends the negative minutes, which the pod reads as about 45 days.
+
+Still open after this check, and what was decided (2026-11-25):
+
+- [x] **A restored link that is still connected is dropped first** (code and fakes, not on a device).
+      Before, when iOS started the app again and gave back the pod with its link still up,
+      `DashHeldConnection.onRestored` put a new EAP-AKA challenge on that same link. Android never does
+      that: the death of the process closes the GATT, so every session is made on a new connection.
+      OmnipodKit keeps the old session instead (it stores the session keys and counters), which would
+      reuse an AES-CCM nonce after a crash. Now, as Android: when the restored pod is connected
+      (`CoreBluetoothCentral.isPeripheralConnected`), its link is cancelled once Bluetooth is on (the
+      restore comes before the manager is powered on, and CoreBluetooth ignores commands until then).
+      While the drop runs nothing connects, no set up runs (a connect event of that link is ignored),
+      the connect watchdog does not run, and a command waits in `awaitConnection` with nothing sent.
+      The drop event ends it, and a fresh connect follows with a start delay of 1 s
+      (`RESTORED_LINK_RECONNECT_DELAY_S`), so the pod sees a real gap. When no drop event comes within
+      3 s (`RESTORED_LINK_DROP_FALLBACK_MS`), the fresh connect is asked anyway; if the link really
+      stayed up, iOS answers at once and the set up runs on it, as before (the worst case). An open
+      command from before the relaunch is decided by a status read on the fresh session and is not
+      sent again. Found on the way and fixed in the same change: the other restored peripherals (an
+      old pod) were released inside `willRestoreState`, before Bluetooth was on, so iOS could ignore
+      the cancel, and the release had already removed them from the central, so nothing could try
+      again. They are now released once Bluetooth is on. A stop or a `forget` during the drop
+      connects nothing afterwards; a pod forgotten before Bluetooth is on is still released.
+      Tests: `DashHeldConnectionTest` (9 new, the old test that locked in a session on the same link
+      is replaced), `DashConnectWatchdogTest` "the watchdog does not run while a restored link is
+      dropped", `IosDashPumpHeldConnectionTest` "a restore of a pod still connected decides an open
+      bolus on a fresh link and sends it once". To check on a device (section 6): that a cancel of a
+      restored, connected peripheral gives `didDisconnect`, and the time from the relaunch to the
+      fresh session.
+- [ ] **No BLE heartbeat** (owner decision 2026-11-25, not built). OmnipodKit keeps a heartbeat on
+      the pod link to wake the app for the loop. On iOS the loop runs on each new BG, and the BLE CGMs
+      on the phone (ONE+/G7, Libre 3) already wake the app at each reading, so a heartbeat adds
+      nothing there. It would only help a master phone whose BG comes from Nightscout; that is a
+      known limit.
 
 ### 5. Screens
 

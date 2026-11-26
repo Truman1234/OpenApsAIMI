@@ -557,6 +557,80 @@ class ShellDecisionTraceTest {
         assertEquals(BRITTLE_ACTIVE_TRACE, trace)
     }
 
+    /**
+     * T3C brittle basal on a long high that starts to fall: glucose 180 mg/dL, stable band average
+     * 180 above the 140 threshold, falling at -1 mg/dL per 5 min. [duraMinutes] above 20 arms
+     * Safety Guard 2. Returns the rate, the trace and the guard record of the tick.
+     */
+    private fun brittleFallAfterLongHigh(guardKeyOn: Boolean, duraMinutes: Double): Triple<Double, String, AimiDecisionContext.T3cGuard2Export?> {
+        val prefs = recordingPreferences(
+            doubles = mapOf(
+                DoubleKey.OApsAIMIT3cActivationThreshold to 140.0,
+                DoubleKey.OApsAIMIT3cAggressiveness to 1.0,
+                DoubleKey.autodriveMaxBasal to 3.0,
+                DoubleKey.meal_modes_MaxBasal to 3.0,
+            ),
+            bools = mapOf(BooleanKey.OApsAIMIT3cTransitionGuard to guardKeyOn),
+        )
+        setField(tick, "preferences", prefs)
+        setField(tick, "adaptiveMult", 1.0)
+        setField(tick, "lastNgrBasalMultiplier", 1.0)
+        setField(tick, "lastT3cGuard2", null)
+        val rT = RT(runningDynamicIsf = false)
+        val trace = capture {
+            tick.executeT3cBrittleMode(
+                bg = 180.0,
+                delta = -1.0f,
+                shortAvgDelta = -1.0,
+                longAvgDelta = 0.0,
+                accel = 0.0,
+                duraISFminutes = duraMinutes,
+                duraISFaverage = 180.0,
+                profile = profileStub(),
+                currenttemp = CurrentTemp(duration = 0, rate = 1.0, minutesrunning = 0),
+                iob = IobTotal(time = now, iob = 1.0),
+                targetBg = 100.0,
+                variableSensitivity = 50.0,
+                maxIob = 10.0,
+                eventualBg = 170.0,
+                rT = rT,
+            )
+        }
+        return Triple(rT.rate ?: 0.0, trace, getField(tick, "lastT3cGuard2") as AimiDecisionContext.T3cGuard2Export?)
+    }
+
+    @Test
+    fun guard2KeyOffKeepsTheT3cBasalAndRecordsTheShadow() {
+        val (armedRate, armedTrace, armedGuard) = brittleFallAfterLongHigh(guardKeyOn = false, duraMinutes = 30.0)
+        val (unarmedRate, _, unarmedGuard) = brittleFallAfterLongHigh(guardKeyOn = false, duraMinutes = 0.0)
+
+        // Key off: the basal is the one the guard never touched.
+        assertTrue("the T3C basal should be above zero, was $armedRate", armedRate > 0.0)
+        assertEquals(unarmedRate, armedRate, 0.0)
+        // ... and the decision log still records what the guard would do.
+        val guard = armedGuard!!
+        assertFalse(guard.enabled)
+        assertTrue(guard.would_fire)
+        assertEquals(0.2, guard.would_mult, 1e-6)
+        assertEquals(30.0, guard.dura_minutes, 0.0)
+        assertEquals(180.0, guard.dura_average, 0.0)
+        assertEquals(AimiDecisionContext.T3cGuard2Export.SOURCE_BRITTLE, guard.source)
+        assertTrue(armedTrace, armedTrace.contains("T3C_GUARD2: on=false mult=0.20"))
+        assertFalse(unarmedGuard!!.would_fire)
+        assertEquals(1.0, unarmedGuard.would_mult, 0.0)
+    }
+
+    @Test
+    fun guard2KeyOnCutsTheT3cBasal() {
+        val (offRate, _, _) = brittleFallAfterLongHigh(guardKeyOn = false, duraMinutes = 30.0)
+        val (onRate, onTrace, onGuard) = brittleFallAfterLongHigh(guardKeyOn = true, duraMinutes = 30.0)
+
+        assertTrue(onGuard!!.enabled)
+        assertTrue(onGuard.would_fire)
+        assertTrue("key on should cut the T3C basal: on=$onRate off=$offRate", onRate < offRate * 0.5)
+        assertTrue(onTrace, onTrace.contains("T3C_GUARD2: on=true mult=0.20"))
+    }
+
     @Test
     fun mealAdvisorWithFreshCarbsRecordsTheTbrAndTheSmb() {
         val carbTime = System.currentTimeMillis().toDouble()
@@ -2601,6 +2675,48 @@ class ShellDecisionTraceTest {
         assertEquals(TUBE_ADVISOR_HALF_CAP_TRACE, trace)
     }
 
+    @Test
+    fun duringAManualBoostTheTubeGradedCapIsNotApplied() {
+        val scene = runTubeScene(
+            bg = 168.0,
+            delta = 15.0f,
+            iob = 0.3f,
+            snapshotMinPred = 168.0,
+            advisorOutcome = StraightLineTubeAdvisor.Outcome(
+                smbCapScale = 0.7,
+                basalCapScale = 0.955,
+                feasible = true,
+                chosenCost = 0.0,
+                reason = "graded",
+            ),
+            bools = emptyMap(),
+            manualBoost = true,
+        )
+        assertEquals(2.0, scene.maxSmb, 1e-9)
+        assertEquals(2.0, scene.maxSmbHb, 1e-9)
+    }
+
+    @Test
+    fun duringAManualBoostTheTubeVetoStays() {
+        val scene = runTubeScene(
+            bg = 90.0,
+            delta = -4.0f,
+            iob = 3.0f,
+            snapshotMinPred = 60.0,
+            advisorOutcome = StraightLineTubeAdvisor.Outcome(
+                smbCapScale = 0.0,
+                basalCapScale = 0.5,
+                feasible = false,
+                chosenCost = Double.POSITIVE_INFINITY,
+                reason = "VETO",
+            ),
+            bools = emptyMap(),
+            manualBoost = true,
+        )
+        assertEquals(0.05, scene.maxSmb, 1e-9)
+        assertEquals(0.05, scene.maxSmbHb, 1e-9)
+    }
+
     // --- Tube safety rules wired into the shell: HyperClampTubeBound and TubeFloorArtefactRule ---
 
     /** What the tube advisor was handed and what the shell did with the answer. */
@@ -2618,6 +2734,7 @@ class ShellDecisionTraceTest {
         snapshotMinPred: Double,
         advisorOutcome: StraightLineTubeAdvisor.Outcome,
         bools: Map<BooleanKey, Boolean>,
+        manualBoost: Boolean = false,
     ): TubeSceneResult {
         val prefs = recordingPreferences(
             doubles = mapOf(DoubleKey.AimiTubeHypoFloorMgdl to 72.0),
@@ -2632,6 +2749,7 @@ class ShellDecisionTraceTest {
         setField(tick, "maxSMBHB", 2.0)
         setField(tick, "variableSensitivity", 50.0f)
         setField(tick, "tickEffectiveDiaHours", 5.0)
+        setField(tick, "manualBoostActive", manualBoost)
         setField(
             tick,
             "lastDoseTerminalSnapshot",
@@ -4372,6 +4490,8 @@ class ShellDecisionTraceTest {
                     reason = "trace",
                     timestamp = now,
                 )
+            } else if (inv.method.name == "basalModelStatus") {
+                BasalNeuralLearner.ModelStatus(BasalNeuralLearner.ModelOrigin.NONE, targetGate = null, targetSpread = null)
             } else if (inv.method.returnType == Void.TYPE) {
                 null
             } else {
@@ -5088,6 +5208,7 @@ class ShellDecisionTraceTest {
             READ key=DoubleKey.OApsAIMILastEstimatedCarbTime value=<clock>
             READ key=DoubleKey.OApsAIMILastEstimatedCarbs value=0.00
             READ key=DoubleKey.OApsAIMILastEstimatedCarbTime value=<clock>
+            READ key=BooleanKey.OApsAIMIEnableStepsFromWatch value=false
             READ key=DoubleKey.OApsAIMILastEstimatedCarbs value=0.00
             READ key=DoubleKey.OApsAIMILastEstimatedCarbTime value=<clock>
             READ key=DoubleKey.OApsAIMILastEstimatedCarbs value=0.00
@@ -5371,6 +5492,7 @@ class ShellDecisionTraceTest {
             READ key=DoubleKey.OApsAIMILastEstimatedCarbTime value=<clock>
             READ key=DoubleKey.OApsAIMILastEstimatedCarbs value=0.00
             READ key=DoubleKey.OApsAIMILastEstimatedCarbTime value=<clock>
+            READ key=BooleanKey.OApsAIMIEnableStepsFromWatch value=false
             READ key=DoubleKey.OApsAIMILastEstimatedCarbs value=0.00
             READ key=DoubleKey.OApsAIMILastEstimatedCarbTime value=<clock>
             READ key=DoubleKey.OApsAIMILastEstimatedCarbs value=0.00
@@ -6190,6 +6312,7 @@ class ShellDecisionTraceTest {
             READ key=BooleanKey.OApsAIMIT3cPhysioInformedEnabled value=false
             READ key=DoubleKey.OApsAIMIT3cAggressiveness value=1.00
             READ key=DoubleKey.OApsAIMIT3cAnticipationStrength value=0.00
+            READ key=BooleanKey.OApsAIMIT3cTransitionGuard value=false
             READ key=BooleanKey.OApsAIMIT3cHyperBasalFloor value=false
             READ key=BooleanKey.OApsAIMIT3cBrittleMode value=true
             READ key=BooleanKey.OApsAIMIT3cAdaptiveBasalEnabled value=false
@@ -6544,6 +6667,7 @@ class ShellDecisionTraceTest {
         private val SPORT_MEAL_SMB_TRACE = """
             READ key=BooleanKey.OApsAIMIhoneymoon value=false
             READ key=BooleanKey.OApsAIMIHyperDroppingExemptEnabled value=false
+            LOG SPORT_GUARD ACTIVITY_NOW manual=true burst=false steps5=0 steps10=0 steps30=0 steps60=0 steps180=0 hr=0 hr10=0 target=100
             READ key=BooleanKey.OApsAIMIhoneymoon value=false
             READ key=BooleanKey.OApsAIMIMealAdvisorTrigger value=false
             READ key=BooleanKey.OApsAIMIPkpdPragmaticReliefEnabled value=false
@@ -6671,6 +6795,7 @@ class ShellDecisionTraceTest {
             READ key=BooleanKey.OApsAIMIT3cPhysioInformedEnabled value=false
             READ key=DoubleKey.OApsAIMIT3cAggressiveness value=1.00
             READ key=DoubleKey.OApsAIMIT3cAnticipationStrength value=0.00
+            READ key=BooleanKey.OApsAIMIT3cTransitionGuard value=false
             LOG T3C_AD_BASAL: pi=2.06 ad=— fused=2.06 unlock=false (tree_critical) cap=3.00 step=0.30 smbStripped=0.00
             READ key=BooleanKey.OApsAIMIT3cHyperBasalFloor value=false
             LOG 🧭 BASAL_GOV[T3C]: action=KEEP conf=0.00 n=0 hypo=0.00 hypoG=0.00 hypoAdj=0.00 ant=0.00 wMean=1.00 high=0.00 mae=0.0 latch=false floorB=- floorA=- wBolus=0.00U wCob=?g reason=trace
@@ -7174,6 +7299,7 @@ READ key=BooleanKey.OApsAIMIT3cCfrdMode value=false
 READ key=BooleanKey.OApsAIMIT3cPhysioInformedEnabled value=false
 READ key=DoubleKey.OApsAIMIT3cAggressiveness value=1.00
 READ key=DoubleKey.OApsAIMIT3cAnticipationStrength value=0.00
+READ key=BooleanKey.OApsAIMIT3cTransitionGuard value=false
 LOG T3C_AD_BASAL: pi=3.00 ad=— fused=3.00 unlock=true (rise_no_tree) cap=3.00 step=1.00 smbStripped=0.00
 READ key=BooleanKey.OApsAIMIT3cHyperBasalFloor value=false
 LOG 🧭 BASAL_GOV[T3C]: action=KEEP conf=0.00 n=0 hypo=0.00 hypoG=0.00 hypoAdj=0.00 ant=0.00 wMean=1.00 high=0.00 mae=0.0 latch=false floorB=- floorA=- wBolus=0.00U wCob=?g reason=trace
@@ -7424,6 +7550,7 @@ SIGNAL ngrMember=1.00
             READ key=BooleanKey.AimiEndometriosisEnable value=false
             LOG 😴 SLEEP_LIVE: wearable steps15=0 hr=72/rhr=60 conf=0.57 conf=0.57
             READ key=DoubleKey.OApsAIMIT3cActivationThreshold value=140.00
+            READ key=BooleanKey.OApsAIMIT3cTransitionGuard value=false
             READ key=DoubleKey.OApsAIMISmbTailDamping value=0.25
             READ key=StringKey.AimiTuningContextSelection value=
             SIGNAL postHypoOrdinal=2
@@ -7452,6 +7579,7 @@ SIGNAL ngrMember=1.00
             READ key=BooleanKey.AimiEndometriosisEnable value=false
             LOG 😴 SLEEP_LIVE: wearable steps15=0 hr=72/rhr=60 conf=0.57 conf=0.57
             READ key=DoubleKey.OApsAIMIT3cActivationThreshold value=140.00
+            READ key=BooleanKey.OApsAIMIT3cTransitionGuard value=false
             READ key=DoubleKey.OApsAIMISmbTailDamping value=0.25
             READ key=StringKey.AimiTuningContextSelection value=
             SIGNAL postHypoOrdinal=0
