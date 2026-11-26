@@ -51,7 +51,7 @@ final class SwiftAppleWatchCompanion: NSObject, AppleWatchCompanion, WCSessionDe
 
     // MARK: AppleWatchCompanion
 
-    func start(callback: AppleWatchCallback) {
+    func start(watchCallback callback: AppleWatchCallback) {
         lock.lock()
         self.callback = callback
         let now = Date()

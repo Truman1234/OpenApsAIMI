@@ -92,7 +92,7 @@ class AppleWatchLinkTest {
         val states = mutableListOf<Pair<String, String>>()
         val live = mutableListOf<String>()
 
-        override fun start(callback: AppleWatchCallback) = Unit
+        override fun start(watchCallback: AppleWatchCallback) = Unit
 
         override fun sendState(key: String, json: String) {
             states.add(key to json)

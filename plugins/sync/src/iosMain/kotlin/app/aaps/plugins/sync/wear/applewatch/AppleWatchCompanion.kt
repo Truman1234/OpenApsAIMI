@@ -11,8 +11,14 @@ package app.aaps.plugins.sync.wear.applewatch
  */
 interface AppleWatchCompanion {
 
-    /** Called once when the plugin starts. [callback] stays valid until [stop]. */
-    fun start(callback: AppleWatchCallback)
+    /**
+     * Called once when the plugin starts. [watchCallback] stays valid until [stop].
+     *
+     * The parameter is not called `callback` on purpose: `LiveActivityCompanion` already has a
+     * `start(callback:)` with another type. Kotlin/Native then renames one of them in Objective-C
+     * (`start(callback_:)`), and the Swift class no longer matches the protocol.
+     */
+    fun start(watchCallback: AppleWatchCallback)
 
     /**
      * The newest value of one kind of data, for example the last glucose value. Swift keeps the newest
