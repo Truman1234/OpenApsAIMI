@@ -89,6 +89,8 @@ internal class GlassHomeViewModelTest {
             whenever(persistenceLayer.getBgReadingsDataFromTimeToTime(any(), any(), any())).thenReturn(emptyList())
             whenever(persistenceLayer.getStepsCountFromTimeToTime(any(), any())).thenReturn(emptyList())
             whenever(persistenceLayer.getHeartRatesFromTimeToTime(any(), any())).thenReturn(emptyList())
+            // The AIMI mode line reads the notes.
+            whenever(persistenceLayer.getTherapyEventDataFromTime(any(), any(), any())).thenReturn(emptyList())
         }
         whenever(activePlugin.activePump).thenReturn(pump)
         whenever(pump.reservoirLevel).thenReturn(MutableStateFlow(null))
