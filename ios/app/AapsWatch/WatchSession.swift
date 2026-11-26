@@ -1,5 +1,6 @@
 import Foundation
 import WatchConnectivity
+import WatchKit
 import os
 
 /// The watch side of WatchConnectivity, and everything the watch knows.
@@ -29,6 +30,8 @@ final class WatchSession: NSObject, ObservableObject {
     @Published private(set) var reachable = false
     /// When the last command was sent and its answer has not come yet.
     @Published private(set) var waitingSince: Date?
+    /// True for 2 seconds after the phone said it stored a confirmed command.
+    @Published private(set) var showDone = false
 
     private let session: WCSession? = WCSession.isSupported() ? WCSession.default : nil
 
@@ -92,8 +95,8 @@ final class WatchSession: NSObject, ObservableObject {
     func confirmed(_ request: ConfirmRequest) {
         confirm = nil
         guard !request.isInfoOnly, let raw = request.returnCommand else { return }
-        // A master runs the command at once and answers only with an error. A client waits for the master.
-        send(Command.json(raw: raw), expectsAnswer: request.deferConfirm)
+        // The phone answers with "delivered" when the command is stored, or with an error.
+        send(Command.json(raw: raw), expectsAnswer: true)
         if (raw["type"] as? String)?.hasSuffix(".RunningModeConfirmed") == true { refreshRunningModesLater() }
     }
 
@@ -171,10 +174,21 @@ final class WatchSession: NSObject, ObservableObject {
             confirm = nil
         case "RemoteDelivered":
             waitingSince = nil
+            showDoneBriefly()
         case "ContactingMaster":
             waitingSince = Date()
         default:
             break // Data the Apple Watch does not use (tiles, scenes, watch faces of Wear OS)
+        }
+    }
+
+    /// "Done" with a tap on the wrist, then it goes away by itself.
+    private func showDoneBriefly() {
+        showDone = true
+        WKInterfaceDevice.current().play(.success)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            showDone = false
         }
     }
 

@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-/// Three pages, swiped left and right: glucose, details, actions. The Digital Crown stays free for
+/// Four pages, swiped left and right: glucose, details, device ages, actions. The Digital Crown stays free for
 /// scrolling a page and for setting amounts. The layout follows the iAPS watch app (one glance page,
 /// then the rest); the code is our own.
 struct MainView: View {
@@ -13,6 +13,7 @@ struct MainView: View {
             TabView {
                 GlucosePage()
                 DetailsPage()
+                DevicesPage()
                 ActionsPage()
             }
             .tabViewStyle(.page)
@@ -29,6 +30,24 @@ struct MainView: View {
         .overlay {
             if let progress = session.bolusProgress { BolusProgressView(progress: progress) }
         }
+        .overlay {
+            if session.showDone { DoneView() }
+        }
+    }
+}
+
+/// Shown for 2 seconds when the phone has stored a confirmed command.
+private struct DoneView: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.green)
+            Text("Done").font(.headline)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.black.opacity(0.85))
+        .transition(.opacity)
     }
 }
 
@@ -131,6 +150,68 @@ private struct DkaBanner: View {
 }
 
 // MARK: Details
+
+/// The age of the sensor, the cannula, the reservoir and the pump battery, counted on the watch from the
+/// time of the last change. Orange and red use the user's own limits from the phone.
+private struct DevicesPage: View {
+
+    @EnvironmentObject private var session: WatchSession
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let status = session.status
+            Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+                GridRow {
+                    DeviceTile(title: "Sensor", icon: "sensor", age: status?.sensorAge, extra: nil, now: context.date)
+                    DeviceTile(title: "Cannula", icon: "syringe", age: status?.cannulaAge, extra: nil, now: context.date)
+                }
+                GridRow {
+                    DeviceTile(title: "Reservoir", icon: "cross.vial", age: status?.reservoirAge,
+                               extra: status?.reservoirString, now: context.date)
+                    DeviceTile(title: "Battery", icon: "battery.75", age: status?.batteryAge,
+                               extra: status?.battery, now: context.date)
+                }
+            }
+        }
+    }
+}
+
+private struct DeviceTile: View {
+
+    let title: LocalizedStringKey
+    let icon: String
+    let age: DeviceAge?
+    /// A second value under the age, like the reservoir level. Empty or nil shows nothing.
+    let extra: String?
+    let now: Date
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Label(title, systemImage: icon)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(age?.text(now: now) ?? "–")
+                .font(.title3.bold())
+                .foregroundStyle(color)
+            if let extra, !extra.isEmpty {
+                Text(extra).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(4)
+        .background(.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var color: Color {
+        switch age?.level(now: now) {
+        case .critical: return .red
+        case .warning: return .orange
+        default: return .white
+        }
+    }
+}
 
 private struct DetailsPage: View {
 

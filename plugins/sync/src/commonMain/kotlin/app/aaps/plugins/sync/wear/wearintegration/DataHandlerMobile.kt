@@ -268,7 +268,9 @@ class DataHandlerMobile(
         onControlEvent<EventData.OpenLoopRequestConfirmed> {
             if (rejectIfNotReady()) return@onControlEvent
             // A refused accept (loop paused, suggestion too old) must say so, or the watch shows it as done.
-            loop.acceptChangeRequest()?.let { sendError(it) }
+            val refusal = loop.acceptChangeRequest()
+            if (refusal != null) sendError(refusal)
+            else if (platform.reportsMasterSuccess) sendToWear(EventData.RemoteDelivered)
             platform.cancelOpenLoopNotification()
         }
         onEvent<EventData.ActionResendData> { resendData(it.from) }
@@ -1012,7 +1014,7 @@ class DataHandlerMobile(
         when (progress) {
             is ActionProgress.Applied -> {
                 onApplied()
-                if (config.AAPSCLIENT) sendToWear(EventData.RemoteDelivered)
+                if (config.AAPSCLIENT || platform.reportsMasterSuccess) sendToWear(EventData.RemoteDelivered)
             }
 
             else                      -> sendError(relayReason(progress))
@@ -1770,10 +1772,20 @@ class DataHandlerMobile(
                 dkaRisk = dka?.risk,
                 dkaReason = dka?.reason,
                 aimiMode = aimiMode?.let { rh.gs(it.mode.name) },
-                aimiModeEndsAt = aimiMode?.let { it.startedAt + it.durationMs }
+                aimiModeEndsAt = aimiMode?.let { it.startedAt + it.durationMs },
+                sensorAge = deviceAge(TE.Type.SENSOR_CHANGE, IntKey.OverviewSageWarning, IntKey.OverviewSageCritical),
+                cannulaAge = deviceAge(TE.Type.CANNULA_CHANGE, IntKey.OverviewCageWarning, IntKey.OverviewCageCritical),
+                reservoirAge = deviceAge(TE.Type.INSULIN_CHANGE, IntKey.OverviewIageWarning, IntKey.OverviewIageCritical),
+                batteryAge = deviceAge(TE.Type.PUMP_BATTERY_CHANGE, IntKey.OverviewBageWarning, IntKey.OverviewBageCritical)
             )
         )
     }
+
+    /** The last change of one device part with the user's age limits, or null when it was never logged. */
+    private suspend fun deviceAge(type: TE.Type, warningKey: IntKey, criticalKey: IntKey): EventData.DeviceAge? =
+        persistenceLayer.getLastTherapyRecordUpToNow(type)?.let {
+            EventData.DeviceAge(changedAt = it.timestamp, warningHours = preferences.get(warningKey), criticalHours = preferences.get(criticalKey))
+        }
 
     private fun deltaString(deltaMGDL: Double, deltaMMOL: Double, units: GlucoseUnit): String {
         var deltaString = if (deltaMGDL >= 0) "+" else "-"

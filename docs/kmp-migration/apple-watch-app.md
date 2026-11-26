@@ -261,8 +261,21 @@ MIT code may be used in this AGPL project.
       `ActionTempTargetPreCheck` `MANUAL` command with low = high; the phone checks the limits.
     - Both custom sheets: the system X (top left) cancels, ✓ (top right) sends, then the phone's normal
       confirmation follows. Wheels, not one swipe per step: a 12 h duration would need 48 swipes.
+    - Bolus and wizard use wheels too (0.05 U up to max bolus, 1 g up to max carbs), with ✓ top right.
+      The quick-add buttons are gone: a flick on the wheel is as fast and they did not fit.
+    - Device ages page (third page): sensor, cannula, reservoir and pump battery in a 2×2 grid, with the
+      reservoir level and battery under their ages. `EventData.Status` carries `DeviceAge(changedAt,
+      warningHours, criticalHours)` for each, from the last care entry and the user's overview age
+      limits (`IntKey.OverviewSage*`, `Cage*`, `Iage*`, `Bage*`). The watch counts the age itself and
+      colours it orange or red with the same rule as the phone's status lights.
+    - "Done" with a tap on the wrist for 2 s after the phone stored a confirmed command. The phone sends
+      `RemoteDelivered` also as a master when `WatchHandlerPlatform.reportsMasterSuccess` is true (iOS
+      only; a Wear OS watch on a master shows its own success at once, so Android keeps false). An
+      accepted open loop request answers the same way. After "Confirm" the watch always shows the
+      spinner until "Done" or an error.
     - The phone's glass dashboard shows the same AIMI mode line (`aimiActiveModeLine`, shared with
-      the AIMI dashboard).
+      the AIMI dashboard), in the header row of the BG chart between "BG" and the value. It hides
+      while a finger is on the chart, because the point text is longer then.
 5. **Complications** (separate, `apple-watch-complications.md`).
 
 Phases 1 and 2 also help Wear OS (DKA state on Android watches) and can be tested on both machines.

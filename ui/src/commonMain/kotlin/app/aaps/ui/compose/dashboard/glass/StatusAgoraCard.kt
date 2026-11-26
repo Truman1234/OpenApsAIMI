@@ -64,7 +64,7 @@ import kotlin.math.roundToInt
 private val NEUTRAL_DARK = Color(0xFF94A3B8)
 private val NEUTRAL_LIGHT = Color(0xFF64748B)
 private val LOOP_RUNNING_HALO = Color(0xFF22C55E)
-private val TEMP_TARGET_ACCENT = Color(0xFFF4D700)
+internal val TEMP_TARGET_ACCENT = Color(0xFFF4D700)
 
 // Only ever called for GlassPillLocation.BOTTOM_ROW entries (see the bottom-row filter below), but the
 // `when` must still cover every GlassPillId since top-grid IDs share the same enum.
@@ -281,19 +281,6 @@ internal fun StatusAgoraCard(
             linkBanner?.let { banner ->
                 Spacer(modifier = Modifier.height(8.dp))
                 CgmLinkBannerText(banner)
-            }
-
-            // The AIMI mode that runs now, the same line as the AIMI dashboard. Only while one runs.
-            state.activeModeText?.let { modeText ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = modeText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TEMP_TARGET_ACCENT,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
 
             val bottomRowPills = GLASS_PILL_CATALOG.filter { it.location == GlassPillLocation.BOTTOM_ROW && it.id in selectedPills }

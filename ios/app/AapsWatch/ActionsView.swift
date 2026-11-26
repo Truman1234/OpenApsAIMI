@@ -50,38 +50,38 @@ private struct BolusView: View {
 
     @EnvironmentObject private var session: WatchSession
     @Environment(\.dismiss) private var dismiss
-    @State private var insulin = 0.0
+    /// The amount in hundredths of a unit, so the wheel has no rounding problems.
+    @State private var hundredths = 0
 
-    private var maxBolus: Double { session.preferences?.maxBolus ?? 10 }
+    /// 0 to the phone's max bolus in steps of 0.05 U. The phone rounds to the pump step and caps again.
+    private var amounts: [Int] {
+        Array(stride(from: 0, through: Int(((session.preferences?.maxBolus ?? 10) * 100).rounded()), by: 5))
+    }
 
     var body: some View {
-        VStack(spacing: 6) {
-            Text(String(format: "%.2f U", insulin))
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .focusable()
-                .digitalCrownRotation($insulin, from: 0, through: maxBolus, by: 0.05, sensitivity: .low)
-            HStack {
-                ForEach(increments, id: \.self) { step in
-                    Button("+\(String(format: "%g", step))") { insulin = min(maxBolus, insulin + step) }
-                }
-            }
-            Button("Check on iPhone") {
-                session.bolus(insulin: rounded(insulin), carbs: 0)
-                dismiss()
-            }
-            .tint(.blue)
-            .disabled(insulin <= 0)
+        Picker("Bolus", selection: $hundredths) {
+            ForEach(amounts, id: \.self) { Text(insulinText($0)).tag($0) }
         }
+        .pickerStyle(.wheel)
+        .labelsHidden()
         .navigationTitle("Bolus")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    session.bolus(insulin: Double(hundredths) / 100, carbs: 0)
+                    dismiss()
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+                .accessibilityLabel("Check on iPhone")
+                .disabled(hundredths <= 0)
+            }
+        }
     }
 
-    private var increments: [Double] {
-        guard let p = session.preferences else { return [0.5, 1] }
-        return [p.insulinButtonIncrement1, p.insulinButtonIncrement2].filter { $0 > 0 }
+    private func insulinText(_ value: Int) -> String {
+        String(localized: "\((Double(value) / 100).formatted(.number.precision(.fractionLength(2)))) U")
     }
-
-    /// The crown moves in steps of 0.05, but a Double adds up small errors. The phone rounds to the pump step.
-    private func rounded(_ value: Double) -> Double { (value * 100).rounded() / 100 }
 }
 
 // MARK: Wizard
@@ -90,33 +90,29 @@ private struct WizardView: View {
 
     @EnvironmentObject private var session: WatchSession
     @Environment(\.dismiss) private var dismiss
-    @State private var carbs = 0.0
+    @State private var carbs = 0
 
-    private var maxCarbs: Double { Double(session.preferences?.maxCarbs ?? 100) }
+    /// 0 to the phone's max carbs in steps of 1 g.
+    private var amounts: [Int] { Array(0...max(0, session.preferences?.maxCarbs ?? 100)) }
 
     var body: some View {
-        VStack(spacing: 6) {
-            Text("\(Int(carbs)) g")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .focusable()
-                .digitalCrownRotation($carbs, from: 0, through: maxCarbs, by: 1, sensitivity: .medium)
-            HStack {
-                ForEach(increments, id: \.self) { step in
-                    Button("+\(step)") { carbs = min(maxCarbs, carbs + Double(step)) }
-                }
-            }
-            Button("Calculate on iPhone") {
-                session.wizard(carbs: Int(carbs), percentage: session.preferences?.bolusPercentage ?? 100)
-                dismiss()
-            }
-            .tint(.blue)
+        Picker("Carbs", selection: $carbs) {
+            ForEach(amounts, id: \.self) { Text("\($0) g").tag($0) }
         }
+        .pickerStyle(.wheel)
+        .labelsHidden()
         .navigationTitle("Wizard")
-    }
-
-    private var increments: [Int] {
-        guard let p = session.preferences else { return [10, 20] }
-        return [p.carbsButtonIncrement1, p.carbsButtonIncrement2].filter { $0 > 0 }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    session.wizard(carbs: carbs, percentage: session.preferences?.bolusPercentage ?? 100)
+                    dismiss()
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+                .accessibilityLabel("Calculate on iPhone")
+            }
+        }
     }
 }
 
@@ -210,7 +206,7 @@ private struct CustomAimiModeView: View {
             ForEach(modes) { mode in
                 VStack(spacing: 2) {
                     Label(mode.title, systemImage: mode.icon)
-                        .font(.headline)
+                        .font(.title3)
                     Picker("Duration", selection: duration(of: mode.id)) {
                         ForEach(customDurations, id: \.self) { Text(durationText($0)).tag($0) }
                     }

@@ -20,4 +20,11 @@ interface WatchHandlerPlatform {
      * request.
      */
     fun cancelOpenLoopNotification()
+
+    /**
+     * True when the watch wants to hear that a confirmed command was stored, also when this phone is the
+     * master. A Wear OS watch on a master shows its own success at once, so Android keeps false. The
+     * Apple Watch waits for the phone and shows "Done" only then.
+     */
+    val reportsMasterSuccess: Boolean get() = false
 }

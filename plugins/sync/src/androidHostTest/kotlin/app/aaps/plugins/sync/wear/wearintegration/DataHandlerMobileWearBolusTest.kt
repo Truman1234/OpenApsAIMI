@@ -39,6 +39,7 @@ import app.aaps.core.objects.wizard.QuickWizardEntry
 import app.aaps.core.objects.wizard.QuickWizardMode
 import app.aaps.shared.tests.TestBaseWithProfile
 import com.google.common.truth.Truth.assertThat
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -317,6 +318,29 @@ class DataHandlerMobileWearBolusTest : TestBaseWithProfile() {
         val sent = capturedConfirm { sut.handleAimiModePreCheck(EventData.ActionAimiModePreCheck("sleep", durationMinutes = 735)) }
         verifyBlocking(batchExecutor, never()) { prepare(any(), any(), any()) }
         assertThat(sent.returnCommand).isInstanceOf(EventData.Error::class.java)
+    }
+    @Test fun `a stored command is reported to an Apple Watch also on a master`() {
+        whenever(watchHandlerPlatform.reportsMasterSuccess).thenReturn(true)
+        val sent = sentAfterAimiCommit(41L, waitForDelivered = true)
+        assertThat(sent).contains(EventData.RemoteDelivered)
+    }
+    @Test fun `a Wear OS watch on a master gets no delivered answer, it shows success itself`() {
+        // config.AAPSCLIENT is false and the mock platform says false.
+        val sent = sentAfterAimiCommit(42L, waitForDelivered = false)
+        assertThat(sent).doesNotContain(EventData.RemoteDelivered)
+    }
+    /** Confirms an AIMI mode through the bus and returns what the phone sent to the watch afterwards. */
+    private fun sentAfterAimiCommit(bolusId: Long, waitForDelivered: Boolean): List<EventData> {
+        runBlocking { whenever(batchExecutor.commit(any(), any(), any(), any())).thenReturn(ActionProgress.Applied) }
+        val sent = CopyOnWriteArrayList<EventData>()
+        val job = collectMobileToWear { sent += it }
+        rxBus.send(EventData.ActionAimiModeConfirmed(bolusId))
+        verifyBlocking(batchExecutor, timeout(2000)) { commit(eq(bolusId), any(), any(), any()) }
+        // The answer goes out after commit() returns, on the handler's own coroutine.
+        val end = System.currentTimeMillis() + if (waitForDelivered) 2000 else 300
+        while (System.currentTimeMillis() < end && !(waitForDelivered && EventData.RemoteDelivered in sent)) Thread.sleep(10)
+        job.cancel()
+        return sent.toList()
     }
     @Test fun `a mode the watch does not offer is refused without a relay`() = runTest {
         whenever(rh.gs(any<TextRef>(), anyVararg())).thenReturn("Unknown AIMI mode")

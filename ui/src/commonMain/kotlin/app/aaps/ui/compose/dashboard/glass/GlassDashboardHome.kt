@@ -325,6 +325,7 @@ internal fun GlassOverviewContent(
                 maxBasalRateUh = chartState.maxBasalRateUh,
                 formatValue = formatBgValue,
                 isDark = isDark,
+                modeText = state.activeModeText,
             )
             // The insulin-only curve goes low within the hour: a labelled possibility under the chart,
             // never an alarm (see DisplayForecast.lowRisk).

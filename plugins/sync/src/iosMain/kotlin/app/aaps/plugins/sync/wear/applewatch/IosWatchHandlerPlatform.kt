@@ -21,6 +21,9 @@ class IosWatchHandlerPlatform : WatchHandlerPlatform {
      */
     override fun isDarkTheme(): Boolean = true
 
+    /** True: the Apple Watch shows "Done" when the phone has stored a command, not before. */
+    override val reportsMasterSuccess: Boolean = true
+
     /** Removes the notification `IosLoopNotifier` posts for an open loop suggestion. */
     override fun cancelOpenLoopNotification() {
         val ids = listOf(LOOP_NOTIFICATION_ID)

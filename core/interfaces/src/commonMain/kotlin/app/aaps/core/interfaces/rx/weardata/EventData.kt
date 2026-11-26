@@ -483,8 +483,21 @@ sealed class EventData : Event() {
         // The AIMI mode that runs now (a meal, sport, sleep ...), the newest one: its name, ready to show, and when it
         // ends (epoch ms). Null when none runs, or from an older sender.
         val aimiMode: String? = null,
-        val aimiModeEndsAt: Long? = null
+        val aimiModeEndsAt: Long? = null,
+        // When the sensor, the cannula, the reservoir and the pump battery were last changed, with the user's
+        // warning limits, so the watch can count the age itself. Null when never logged, or from an older sender.
+        val sensorAge: DeviceAge? = null,
+        val cannulaAge: DeviceAge? = null,
+        val reservoirAge: DeviceAge? = null,
+        val batteryAge: DeviceAge? = null
     ) : EventData(), EventDataSet
+
+    /**
+     * The last change of a device part (a care entry) for [Status]. [changedAt] is epoch ms. [warningHours] and
+     * [criticalHours] are the user's limits for this part (the overview status lights use the same ones).
+     */
+    @Serializable
+    data class DeviceAge(val changedAt: Long, val warningHours: Int, val criticalHours: Int)
 
     @Serializable
     data class Preferences(
@@ -645,7 +658,9 @@ sealed class EventData : Event() {
 
     /**
      * Mobile→Wear: terminal for a deferred (relayed) commit that the master APPLIED — the watch shows its success
-     * animation now (it deferred it on ✓). Only sent on an AAPSCLIENT; a master-paired watch shows success locally.
+     * animation now (it deferred it on ✓). Sent on an AAPSCLIENT; a Wear OS watch on a master shows success locally.
+     * The iPhone also sends it as a master, because the Apple Watch shows "Done" only after the phone stored the
+     * command (`WatchHandlerPlatform.reportsMasterSuccess`).
      */
     @Serializable
     data object RemoteDelivered : EventData()

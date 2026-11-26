@@ -55,6 +55,10 @@ struct Status: Decodable {
     let aimiMode: String?
     /// When the running AIMI mode ends, in ms since 1970.
     let aimiModeEndsAt: Int64?
+    let sensorAge: DeviceAge?
+    let cannulaAge: DeviceAge?
+    let reservoirAge: DeviceAge?
+    let batteryAge: DeviceAge?
 
     /// The time of the last loop run, or nil when there was none.
     var lastLoop: Date? { openApsStatus > 0 ? Date(timeIntervalSince1970: Double(openApsStatus) / 1000) : nil }
@@ -67,6 +71,34 @@ struct Status: Decodable {
         guard let aimiMode, let aimiModeEndsAt else { return nil }
         let left = Int((Double(aimiModeEndsAt) / 1000 - now.timeIntervalSince1970) / 60)
         return left > 0 ? String(localized: "\(aimiMode) · \(left) min") : nil
+    }
+}
+
+/// The last change of a device part (Kotlin `EventData.DeviceAge`), with the user's limits in hours.
+struct DeviceAge: Decodable {
+    let changedAt: Int64
+    let warningHours: Int
+    let criticalHours: Int
+
+    enum Level { case normal, warning, critical }
+
+    func age(now: Date) -> TimeInterval { max(0, now.timeIntervalSince1970 - Double(changedAt) / 1000) }
+
+    /// The same test as the phone's status lights: whole hours against the limits.
+    func level(now: Date) -> Level {
+        let hours = Int(age(now: now) / 3600)
+        if hours >= criticalHours { return .critical }
+        if hours >= warningHours { return .warning }
+        return .normal
+    }
+
+    /// The two largest units: "5d 3h", "3h 20m" or "45m".
+    func text(now: Date) -> String {
+        let minutes = Int(age(now: now) / 60)
+        let days = minutes / 1440, hours = minutes % 1440 / 60, rest = minutes % 60
+        if days > 0 { return String(localized: "\(days)d \(hours)h") }
+        if hours > 0 { return String(localized: "\(hours)h \(rest)m") }
+        return String(localized: "\(rest)m")
     }
 }
 
@@ -97,8 +129,6 @@ struct ConfirmRequest: Identifiable {
     let message: String
     let lines: [ConfirmLine]
     let returnCommand: [String: Any]?
-    /// True when the phone is an AAPS client: the result comes later from the master.
-    let deferConfirm: Bool
 
     /// Only an OK button: an error, or a message with nothing to confirm.
     var isInfoOnly: Bool {
@@ -112,7 +142,6 @@ struct ConfirmRequest: Identifiable {
         self.title = title
         message = json["message"] as? String ?? ""
         returnCommand = json["returnCommand"] as? [String: Any]
-        deferConfirm = json["deferConfirm"] as? Bool ?? false
         lines = (json["lines"] as? [[String: Any]] ?? []).compactMap { line in
             guard let role = line["role"] as? String, let text = line["text"] as? String else { return nil }
             return ConfirmLine(role: role, text: text)
