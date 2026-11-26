@@ -7,8 +7,17 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.UtcOffset
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toInstant
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 /*
 * Depending on the type, different other fields are present.
@@ -30,6 +39,7 @@ internal data class RemoteTreatment(
     val timestamp: Long? = null,          // integer($int64) or string required timestamp when the record or event occurred, you can choose from three input formats Unix  epoch in milliseconds (1525383610088), Unix epoch in seconds (1525383610), ISO 8601 with optional timezone ('2018-05-03T21:40:10.088Z' or '2018-05-03T23:40:10.088+02:00')
     @SerialName("created_at") val created_at: String? = null,       // integer($int64) or string timestamp on previous version of api, in my examples, a lot of treatments don't have date, only created_at, some of them with string others with long...
     @SerialName("utcOffset")
+    @Serializable(with = WholeLongSerializer::class)
     var utcOffset: Long? = null,          // integer Local UTC offset (timezone) of the event in minutes. This field can be set either directly by the client (in the incoming document) or it is automatically parsed from the date field.
     @SerialName("app") var app: String? = null,                   // Application or system in which the record was entered by human or device for the first time.
     @SerialName("device") val device: String? = null,              // string The device from which the data originated (including serial number of the device, if it is relevant and safe).
@@ -48,16 +58,16 @@ internal data class RemoteTreatment(
     @SerialName("glucoseType") val glucoseType: String? = null,    // string example: "Sensor", "Finger", "Manual"
     @SerialName("units") val units: String? = null,                // string The units for the glucose value, mg/dl or mmol/l. It is strongly recommended to fill in this field.
     @SerialName("carbs") val carbs: Double? = null,                // number... Amount of carbs given.
-    @SerialName("protein") val protein: Int? = null,               // number... Amount of protein given.
-    @SerialName("fat") val fat: Int? = null,                       // number... Amount of fat given.
+    @SerialName("protein") @Serializable(with = WholeIntSerializer::class) val protein: Int? = null, // number... Amount of protein given.
+    @SerialName("fat") @Serializable(with = WholeIntSerializer::class) val fat: Int? = null,       // number... Amount of fat given.
     @SerialName("insulin") val insulin: Double? = null,            // number... Amount of insulin, if any.
-    /** Duration in minutes */
-    @SerialName("duration") val duration: Long? = null,             // number... Duration in minutes.
-    /** Duration in milliseconds */
-    @SerialName("durationInMilliseconds") val durationInMilliseconds: Long? = null, // number... Duration in milliseconds.
-    @SerialName("preBolus") val preBolus: Int? = null,             // number... How many minutes the bolus was given before the meal started.
-    @SerialName("splitNow") val splitNow: Int? = null,             // number... Immediate part of combo bolus (in percent).
-    @SerialName("splitExt") val splitExt: Int? = null,             // number... Extended part of combo bolus (in percent).
+    /** Duration in minutes. Read as [WholeWireDurationSerializer]: an integral decimal and "no end" both survive. */
+    @SerialName("duration") @Serializable(with = WholeWireDurationSerializer::class) val duration: Long? = null, // number... Duration in minutes.
+    /** Duration in milliseconds. [Long.MAX_VALUE] ("no end") travels through JavaScript, see [WireDurationSerializer]. */
+    @SerialName("durationInMilliseconds") @Serializable(with = WholeWireDurationSerializer::class) val durationInMilliseconds: Long? = null, // number... Duration in milliseconds.
+    @SerialName("preBolus") @Serializable(with = WholeIntSerializer::class) val preBolus: Int? = null, // number... How many minutes the bolus was given before the meal started.
+    @SerialName("splitNow") @Serializable(with = WholeIntSerializer::class) val splitNow: Int? = null, // number... Immediate part of combo bolus (in percent).
+    @SerialName("splitExt") @Serializable(with = WholeIntSerializer::class) val splitExt: Int? = null, // number... Extended part of combo bolus (in percent).
     @SerialName("percent") val percent: Double? = null,            // number... Eventual basal change in percent.
     @SerialName("absolute") val absolute: Double? = null,          // number... Eventual basal change in absolute value (insulin units per hour).
     @SerialName("targetTop") val targetTop: Double? = null,        // number... Top limit of temporary target.
@@ -72,8 +82,8 @@ internal data class RemoteTreatment(
     @SerialName("notes") val notes: String? = null,                // string Description/notes of treatment.
     @SerialName("enteredBy") val enteredBy: String? = null,        // string Who entered the treatment.
 
-    @SerialName("endId") val endId: Long? = null,                  // long id of record which ended this
-    @SerialName("pumpId") val pumpId: Long? = null,                // long or "Meal Bolus", "Correction Bolus", "Combo Bolus" ex  4102 not sure if long or int
+    @SerialName("endId") @Serializable(with = WholeLongSerializer::class) val endId: Long? = null, // long id of record which ended this
+    @SerialName("pumpId") @Serializable(with = WholeLongSerializer::class) val pumpId: Long? = null, // long or "Meal Bolus", "Correction Bolus", "Combo Bolus" ex  4102 not sure if long or int
     @SerialName("pumpType") val pumpType: String? = null,          // string "Meal Bolus", "Correction Bolus", "Combo Bolus" ex "ACCU_CHEK_INSIGHT_BLUETOOTH",
     @SerialName("pumpSerial") val pumpSerial: String? = null,      // string "Meal Bolus", "Correction Bolus", "Combo Bolus" "33013206",
 
@@ -82,10 +92,11 @@ internal data class RemoteTreatment(
     // \"sens\":[{\"time\":\"00:00\",\"timeAsSeconds\":0,\"value\":60},{\"time\":\"07:00\",\"timeAsSeconds\":25200,\"value\":60},{\"time\":\"08:00\",\"timeAsSeconds\":28800,\"value\":61.33333333333333},{\"time\":\"09:00\",\"timeAsSeconds\":32400,\"value\":65.33333333333333},{\"time\":\"10:00\",\"timeAsSeconds\":36000,\"value\":69.33333333333333},{\"time\":\"11:00\",\"timeAsSeconds\":39600,\"value\":73.33333333333333},{\"time\":\"13:00\",\"timeAsSeconds\":46800,\"value\":72},{\"time\":\"14:00\",\"timeAsSeconds\":50400,\"value\":68},{\"time\":\"15:00\",\"timeAsSeconds\":54000,\"value\":65.33333333333333},{\"time\":\"16:00\",\"timeAsSeconds\":57600,\"value\":65.33333333333333}],\"carbratio\":[{\"time\":\"00:00\",\"timeAsSeconds\":0,\"value\":5.7333333333333325},{\"time\":\"11:00\",\"timeAsSeconds\":39600,\"value\":7.333333333333333},{\"time\":\"16:00\",\"timeAsSeconds\":57600,\"value\":6.666666666666666}],\"basal\":[{\"time\":\"00:00\",\"timeAsSeconds\":0,\"value\":0.5249999999999999},{\"time\":\"01:00\",\"timeAsSeconds\":3600,\"value\":0.585},{\"time\":\"02:00\",\"timeAsSeconds\":7200,\"value\":0.6375},{\"time\":\"03:00\",\"timeAsSeconds\":10800,\"value\":0.5625},{\"time\":\"04:00\",\"timeAsSeconds\":14400,\"value\":0.4575},{\"time\":\"05:00\",\"timeAsSeconds\":18000,\"value\":0.5175},{\"time\":\"06:00\",\"timeAsSeconds\":21600,\"value\":0.48},{\"time\":\"07:00\",\"timeAsSeconds\":25200,\"value\":0.51},{\"time\":\"08:00\",\"timeAsSeconds\":28800,\"value\":0.48750000000000004},{\"time\":\"09:00\",\"timeAsSeconds\":32400,\"value\":0.48},{\"time\":\"10:00\",\"timeAsSeconds\":36000,\"value\":0.48750000000000004},{\"time\":\"11:00\",\"timeAsSeconds\":39600,\"value\":0.5025000000000001},{\"time\":\"12:00\",\"timeAsSeconds\":43200,\"value\":0.5549999999999999},{\"time\":\"13:00\",\"timeAsSeconds\":46800,\"value\":0.5700000000000001},{\"time\":\"14:00\",\"timeAsSeconds\":50400,\"value\":0.5700000000000001},{\"time\":\"15:00\",\"timeAsSeconds\":54000,\"value\":0.5775},{\"time\":\"16:00\",\"timeAsSeconds\":57600,\"value\":0.51},{\"time\":\"17:00\",\"timeAsSeconds\":61200,\"value\":0.54},{\"time\":\"18:00\",\"timeAsSeconds\":64800,\"value\":0.48750000000000004},{\"time\":\"19:00\",\"timeAsSeconds\":68400,\"value\":0.5249999999999999},{\"time\":\"20:00\",\"timeAsSeconds\":72000,\"value\":0.46499999999999997},{\"time\":\"21:00\",\"timeAsSeconds\":75600,\"value\":0.46499999999999997},{\"time\":\"22:00\",\"timeAsSeconds\":79200,\"value\":0.43499999999999994},{\"time\":\"23:00\",\"timeAsSeconds\":82800,\"value\":0.41250000000000003}],\"target_low\":[{\"time\":\"00:00\",\"timeAsSeconds\":0,\"value\":100},{\"time\":\"06:00\",\"timeAsSeconds\":21600,\"value\":90},{\"time\":\"09:00\",\"timeAsSeconds\":32400,\"value\":100},{\"time\":\"11:00\",\"timeAsSeconds\":39600,\"value\":90},{\"time\":\"14:00\",\"timeAsSeconds\":50400,\"value\":100},{\"time\":\"18:00\",\"timeAsSeconds\":64800,\"value\":90},{\"time\":\"21:00\",\"timeAsSeconds\":75600,\"value\":100}],\"target_high\":[{\"time\":\"00:00\",\"timeAsSeconds\":0,\"value\":100},{\"time\":\"06:00\",\"timeAsSeconds\":21600,\"value\":90},{\"time\":\"09:00\",\"timeAsSeconds\":32400,\"value\":100},{\"time\":\"11:00\",\"timeAsSeconds\":39600,\"value\":90},{\"time\":\"14:00\",\"timeAsSeconds\":50400,\"value\":100},{\"time\":\"18:00\",\"timeAsSeconds\":64800,\"value\":90},{\"time\":\"21:00\",\"timeAsSeconds\":75600,\"value\":100}]}",
     @SerialName("originalProfileName") val originalProfileName: String? = null, // string "Effective Profile Switch"
     @SerialName("originalCustomizedName") val originalCustomizedName: String? = null, // string "Effective Profile Switch"
-    @SerialName("originalTimeshift") val originalTimeshift: Long? = null,  // long "Effective Profile Switch"
-    @SerialName("originalPercentage") val originalPercentage: Int? = null, // int "Effective Profile Switch"
-    @SerialName("originalDuration") val originalDuration: Long? = null,    // long "Effective Profile Switch", RunningMode
-    @SerialName("originalEnd") val originalEnd: Long? = null,              // long "Effective Profile Switch"
+    @SerialName("originalTimeshift") @Serializable(with = WholeLongSerializer::class) val originalTimeshift: Long? = null,  // long "Effective Profile Switch"
+    @SerialName("originalPercentage") @Serializable(with = WholeIntSerializer::class) val originalPercentage: Int? = null, // int "Effective Profile Switch"
+    /** In milliseconds. [Long.MAX_VALUE] ("no end") travels through JavaScript, see [WireDurationSerializer]. */
+    @SerialName("originalDuration") @Serializable(with = WholeWireDurationSerializer::class) val originalDuration: Long? = null,    // long "Effective Profile Switch", RunningMode
+    @SerialName("originalEnd") @Serializable(with = WholeLongSerializer::class) val originalEnd: Long? = null,              // long "Effective Profile Switch"
     @SerialName("icfg") val iCfg: RemoteICfg? = null,              // long "Effective Profile Switch"
 
     @SerialName("bolusCalculatorResult")
@@ -98,8 +109,8 @@ internal data class RemoteTreatment(
     @SerialName("isAnnouncement") val isAnnouncement: Boolean? = null,      // boolean "Announcement"
     @SerialName("rate") val rate: Double? = null,                          // Double "Temp Basal" absolute rate (could be calculated with percent and profile information...)
     @SerialName("extendedEmulated") var extendedEmulated: RemoteTreatment? = null,  // Gson of emulated EB
-    @SerialName("timeshift") val timeshift: Long? = null,                   // integer "Profile Switch"
-    @SerialName("percentage") val percentage: Int? = null,                 // integer "Profile Switch"
+    @SerialName("timeshift") @Serializable(with = WholeLongSerializer::class) val timeshift: Long? = null, // integer "Profile Switch"
+    @SerialName("percentage") @Serializable(with = WholeIntSerializer::class) val percentage: Int? = null, // integer "Profile Switch"
     @SerialName("isBasalInsulin") val isBasalInsulin: Boolean? = null      // boolean "Bolus"
 ) {
 
@@ -195,3 +206,40 @@ private val OFFSET_AT_END = Regex("""[+-]\d{2}:?\d{2}$""")
 /** `+0200` -> `+02:00`; already-correct input is returned unchanged. */
 private fun withOffsetColon(offset: String): String =
     if (offset.contains(':')) offset else offset.substring(0, 3) + ":" + offset.substring(3)
+
+/**
+ * A duration on the Nightscout wire that keeps both rules:
+ *
+ * - [WireDurationSerializer]: "no end" ([Long.MAX_VALUE]) is written so that it survives JavaScript and
+ *   is read back as [Long.MAX_VALUE].
+ * - [WholeLongSerializer]: an integral decimal, like `"duration": 30.0` from another uploader, is read
+ *   as 30. A fraction like `30.5` is still an error, and the document is left out.
+ *
+ * An integral decimal below [JS_MAX_SAFE_INTEGER] is turned into a plain whole number first. Everything
+ * else goes to [WireDurationSerializer] unchanged, so its rules for large numbers, strings and errors
+ * stay exactly as they are.
+ */
+internal object WholeWireDurationSerializer : KSerializer<Long> {
+
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("app.aaps.core.nssdk.WholeWireDuration", PrimitiveKind.LONG)
+
+    override fun serialize(encoder: Encoder, value: Long) = WireDurationSerializer.serialize(encoder, value)
+
+    override fun deserialize(decoder: Decoder): Long {
+        if (decoder !is JsonDecoder) return WireDurationSerializer.deserialize(decoder)
+        val element = decoder.decodeJsonElement()
+        return decoder.json.decodeFromJsonElement(WireDurationSerializer, integralDecimalAsWhole(element))
+    }
+}
+
+/** `30.0` or `"30.0"` -> `30`. Any other value is returned unchanged. */
+private fun integralDecimalAsWhole(element: JsonElement): JsonElement {
+    val primitive = element as? JsonPrimitive ?: return element
+    if (primitive.content.toLongOrNull() != null) return element
+    val number = primitive.content.toDoubleOrNull() ?: return element
+    val limit = JS_MAX_SAFE_INTEGER.toDouble()
+    if (!number.isFinite() || number >= limit || number <= -limit) return element
+    val whole = number.toLong()
+    return if (whole.toDouble() == number) JsonPrimitive(whole) else element
+}

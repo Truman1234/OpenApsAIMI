@@ -19,12 +19,15 @@ import app.aaps.core.ui.compose.ToolbarConfig
 import app.aaps.core.ui.compose.dialogs.OkCancelDialog
 import app.aaps.core.ui.compose.dialogs.OkDialog
 import app.aaps.core.ui.compose.insulin.SelectInsulin
+import app.aaps.core.ui.compose.pump.KeepScreenOnEffect
 import app.aaps.core.ui.compose.pump.ProfileGateWizardStep
 import app.aaps.core.ui.compose.pump.WizardButton
 import app.aaps.core.ui.compose.pump.WizardScreen
 import app.aaps.core.ui.compose.pump.WizardStepLayout
 import app.aaps.core.ui.compose.siteRotation.SiteLocationWizardStep
 import app.aaps.core.ui.compose.stringResource
+import app.aaps.pump.medtrum.compose.leaveQuestionFor
+import app.aaps.pump.medtrum.compose.LeaveQuestion
 import app.aaps.pump.medtrum.MedtrumStrings
 import app.aaps.pump.medtrum.code.PatchStep
 import app.aaps.pump.medtrum.compose.steps.ActivateState
@@ -64,9 +67,17 @@ fun MedtrumPatchWizardScreen(
     val progress by model.progress.collectAsStateWithLifecycle()
     var confirmDeactivation by remember { mutableStateOf(false) }
 
+    // Filling, priming and activating take minutes, and the person's hands are busy with the patch
+    KeepScreenOnEffect()
+
     LaunchedEffect(step) {
         if (step == PatchStep.COMPLETE || step == PatchStep.CANCEL) onClose()
     }
+
+    // The same question as the Android wizard: a deactivation asks about the deactivation, and the first
+    // and last deactivation pages leave at once. See leaveQuestionFor.
+    val leaveQuestion = step?.let { leaveQuestionFor(it) } ?: LeaveQuestion.ACTIVATION
+    val deactivation = leaveQuestion == LeaveQuestion.DEACTIVATION
 
     WizardScreen(
         currentStep = step,
@@ -74,8 +85,9 @@ fun MedtrumPatchWizardScreen(
         currentStepIndex = progress.first,
         canGoBack = step in stepsThatMayBeLeft,
         onBack = { model.cancel() },
-        cancelDialogTitle = stringResource(MedtrumStrings.change_patch_label),
-        cancelDialogText = stringResource(MedtrumStrings.cancel_sure),
+        cancelDialogTitle = stringResource(if (deactivation) MedtrumStrings.step_deactivate else MedtrumStrings.change_patch_label),
+        cancelDialogText = stringResource(if (deactivation) MedtrumStrings.cancel_deactivation_sure else MedtrumStrings.cancel_sure),
+        askBeforeLeaving = leaveQuestion != LeaveQuestion.NONE,
         title = step?.let { stringResource(titleOf(it)) } ?: "",
         setToolbarConfig = setToolbarConfig,
         stepContent = { current, onCancel ->
@@ -91,14 +103,18 @@ fun MedtrumPatchWizardScreen(
                     onCancel = onCancel
                 )
 
-                // The session moves on by itself once the pump says the patch is filled, so there is
-                // no FILLED page here: the page waits, or shows why it stopped.
+                // The pump says FILLED from about 70 U on, while the person may still be filling. As on
+                // Android, the page then offers Next and waits: the person says when they are done.
                 PatchStep.PREPARE_PATCH_CONNECT    -> PrepareStepContent(
-                    state = if (failure != null) PrepareState.ERROR else PrepareState.CONNECTING,
+                    state = when {
+                        failure != null -> PrepareState.ERROR
+                        pump.filled     -> PrepareState.FILLED
+                        else            -> PrepareState.CONNECTING
+                    },
                     reservoirLevel = pump.reservoir,
                     pumpState = failure ?: pump.pumpState,
                     onNext = {},
-                    onFilled = {},
+                    onFilled = model::confirmFilled,
                     onRetry = model::connectAndWaitForFill,
                     onCancel = onCancel
                 )

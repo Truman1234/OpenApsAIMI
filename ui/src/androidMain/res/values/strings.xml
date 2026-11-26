@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="dashboard_glass_nav_profiles">Profiles</string>
     <string name="dashboard_v2_nav_bolus">Bolus</string>
     <string name="dashboard_glass_pump_status_line" comment="Pump line of the Glass home, kept short to fit one row on a small phone. %1$s=insulin left in the pump (example: 120.00 U; read aloud it may be followed by Pump unreachable), %2$s=age of the cannula (example: 2d5h), %3$s=age of the sensor (example: 6d3h)">Pump: %1$s | Site %2$s | Sensor %3$s</string>
     <string name="dashboard_glass_pump_reservoir_unreachable" comment="Read aloud by a screen reader only. %1$s=reservoir level (example: 120.00 U), %2$s=the text Pump unreachable">%1$s %2$s</string>
@@ -17,7 +16,7 @@
     <string name="dashboard_glass_loop_delta_5m_label" comment="e.g. -1.20 5m delta">5m delta</string>
     <string name="dashboard_glass_loop_delta_avg_label">DELTA (SHORT / LONG)</string>
     <string name="dashboard_glass_loop_delta_avg_hint">5m / 15m avg</string>
-    <string name="dashboard_glass_loop_iob_label">IOB</string>
+    <string name="dashboard_glass_loop_iob_label">IOB APS</string>
     <string name="dashboard_glass_loop_iob_hint">Active Insulin</string>
     <string name="dashboard_glass_loop_target_label">TARGET</string>
     <string name="dashboard_glass_loop_tdd_label">TDD 7 Days</string>
@@ -104,6 +103,7 @@
     <string name="dashboard_glass_activity_value" comment="%1$s=step count today e.g. 4200, %2$s=heart rate in bpm e.g. 72. Example: 4200 · 72 bpm">%1$s · %2$s bpm</string>
     <string name="dashboard_glass_tools_label">Tools</string>
     <string name="dashboard_glass_stats_button" comment="Short button label that opens the statistics screen">Stats</string>
+    <string name="forecast_low_possible" comment="Short note under the glucose chart. Shown when the curve of active insulin alone goes low within one hour. A possibility, not an alarm.">Low possible if nothing more is absorbed</string>
     <string name="dashboard_glass_delta" comment="Glucose change. %1$s=signed change in the user unit. Example: Δ +5">Δ %1$s</string>
     <string name="dashboard_glass_tir_empty" comment="TIR = time in range. Shown early in the day, when there is not enough data yet.">TIR --</string>
     <string name="dashboard_glass_tir_value" comment="TIR = time in range today. %1$s=percent. Example: TIR 78%">TIR %1$s</string>
@@ -355,7 +355,7 @@
     <string name="user_entry">User entry</string>
     <string name="clone_label">Clone</string>
     <string name="a11y_bg_graph_summary" comment="Screen-reader description of the glucose graph, which is drawn and so cannot be read otherwise. %1$s=the recent glucose values newest first, already joined and carrying their unit, %2$s=insulin on board with its label, %3$s=carbs on board with its label. Example: Glucose graph. Recent values 7.2, 7.0, 6.8. IOB: 1.20 U. COB: 45 g">Glucose graph. Recent values %1$s. %2$s. %3$s</string>
-    <string name="a11y_show_controls" comment="Screen-reader name of the invisible area that brings back the top bar, menu and toolbar on a short screen, where they hide by themselves.">Show controls</string>
+    <string name="a11y_show_controls" comment="Screen-reader action of the overview that brings back the top bar, menu and toolbar on a short screen, where they hide by themselves.">Show controls</string>
     <string name="a11y_notifications" comment="Screen-reader name of the notification button on the main screen. %1$d=number of notifications. Example: Notifications: 3">Notifications: %1$d</string>
     <string name="a11y_tt_none" comment="Screen-reader state of the temp target chip when no temp target is running; the chip then shows the profile target.">no temp target, profile target</string>
     <string name="a11y_tt_adjusted" comment="Screen-reader state of the temp target chip when the loop has changed the target; on screen this is only a colour.">adjusted by the loop</string>
@@ -376,7 +376,6 @@
     <string name="a11y_prediction_name_uam" comment="Spoken name of the prediction for a meal the user did not enter. UAM is the term AAPS users know.">UAM prediction</string>
     <string name="a11y_prediction_name_zt" comment="Spoken name of the prediction for what happens with no insulin at all, the zero-temp curve.">Zero temp prediction</string>
     <string name="a11y_badge_attention" comment="Screen-reader state of a navigation button that carries a warning badge. On screen the badge is a dot or an exclamation mark, which a screen reader cannot see at all.">action needed</string>
-    <string name="a11y_badge_available" comment="Screen-reader state of a navigation button whose badge counts what the user can start right now. %1$d=the count. Example: 3 available">%1$d available</string>
     <string name="a11y_objectives_progress" comment="Screen-reader state of the Objectives navigation button, whose badge shows progress. %1$d=objectives finished, %2$d=objectives in total. Example: 9 of 10 done">%1$d of %2$d done</string>
     <string name="execute_label" comment="Button that runs the selected quick wizard, which delivers its bolus.">Execute</string>
     <string name="add_new_profile">Add new profile</string>
@@ -810,30 +809,33 @@
     <!-- CGM warm-up and second sensor rows in the Overview status card -->
     <string name="overview_cgm_warmup_label">Warm-up</string>
     <string name="overview_cgm_warmup_waiting" comment="Shown in the warm-up row when the time left is not known yet">Waiting</string>
-    <string name="overview_second_sensor_label" comment="A second CGM sensor that warms up next to the one in use, before the loop switches to it">New sensor</string>
+    <string name="overview_second_sensor_label" comment="A second CGM sensor that warms up next to the one in use, before the loop switches to it">Pre-soak sensor</string>
     <string name="overview_second_sensor_warmup">Warming up</string>
-    <string name="overview_second_sensor_ready_in" comment="%1$s=whole hours before the new sensor may be used by the loop, with its unit. Example: Ready in 8 h">Ready in %1$s</string>
+    <string name="overview_second_sensor_ready_in" comment="%1$s=whole hours before the pre-soak sensor may be used by the loop, with its unit. Example: Ready in 8 h">Ready in %1$s</string>
     <string name="overview_second_sensor_waiting_readings">Waiting for readings</string>
     <string name="overview_second_sensor_ready">Ready to switch</string>
-    <string name="overview_second_sensor_readings" comment="%1$d=number of valid glucose readings the new sensor has sent so far. Example: Readings: 12">Readings: %1$d</string>
-    <string name="overview_second_sensor_switch" comment="Button: the loop uses the new sensor from now on">Switch</string>
-    <string name="overview_second_sensor_switch_confirm">Use the new sensor for the loop from now on? The loop stops using the sensor it uses now.</string>
-    <string name="overview_second_sensor_switch_ok">The loop now uses the new sensor.</string>
-    <string name="overview_second_sensor_switch_ok_calibration_failed">Calibrations you entered for the old sensor could not be removed, so they may still be used for the new sensor. Check your calibrations.</string>
-    <string name="overview_second_sensor_switch_ok_connect_failed">The loop now uses the new sensor, but the connection to it could not be started. Keep the phone near the sensor and open the sensor status screen to check that readings come in.</string>
+    <string name="overview_second_sensor_readings" comment="%1$d=number of valid glucose readings the pre-soak sensor has sent so far. Example: Readings: 12">Readings: %1$d</string>
+    <string name="overview_second_sensor_switch" comment="Button: the loop uses the pre-soak sensor from now on">Switch</string>
+    <string name="overview_second_sensor_switch_confirm">Use the pre-soak sensor for the loop from now on? The loop stops using the sensor it uses now.</string>
+    <string name="overview_second_sensor_switch_ok">The loop now uses the pre-soak sensor.</string>
+    <string name="overview_second_sensor_switch_ok_calibration_failed">Calibrations you entered for the old sensor could not be removed, so they may still be used for the pre-soak sensor. Check your calibrations.</string>
+    <string name="overview_second_sensor_switch_ok_connect_failed">The loop now uses the pre-soak sensor, but the connection to it could not be started. Keep the phone near the sensor and open the sensor status screen to check that readings come in.</string>
     <string name="overview_second_sensor_switch_ok_sensor_unknown">The switch was made, but a step after it failed and the sensor in use could not be read back. Open the sensor status screen and check which sensor is in use.</string>
-    <string name="overview_second_sensor_switch_refused_absent">There is no new sensor to switch to. Nothing was changed.</string>
-    <string name="overview_second_sensor_switch_refused_not_settled">The new sensor has not settled long enough yet. Nothing was changed.</string>
-    <string name="overview_second_sensor_switch_refused_no_readings">The new sensor has not sent enough valid readings yet. Nothing was changed.</string>
+    <string name="overview_second_sensor_switch_refused_absent">There is no pre-soak sensor to switch to. Nothing was changed.</string>
+    <string name="overview_second_sensor_switch_refused_not_settled">The pre-soak sensor has not settled long enough yet. Nothing was changed.</string>
+    <string name="overview_second_sensor_switch_refused_no_readings">The pre-soak sensor has not sent enough valid readings yet. Nothing was changed.</string>
     <string name="overview_second_sensor_switch_refused_loop_busy">The loop is busy right now. Nothing was changed. Try again in a moment.</string>
-    <string name="overview_second_sensor_switch_refused_no_recent_reading">The new sensor has not sent a reading in the last minutes. Nothing was changed. Wait for its next reading and try again.</string>
+    <string name="overview_second_sensor_switch_refused_no_recent_reading">The pre-soak sensor has not sent a reading in the last minutes. Nothing was changed. Wait for its next reading and try again.</string>
     <string name="overview_second_sensor_switch_error">Something went wrong during the switch. Open the sensor status screen and check which sensor is in use.</string>
 
     <!-- Dashboard skin Essential -->
-    <string name="essential_prediction_60">In 60 min</string>
+    <string name="essential_forecast_value" comment="%1$s = forecast glucose with its unit. Example: ≈ 175 mg/dL">≈ %1$s</string>
+    <string name="essential_forecast_label" comment="Label under the forecast value. %1$s = low end, %2$s = high end of the likely range, glucose numbers without the unit. Example: In 30 min (150–200)">In 30 min (%1$s–%2$s)</string>
+    <string name="essential_forecast_label_no_range">In 30 min</string>
     <string name="essential_iob">IOB</string>
     <string name="essential_basal_temp">Basal</string>
     <string name="essential_target">Target</string>
+    <string name="essential_target_loop" comment="%1$s=target of the profile or temp target, %2$s=target the loop really uses now, both with unit. Example: 100 mg/dL (loop uses 70 mg/dL)">%1$s (loop uses %2$s)</string>
     <string name="essential_tir" comment="%1$s=percent of time in range, already formatted. Example: 90">TIR %1$s %%</string>
     <string name="essential_tir_delta" comment="%1$s=signed change in points against yesterday. Example: -9">%1$s vs yesterday</string>
     <string name="essential_activity" comment="%1$s=steps today, %2$s=heart rate with unit. Example: 7632 · 71 bpm">%1$s · %2$s</string>
@@ -843,8 +845,13 @@
     <string name="essential_boost_pull_down">Pull the shape down to cancel the boost</string>
     <string name="essential_boost_release_cancel">Release to cancel the boost</string>
     <string name="essential_boost_active" comment="%1$d=minutes left. Example: Boost on, 42 min left">Boost on, %1$d min left</string>
+    <string name="essential_boost_active_target" comment="%1$d=minutes left, %2$s=target the loop uses now, with unit. Example: Boost on, 42 min left · target 80 mg/dL">Boost on, %1$d min left · target %2$s</string>
     <string name="essential_boost_title">Boost</string>
-    <string name="essential_boost_explain">For 60 minutes: raises max SMB in hyper, max basal and the Autodrive max basal by 30 percent of your values at most, and keeps the AIMI target at 80 mg/dL at most. Your values come back by themselves. It stops early if glucose goes under 65 mg/dL.</string>
+    <string name="essential_boost_explain" comment="%1$d=the boost strength in percent. Example: 30">For 60 minutes: raises max SMB in hyper, max basal and the Autodrive max basal by %1$d percent of your values at most, and keeps the AIMI target at 80 mg/dL at most. Your values come back by themselves. It stops early if glucose goes under 65 mg/dL.</string>
+    <string name="essential_boost_strength">Strength of the next boost</string>
+    <string name="essential_boost_percent" comment="%1$d=the boost strength in percent. Example: 30 %">%1$d %%</string>
+    <string name="essential_boost_less">Less</string>
+    <string name="essential_boost_more">More</string>
     <string name="essential_boost_start">Start boost</string>
     <string name="essential_boost_cancel">Cancel boost</string>
     <string name="essential_boost_started" comment="%1$d=minutes. Example: Boost started for 60 min">Boost started for %1$d min</string>
@@ -867,11 +874,27 @@
     <string name="essential_readout_description" comment="Screen reader text for the chart cursor. %1$s=time, %2$s=glucose with unit, %3$s=basal rate with unit, %4$s=SMB with unit or no SMB. Example: 14:30, glucose 112 mg/dL, basal 0.85 U/h, no SMB">%1$s, glucose %2$s, basal %3$s, %4$s</string>
     <string name="essential_recent_decisions">Recent decisions</string>
     <string name="essential_insulin_on_board">Insulin on board</string>
-    <string name="essential_ages">Ages</string>
+    <string name="essential_devices">Pump and sensor</string>
     <string name="essential_age_insulin">Insulin</string>
     <string name="essential_age_cannula">Patch or cannula</string>
     <string name="essential_age_sensor">Sensor</string>
     <string name="essential_age_battery">Battery</string>
+    <string name="essential_reservoir">Reservoir</string>
+    <string name="essential_pump_battery">Pump battery</string>
+    <string name="essential_context_used" comment="Screen reader text of the small context dot by the glucose shape. %1$s=the declared context, %2$s=the time it ends. Example: Sport, used by the loop until 18:30">%1$s, used by the loop until %2$s</string>
+    <string name="essential_context_declared" comment="Screen reader text of the small context dot by the glucose shape, when the loop does not use the context. %1$s=the declared context. Example: Travel, not used by the loop now">%1$s, not used by the loop now</string>
+    <string name="essential_context_more" comment="%1$s=the main declared context, %2$d=how many other contexts are active. Example: Sport +1">%1$s +%2$d</string>
+    <string name="essential_context_hypo_recovery">Hypo recovery</string>
+    <string name="essential_context_illness">Illness</string>
+    <string name="essential_context_activity">Sport</string>
+    <string name="essential_context_alcohol">Alcohol</string>
+    <string name="essential_context_stress">Stress</string>
+    <string name="essential_context_meal_risk">Meal risk</string>
+    <string name="essential_context_slow_carb_meal">Slow carb meal</string>
+    <string name="essential_context_travel">Travel</string>
+    <string name="essential_context_cycle">Cycle</string>
+    <string name="essential_context_custom">Custom context</string>
+    <string name="essential_tools_long_press_hint">Tip: a long press on the glucose shape opens these tools too.</string>
     <string name="essential_mood_stable">In range and stable</string>
     <string name="essential_mood_rising">Rising</string>
     <string name="essential_mood_falling">Falling</string>
@@ -891,5 +914,6 @@
     <string name="essential_hint_going_down">Glucose is low or going down: no boost.</string>
     <string name="essential_hint_boost_later">A boost is offered when glucose heads high.</string>
     <string name="essential_activity_title">Activity</string>
+    <string name="essential_maintenance_label" comment="Shown when the user taps the small maintenance dot by the glucose shape. %1$s=what is due (Sensor, Patch or cannula, Insulin, Reservoir, Battery), %2$s=its age, or what is left (insulin in the reservoir, battery charge), as the status lights show it. Examples: Sensor: 9d 18h, Reservoir: 12 U">%1$s: %2$s</string>
 
 </resources>

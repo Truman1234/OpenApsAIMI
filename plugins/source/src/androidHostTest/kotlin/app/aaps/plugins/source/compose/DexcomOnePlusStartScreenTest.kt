@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasScrollToKeyAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToKey
 import app.aaps.core.interfaces.resources.TextRefIdRegistry
 import app.aaps.core.interfaces.source.SensorSlot
@@ -55,7 +56,7 @@ class DexcomOnePlusStartScreenTest {
     private fun text(name: String): String =
         requireNotNull(SourceStringsValues.textOf(name, null)) { "no English text for $name" }
 
-    private fun render(twoSlots: Boolean, host: DexcomOnePlusHost = FakeHost(), initialSlot: SensorSlot = SensorSlot.PRODUCTION) {
+    private fun render(twoSlots: Boolean, host: DexcomOnePlusHost = FakeHost(), initialSlot: SensorSlot? = null) {
         // MainApp does this in production. Without it every TextRef.Named draws as its raw name and
         // the assertions below read "the node is not displayed" without saying why.
         TextRefIdRegistry.register("source") { name -> SourceStringIds.idOf(name) }
@@ -93,6 +94,8 @@ class DexcomOnePlusStartScreenTest {
         render(twoSlots = true, initialSlot = SensorSlot.STAGING)
         compose.onNodeWithText(text("dexcom_oneplus_slot_staging_short")).assertIsSelected().assertIsEnabled()
         compose.onNodeWithText(text("dexcom_oneplus_slot_production_short")).assertIsNotEnabled()
+        // A disabled choice says where the other one is.
+        compose.onNodeWithText(text("dexcom_oneplus_slot_locked_staging")).assertIsDisplayed()
     }
 
     @Test
@@ -100,6 +103,17 @@ class DexcomOnePlusStartScreenTest {
         render(twoSlots = true, initialSlot = SensorSlot.PRODUCTION)
         compose.onNodeWithText(text("dexcom_oneplus_slot_production_short")).assertIsSelected().assertIsEnabled()
         compose.onNodeWithText(text("dexcom_oneplus_slot_staging_short")).assertIsNotEnabled()
+        compose.onNodeWithText(text("dexcom_oneplus_slot_locked_production")).assertIsDisplayed()
+    }
+
+    /** The settings entry asks for no slot: the screen opens on production and both can be chosen. */
+    @Test
+    fun `opened with no slot asked both choices are enabled`() {
+        render(twoSlots = true, initialSlot = null)
+        compose.onNodeWithText(text("dexcom_oneplus_slot_production_short")).assertIsSelected().assertIsEnabled()
+        compose.onNodeWithText(text("dexcom_oneplus_slot_staging_short")).assertIsEnabled()
+        compose.onNodeWithText(text("dexcom_oneplus_slot_locked_production")).assertDoesNotExist()
+        compose.onNodeWithText(text("dexcom_oneplus_slot_locked_staging")).assertDoesNotExist()
     }
 
     @Test
@@ -114,7 +128,7 @@ class DexcomOnePlusStartScreenTest {
         render(twoSlots = true)
         compose.onNodeWithText(text("dexcom_oneplus_start_title")).assertIsDisplayed()
         compose.onNodeWithText(text("dexcom_oneplus_section_pairing_code")).assertIsDisplayed()
-        compose.onNodeWithText(text("dexcom_oneplus_applicator_gs1_label")).assertIsDisplayed()
+        compose.onNodeWithText(text("dexcom_oneplus_pairing_code_label")).assertIsDisplayed()
         // The bottom bar is pinned, so this one is on screen whatever the list is doing.
         compose.onNodeWithText(text("dexcom_oneplus_connect_follow")).assertIsDisplayed()
     }
@@ -137,13 +151,34 @@ class DexcomOnePlusStartScreenTest {
     @Test
     fun `an installed sensor app is named in a warning`() {
         render(twoSlots = false, host = FakeHost(installedApps = { it == "com.eveningoutpost.dexdrip" }))
-        compose.onNodeWithText(text("dexcom_oneplus_competing_apps_title")).assertIsDisplayed()
-        compose.onNodeWithText("xDrip+").assertIsDisplayed()
+        // The warning is with the other folded cards, below the scan list.
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("help")
+        // Folded: the title shows, and a tap opens the text with the app names.
+        compose.onNodeWithText(text("dexcom_oneplus_competing_apps_title")).assertExists()
+        compose.onNodeWithText("xDrip+").assertDoesNotExist()
+        compose.onNodeWithText(text("dexcom_oneplus_competing_apps_title")).performClick()
+        compose.onNodeWithText("xDrip+").assertExists()
+    }
+
+    @Test
+    fun `with an installed sensor app the general warning is not shown a second time`() {
+        render(twoSlots = false, host = FakeHost(installedApps = { it == "com.eveningoutpost.dexdrip" }))
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("help")
+        compose.onNodeWithText(text("dexcom_oneplus_help_how_to_start")).assertExists()
+        compose.onNodeWithText(text("dexcom_oneplus_help_before_pairing")).assertDoesNotExist()
+    }
+
+    @Test
+    fun `without an installed sensor app the general warning is in the help`() {
+        render(twoSlots = false, host = FakeHost(installedApps = { false }))
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("help")
+        compose.onNodeWithText(text("dexcom_oneplus_help_before_pairing")).assertExists()
     }
 
     @Test
     fun `no warning when no sensor app is installed`() {
         render(twoSlots = false, host = FakeHost(installedApps = { false }))
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("help")
         compose.onNodeWithText(text("dexcom_oneplus_competing_apps_title")).assertDoesNotExist()
     }
 
@@ -151,6 +186,7 @@ class DexcomOnePlusStartScreenTest {
     fun `no warning at all on a phone that cannot list its apps`() {
         // The iPhone case: no answer is not the same as "none installed", so nothing is drawn.
         render(twoSlots = false, host = FakeHost(installedApps = null))
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("help")
         compose.onNodeWithText(text("dexcom_oneplus_competing_apps_title")).assertDoesNotExist()
     }
 

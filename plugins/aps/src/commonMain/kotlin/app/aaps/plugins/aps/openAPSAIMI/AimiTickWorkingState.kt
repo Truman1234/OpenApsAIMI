@@ -85,6 +85,7 @@ internal class AimiTickWorkingState {
     var lastRecursiveAuthorityGateDecision: RecursiveBeliefAuthorityGate.Decision? = null
     var lastT3cHistoricalBypassNeutralizedThisTick: Boolean = false
     var lastT3cRuntimeOwnership: AimiDecisionContext.T3cRuntimeOwnershipExport? = null
+    var lastT3cGuard2: AimiDecisionContext.T3cGuard2Export? = null
     var lastRbtChaosEvaluation: RbtChaosEvaluator.Result? = null
     var lastRbtAppliedHints: RbtResolutionBridge.AppliedHints? = null
     var rbtResolvedThisTick = false
@@ -162,6 +163,12 @@ internal class AimiTickWorkingState {
     var pkpdAbsorptionGuardAppliedThisTick: Boolean = false
     var isConfirmedHighRiseThisTick: Boolean = false
     var criticalSafetyZeroedThisTick: Boolean = false
+
+    /** A manual Boost runs this tick. Read once, at tick start (`applyTpoTickSmbCeiling`). */
+    var manualBoostActive: Boolean = false
+
+    /** The sport guard halved the SMB for a Boost this tick (set by safety precautions, read by the finalize). */
+    var sportHalvedForBoostThisTick: Boolean = false
     var tickCobGrams: Double = Double.NaN
     var aimiDecisionExportedThisTick: Boolean = false
     var pendingDecisionCtxForExport: AimiDecisionContext? = null

@@ -3,6 +3,7 @@ package app.aaps.ui.compose.dashboard.glass
 import androidx.compose.foundation.background
 import app.aaps.ui.compose.notificationsSheet.NotificationFab
 import app.aaps.ui.compose.notificationsSheet.NotificationBottomSheet
+import app.aaps.ui.compose.notificationsSheet.mostUrgentLevel
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -46,6 +48,7 @@ import app.aaps.core.interfaces.source.CgmWarmupStatus
 import app.aaps.core.keys.BooleanNonKey
 import app.aaps.core.keys.StringNonKey
 import app.aaps.core.ui.CoreUiStrings
+import app.aaps.core.ui.compose.AapsTheme
 import app.aaps.core.ui.compose.LocalClientRole
 import app.aaps.core.ui.compose.LocalDateUtil
 import app.aaps.core.ui.compose.LocalDecimalFormatter
@@ -95,6 +98,8 @@ private val NOTIFICATION_FAB_CLEARANCE = 136.dp
  * @param onOpenActions opens the host's Manage (actions) sheet, for the Actions tile
  * @param aimiDashboardData read-only AIMI values; only today's health store step total is used here
  * @param cgmWarmupStatus link state of the active CGM source, null when the source cannot report one
+ * @param autoShowNotificationSheet true when the app comes back with an important notification waiting:
+ *   the sheet then opens by itself, as on the classic overview, and [onAutoShowConsumed] is called
  */
 @Composable
 fun GlassDashboardHome(
@@ -112,6 +117,8 @@ fun GlassDashboardHome(
     aimiDashboardData: Flow<AimiGlassDashboardData>,
     modifier: Modifier = Modifier,
     cgmWarmupStatus: StateFlow<CgmWarmupStatus?>? = null,
+    autoShowNotificationSheet: Boolean = false,
+    onAutoShowConsumed: () -> Unit = {},
     homeViewModel: GlassHomeViewModel = metroViewModel(),
 ) {
     val preferences = LocalPreferences.current
@@ -232,6 +239,8 @@ fun GlassDashboardHome(
             onDismissNotification = onDismissNotification,
             onNotificationActionClick = onNotificationActionClick,
             pumpStatus = homeStatus.pumpStatus,
+            autoShowNotificationSheet = autoShowNotificationSheet,
+            onAutoShowConsumed = onAutoShowConsumed,
             modifier = modifier,
         )
     }
@@ -261,12 +270,20 @@ internal fun GlassOverviewContent(
     onDismissNotification: (AapsNotification) -> Unit,
     onNotificationActionClick: (AapsNotification) -> Unit,
     pumpStatus: GlassPumpStatusLine? = null,
+    autoShowNotificationSheet: Boolean = false,
+    onAutoShowConsumed: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val commands = LocalGlassHeroCommands.current
     var showTools by remember { mutableStateOf(false) }
     var showPersonalize by remember { mutableStateOf(false) }
     var showNotificationSheet by remember { mutableStateOf(false) }
+    LaunchedEffect(autoShowNotificationSheet) {
+        if (autoShowNotificationSheet) {
+            showNotificationSheet = true
+            onAutoShowConsumed()
+        }
+    }
     LaunchedEffect(showTools) { if (!showTools) showPersonalize = false }
 
     // Back closes Personalize first, then Tools; with neither open it is left to the shell.
@@ -309,6 +326,16 @@ internal fun GlassOverviewContent(
                 formatValue = formatBgValue,
                 isDark = isDark,
             )
+            // The insulin-only curve goes low within the hour: a labelled possibility under the chart,
+            // never an alarm (see DisplayForecast.lowRisk).
+            if (chartState.lowRisk) {
+                Text(
+                    text = stringResource(UiStrings.forecast_low_possible),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AapsTheme.generalColors.bgLow,
+                    modifier = Modifier.padding(horizontal = AapsTheme.spacing.extraSmall),
+                )
+            }
             // Can be turned off in Personalize, so the home fits on a small phone without scrolling.
             if (showIobChart) {
                 IobChartCard(
@@ -339,7 +366,7 @@ internal fun GlassOverviewContent(
         // gives the most urgent level, and a tap opens the full list with its buttons.
         NotificationFab(
             notificationCount = notifications.size,
-            highestLevel = notifications.minByOrNull { it.level.ordinal }?.level,
+            highestLevel = notifications.mostUrgentLevel(),
             onClick = { showNotificationSheet = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
