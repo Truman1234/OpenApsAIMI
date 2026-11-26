@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
@@ -33,7 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
+import app.aaps.core.ui.CoreUiStrings
 import app.aaps.core.ui.compose.AapsSpacing
+import app.aaps.core.ui.compose.StatusLevel
+import app.aaps.core.ui.compose.statusLevelToColor
 import app.aaps.core.ui.compose.stringResource
 import app.aaps.plugins.source.SourceStrings
 
@@ -113,16 +117,18 @@ fun CgmKeyValueRow(
         horizontalArrangement = Arrangement.spacedBy(AapsSpacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // The label keeps its own width and the value takes the rest. The other way round, a long
+        // value left the label a few characters wide and broke it in the middle of a word.
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -133,7 +139,8 @@ fun CgmKeyValueRow(
  * The start screen carried five permanently expanded help blocks — about two screens of scrolling
  * before the first control. They are worth reading once and in the way once the user knows the
  * flow, so they keep their place but start closed. [tone] lets a warning stay recognisable while
- * closed, because an unread warning that looks like ordinary help is not a warning.
+ * closed (a warning sign before the title), because an unread warning that looks like ordinary help
+ * is not a warning.
  */
 @Composable
 fun CgmHelpCard(
@@ -144,10 +151,6 @@ fun CgmHelpCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     var expanded by remember { mutableStateOf(expandedByDefault) }
-    val titleColor = when (tone) {
-        CgmCardTone.Neutral -> MaterialTheme.colorScheme.onSurface
-        CgmCardTone.Warning -> MaterialTheme.colorScheme.error
-    }
     CgmCard(modifier = modifier) {
         Row(
             modifier = Modifier
@@ -156,10 +159,19 @@ fun CgmHelpCard(
             horizontalArrangement = Arrangement.spacedBy(AapsSpacing.medium),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // A warning is marked with a sign, not with red text: the sign is also read out by a
+            // screen reader, and the title stays as easy to read as the others.
+            if (tone == CgmCardTone.Warning) {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = stringResource(CoreUiStrings.warning),
+                    tint = statusLevelToColor(StatusLevel.WARNING),
+                )
+            }
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = titleColor,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
             Icon(
@@ -261,7 +273,8 @@ private fun TimelineNode(
 }
 
 /**
- * The guided-flow progress of the start screen, in the form the window can afford.
+ * The guided-flow progress of a start screen, in the form the window can afford. Used by the
+ * Libre 3 start screen; the ONE+ / G7 start screen has no step bar any more.
  *
  * Wide: the four labelled steps side by side. Compact: "Step 2 of 4" plus the step name and a
  * four-segment bar — no label is ever squeezed into 82 dp, so nothing truncates on a narrow phone

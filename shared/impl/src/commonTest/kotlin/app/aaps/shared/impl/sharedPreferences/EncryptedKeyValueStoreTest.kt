@@ -1,5 +1,6 @@
 package app.aaps.shared.impl.sharedPreferences
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -10,6 +11,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class EncryptedKeyValueStoreTest {
 
     /** The disk, in memory. [failNext] makes that many writes throw, the way a locked file does on Windows. */
@@ -141,8 +143,6 @@ class EncryptedKeyValueStoreTest {
      * the Float it was into one. Read as a whole number it is rounded, so what the user set is kept.
      */
     @Test
-    // No comma in the name: a backtick-quoted test name with a comma compiles on the JVM and fails
-    // on Kotlin/Native with "Name contains illegal characters".
     fun `a decimal read as a whole number is rounded and not dropped`() = runTest {
         val store = store(MemoryBackend(mapOf("whole" to 7.0, "up" to 7.6, "down" to 7.4, "float" to 7.0f)))
 

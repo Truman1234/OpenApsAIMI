@@ -61,7 +61,6 @@ import app.aaps.core.keys.BooleanKey
 import app.aaps.core.interfaces.utils.fabric.CrashReporter
 import app.aaps.core.keys.BooleanNonKey
 import app.aaps.core.keys.StringKey
-import app.aaps.core.objects.di.CoreObjectsGraph
 import app.aaps.core.ui.CoreUiStrings
 import app.aaps.core.ui.compose.LocalMetroViewModelFactory
 import app.aaps.core.ui.compose.LocalSnackbarHostState
@@ -88,7 +87,6 @@ import app.aaps.ios.shell.prefs.IosStorage
 import app.aaps.plugins.aps.openAPSAIMI.background.IosAimiBackgroundTasks
 import app.aaps.plugins.aps.openAPSAIMI.dashboard.AimiGlassDashboardSnapshotFeed
 import app.aaps.plugins.sync.nsclientV3.ws.NsSocketFactory
-import app.aaps.shared.clientbindings.ClientGraphBindings
 import app.aaps.shared.clientbindings.ClientViewModelFactory
 import app.aaps.shared.impl.sharedPreferences.StoreUnreadableException
 import app.aaps.ui.compose.configuration.ConfigurationViewModel
@@ -238,7 +236,7 @@ private fun startedOnce(nsSocketFactory: NsSocketFactory, crashReporter: CrashRe
     val store = IosStorage.open()
     // Built once, outside the composition: a graph rebuilt on each recomposition would hand out new
     // singletons every frame - a new database wrapper, a new preference store.
-    val graph = createGraphFactory<IosAppGraph.Factory>().create(CoreObjectsGraph, ClientGraphBindings, nsSocketFactory, crashReporter)
+    val graph = createGraphFactory<IosAppGraph.Factory>().create(nsSocketFactory, crashReporter)
     val viewModelFactory = ClientViewModelFactory(graph)
     val logger = graph.logger
 
@@ -261,6 +259,10 @@ private fun startedOnce(nsSocketFactory: NsSocketFactory, crashReporter: CrashRe
         contributedPlugins = graph.contributedPlugins,
         apsPlugins = graph.contributedApsPlugins,
         mergeApsPlugins = graph.config.APS,
+        pumpDriverPlugins = graph.contributedPumpDriverPlugins,
+        mergePumpDriverPlugins = graph.config.PUMPDRIVERS,
+        notNsClientPlugins = graph.contributedNotNsClientPlugins,
+        mergeNotNsClientPlugins = !graph.config.AAPSCLIENT,
         startPeriodicWork = {
             // As Android's `MainApp` does next to scheduling `KeepAliveWorker`: the first maintenance
             // pass runs at once and would call a cold start's old database "BG readings missed".
@@ -294,7 +296,11 @@ private fun startedOnce(nsSocketFactory: NsSocketFactory, crashReporter: CrashRe
     // with - on the next tick, as on Android. Their handlers were registered earlier by
     // `registerAimiBackgroundTasks`, from the Swift `init`: iOS only allows that before launch ends.
     // `install` catches its own failures: a background job must not take the app down.
-    IosAimiBackgroundTasks.install(graph.basalMlTrainingCoordinator, logger)
+    //
+    // The master app only. The follower app (AAPSClient) never runs the loop, so it has no AIMI data
+    // to train on or to archive. Its handlers are still registered from the Swift `init`, which is
+    // harmless: both apps share one Info.plist, with the task ids in it, and nothing queues a task.
+    if (graph.config.APS) IosAimiBackgroundTasks.install(graph.basalMlTrainingCoordinator, logger)
 
     // Attach to the notification centre. Registering a category only records it now, so that building
     // the graph does not need an app bundle - see `IosNotificationDelegate.install`. It is done here

@@ -246,10 +246,13 @@ class IosMedtrumPump(
             MedtrumPumpState.BATTERY_OUT, MedtrumPumpState.NO_CALIBRATION -> true
             else -> false
         }
+        // Android `handlePumpStateUpdate` drops the alarms in every state of a patch that is set up or
+        // runs normally. Doing it only with no patch left kept the last patch's "low reservoir" on the
+        // screen of a new, full patch.
+        if (MedtrumPumpSyncHistory.clearsAlarms(newState)) state.clearAlarmState()
         if (newState == MedtrumPumpState.NONE || newState == MedtrumPumpState.STOPPED) {
-            // Android `handlePumpStateUpdate`: with no patch left, drop the alarms and the
-            // sequence numbers, so the history of the next patch can be synced from its start.
-            state.clearAlarmState()
+            // With no patch left, also drop the sequence numbers, so the history of the next patch can
+            // be synced from its start.
             state.resetPatchParameters()
         }
         if (needsFakeTbr) setFakeTbrIfNotSet()
@@ -389,6 +392,11 @@ class IosMedtrumPump(
                 // Resume suspended pump
                 if (result) result = session.resumePump()
                 if (result) state.clearAlarmState()
+            } else if (result && state.activeAlarms.isNotEmpty()) {
+                // Not suspended: only the list on the phone is left, for example the low reservoir of
+                // the last patch. The button is enabled for it, so it must clear it. Nothing is hidden:
+                // a warning the pump still has comes back with its next notification.
+                state.clearAlarmState()
             }
             enactResult(success = result, enacted = result)
         } finally {

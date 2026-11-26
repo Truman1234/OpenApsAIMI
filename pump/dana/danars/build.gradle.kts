@@ -41,7 +41,6 @@ kotlin {
             // Everything of this module is Android only for now. Code moves to commonMain step by step.
             dependencies {
                 implementation(project(":pump:dana:danars:emulator"))
-                implementation(project.dependencies.platform(libs.androidx.compose.bom))
                 implementation(libs.androidx.lifecycle.runtime.compose)
             }
         }

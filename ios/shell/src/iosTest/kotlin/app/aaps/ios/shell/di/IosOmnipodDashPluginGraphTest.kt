@@ -9,7 +9,6 @@ import app.aaps.core.ui.compose.icons.IcPluginOmnipod
 import app.aaps.core.ui.compose.preference.PreferenceSubScreenDef
 import app.aaps.core.interfaces.plugin.EnforcedState
 import app.aaps.core.interfaces.pump.OmnipodDash
-import app.aaps.core.objects.di.CoreObjectsGraph
 import app.aaps.ios.shell.prefs.TestStorage
 import app.aaps.plugins.sync.nsclientV3.ws.NsSocket
 import app.aaps.plugins.sync.nsclientV3.ws.NsSocketFactory
@@ -21,7 +20,6 @@ import app.aaps.pump.omnipod.dashctl.ios.plugin.omnipodDashIosPluginDescription
 import app.aaps.pump.omnipod.dashctl.ios.store.DashKeychainStateStore
 import app.aaps.pump.omnipod.dashctl.keys.DashBeepKey
 import app.aaps.pump.omnipod.dashctl.ui.DashOverviewContent
-import app.aaps.shared.clientbindings.ClientGraphBindings
 import dev.zacsweers.metro.createGraphFactory
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -57,7 +55,7 @@ class IosOmnipodDashPluginGraphTest {
         DashKeychainStateStore().clear()
     }
 
-    private fun graph() = createGraphFactory<IosProbeGraph.Factory>().create(CoreObjectsGraph, ClientGraphBindings, NoCrashReporter)
+    private fun graph() = createGraphFactory<IosProbeGraph.Factory>().create(NoCrashReporter)
 
     @Test
     fun `the graph builds the Omnipod Dash pump plugin`() {
@@ -82,15 +80,17 @@ class IosOmnipodDashPluginGraphTest {
     }
 
     @Test
-    fun `the app graph offers Dash in the plugin list next to Medtrum`() {
+    fun `the app graph offers Dash in the pump driver bucket next to Medtrum`() {
         TestStorage.install()
-        val app = createGraphFactory<IosAppGraph.Factory>().create(CoreObjectsGraph, ClientGraphBindings, NoSockets, NoCrashReporter)
+        val app = createGraphFactory<IosAppGraph.Factory>().create(NoSockets, NoCrashReporter)
 
-        val plugins = app.contributedPlugins
+        val plugins = app.contributedPumpDriverPlugins
         val dash = assertIs<IosOmnipodDashPlugin>(plugins[1080], "Dash under the Android key 1080")
         assertIs<IosMedtrumPlugin>(plugins[1120])
         assertEquals(PluginType.PUMP, dash.getType())
         assertEquals(1, plugins.values.count { it is IosOmnipodDashPlugin }, "one Dash plugin only")
+        // Only in the @PumpDriver bucket, so the follower app, which does not merge it, has no driver.
+        assertTrue(app.contributedPlugins.values.none { it is IosOmnipodDashPlugin || it is IosMedtrumPlugin }, "no driver in the plain bucket")
     }
 
     @Test

@@ -48,6 +48,7 @@ import app.aaps.core.ui.compose.preference.PreferenceSheetContent
 import app.aaps.core.ui.compose.preference.PreferenceSubScreenDef
 import app.aaps.core.ui.compose.stringResource
 import app.aaps.core.ui.compose.stringResourceOrNull
+import app.aaps.ui.compose.dashboard.glassSheetContainerColor
 import app.aaps.ui.compose.main.QuickWizardItem
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,7 +77,7 @@ fun TreatmentBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = glassSheetContainerColor()
     ) {
         if (showSettings && treatmentButtonsDef != null) {
             TreatmentSettingsContent(
@@ -292,27 +293,26 @@ internal fun TreatmentSettingsContent(
     settingsDef: PreferenceSubScreenDef,
     onBack: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .consumeOverscroll()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 12.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(CoreUiStrings.back)
-                )
+    // It scrolls itself, so the back button goes in its header rather than a scrolling column around it.
+    PreferenceSheetContent(
+        settingsDef = settingsDef,
+        modifier = Modifier.padding(bottom = 24.dp),
+        header = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(CoreUiStrings.back)
+                    )
+                }
             }
         }
-        PreferenceSheetContent(settingsDef = settingsDef)
-    }
+    )
 }
 
 @Composable

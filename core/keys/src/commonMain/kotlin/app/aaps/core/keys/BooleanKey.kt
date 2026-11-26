@@ -221,6 +221,15 @@ enum class BooleanKey(
         sync = SyncSpec(SyncChannel.Cold, SyncDirection.Bidirectional)
     ),
 
+    // Off until the user turns it on. A client does not publish a device status, so the switch is hidden there.
+    ApsPublishDisplayedIob(
+        "aps_publish_displayed_iob",
+        false,
+        KeysStrings.pref_title_aps_publish_displayed_iob,
+        KeysStrings.pref_summary_aps_publish_displayed_iob,
+        showInNsClientMode = false,
+    ),
+
     // Simple Mode uploads with no switch, and that is the decision, not an oversight: `defaultedBySM`
     // hides the row and `hideParentScreenIfHidden` takes the whole Data choices screen with it. Two
     // separate reviews have read this as a bug and proposed dropping the flags - please do not.
@@ -255,6 +264,15 @@ enum class BooleanKey(
     NsClientAcceptTherapyEvent("ns_receive_therapy_events", false, KeysStrings.pref_title_ns_receive_therapy_event, KeysStrings.pref_summary_ns_receive_therapy_event, showInNsClientMode = false, hideParentScreenIfHidden = true, defaultedByHardenedMode = true),
     NsClientAcceptRunningMode("ns_receive_running_mode", false, KeysStrings.pref_title_ns_receive_running_mode, KeysStrings.pref_summary_ns_receive_running_mode, showInNsClientMode = false, hideParentScreenIfHidden = true, defaultedByHardenedMode = true),
     NsClientAcceptTbrEb("ns_receive_tbr_eb", false, KeysStrings.pref_title_ns_receive_tbr_eb, KeysStrings.pref_summary_ns_receive_tbr_eb, showInNsClientMode = false, engineeringModeOnly = true, defaultedByHardenedMode = true),
+    // Follower only, off by default; start time never moved.
+    NsClientAcceptTreatmentCorrections(
+        "ns_accept_treatment_corrections",
+        false,
+        KeysStrings.pref_title_ns_accept_treatment_corrections,
+        KeysStrings.pref_summary_ns_accept_treatment_corrections,
+        showInApsMode = false,
+        showInPumpControlMode = false
+    ),
     NsClientNotificationsFromAlarms("ns_alarms", false, KeysStrings.pref_title_ns_notifications_from_alarms, calculatedDefaultValue = true),
     NsClientNotificationsFromAnnouncements("ns_announcements", false, KeysStrings.pref_title_ns_notifications_from_announcements, calculatedDefaultValue = true),
     NsClientUseCellular("ns_cellular", true, KeysStrings.pref_title_ns_use_cellular),
@@ -887,6 +905,21 @@ enum class BooleanKey(
         summary = KeysStrings.pref_summary_aimi_t3c_hyper_basal_floor,
         dependency = OApsAIMIT3cBrittleMode,
     ),
+    /**
+     * T3C Safety Guard 2 (resistance to sensitivity transition): after glucose stayed high and stable
+     * for more than 20 minutes, cut the T3C basal as soon as glucose starts to fall (to zero at
+     * -1.2 mg/dL per 5 min). Off by default: it never acted before its input was wired (2026-11), so
+     * it runs in shadow first. With the key off the decision log (`AIMI_Decisions.jsonl`, block
+     * `adjustments.t3c_guard2`) still records what it would do (`would_fire`, `would_mult`).
+     * Depends on T3C brittle mode.
+     */
+    OApsAIMIT3cTransitionGuard(
+        key = "key_aimi_t3c_transition_guard",
+        defaultValue = false,
+        title = KeysStrings.pref_title_aimi_t3c_transition_guard,
+        summary = KeysStrings.pref_summary_aimi_t3c_transition_guard,
+        dependency = OApsAIMIT3cBrittleMode,
+    ),
     /** Cystic fibrosis-related diabetes (CFRD) adaptations in T3C mode:
      *  higher LGS safety floor, COB absorption delay, exacerbation support.
      *  Default ON: T3C brittle is the intended basal-only path for CFRD; prefs are visible under T3C. */
@@ -933,6 +966,16 @@ enum class BooleanKey(
         "aimi_physio_hrv_enable", true,
         title = KeysStrings.pref_title_aimi_physio_hrv_data_enable,
         summary = KeysStrings.pref_summary_aimi_physio_hrv_data_enable,
+    ),
+    /**
+     * On: after a night whose heart rate is clearly above the usual night, the short-term part of the
+     * reactivity learner weighs more for the day, so AIMI follows the glucose more closely, up or down.
+     * Off: the night heart rate is shown and logged only. See `NocturnalHeartRate`.
+     */
+    AimiPhysioNightHrEnable(
+        "aimi_physio_night_hr_enable", true,
+        title = KeysStrings.pref_title_aimi_physio_night_hr_enable,
+        summary = KeysStrings.pref_summary_aimi_physio_night_hr_enable,
     ),
     AimiPhysioLLMAnalysisEnable("aimi_physio_llm_enable", false, title = KeysStrings.pref_title_aimi_physio_llm_analysis_enable),
 

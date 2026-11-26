@@ -4,6 +4,7 @@ import app.aaps.core.data.time.SystemTimeZone
 import app.aaps.core.interfaces.utils.MidnightTime
 import app.aaps.plugins.aps.openAPSAIMI.llm.claude.ClaudeModelResolver
 import app.aaps.plugins.aps.openAPSAIMI.llm.gemini.GeminiModelResolver
+import app.aaps.plugins.aps.openAPSAIMI.extensions.aimiTickGlucoseStatus
 import app.aaps.plugins.aps.openAPSAIMI.utils.AimiKeyValueCache
 import app.aaps.plugins.aps.openAPSAIMI.utils.AimiStorage
 import app.aaps.plugins.aps.openAPSAIMI.ports.AimiTickCaptureHook
@@ -83,6 +84,7 @@ import app.aaps.plugins.aps.openAPSAIMI.learning.BasalMlTrainingCoordinator
 import app.aaps.plugins.aps.openAPSAIMI.learning.UnifiedReactivityLearner
 import app.aaps.plugins.aps.openAPSAIMI.physio.AIMIInsulinDecisionAdapterMTR
 import app.aaps.plugins.aps.openAPSAIMI.advisor.auditor.AuditorOrchestrator
+import app.aaps.plugins.aps.openAPSAIMI.context.ActiveContextSummary
 import app.aaps.plugins.aps.openAPSAIMI.context.ContextManager
 import app.aaps.plugins.aps.openAPSAIMI.dashboard.AimiGlassDashboardSnapshotFeed
 import app.aaps.plugins.aps.openAPSAIMI.ports.AimiAuditorNotifier
@@ -335,6 +337,16 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
         AimiGlassDashboardSnapshotFeed.configureContextScreenAvailable(
             platformItems.item(AimiPlatformPreferenceSlot.CONTEXT) != null,
         )
+        AimiGlassDashboardSnapshotFeed.configureActiveContextProvider {
+            val aimiActive = activePlugin.activeAPS === this
+            ActiveContextSummary.summarize(
+                intents = contextManager.getAllIntents().values,
+                moduleOn = contextManager.isEnabled(),
+                aimiActive = aimiActive,
+                lastTickMs = if (aimiActive) lastAPSResult?.date else null,
+                nowMs = dateUtil.now(),
+            )
+        }
         AimiGlassDashboardSnapshotFeed.configureKeyFactorsProvider {
             val result = activePlugin.activeAPS?.lastAPSResult
             val profile = result?.oapsProfileAimi
@@ -510,7 +522,16 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
         // it. Nothing is lost by dropping it: the handler keeps no cache to clear, the detector
         // pushes a fresh runtime confidence every tick, and the supplier is re-installed just below.
         // The UAM model, on Android and on iOS together (aimiPlatformUamPredictor). Without a model
-        // file the predictor answers 0f, the same as before it was installed.
+        // file the predictor answers 0f, the same as before it was installed. The file comes first:
+        // the KMP port had lost the copy dev makes in MainApp, so a phone that never ran dev had none.
+        val uamModel = try {
+            installBundledUamModel()
+        } catch (e: Exception) {
+            aapsLogger.error(LTag.APS, "AIMI UAM model install failed", e)
+            AimiUamModelInstall.Outcome.FAILED
+        }
+        if (uamModel == AimiUamModelInstall.Outcome.FAILED) aapsLogger.error(LTag.APS, "AIMI UAM model could not be installed, the UAM model stays unavailable")
+        else aapsLogger.info(LTag.APS, "AIMI UAM model: $uamModel")
         AimiUamHandler.installPredictor(aimiPlatformUamPredictor())
         AimiUamHandler.installConfidenceSupplier {
             // retourne null si tu veux "laisser la main" au runtime
@@ -1410,6 +1431,8 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
                 val combDelta = ((gsData?.delta ?: 0.0) + predictedDelta) / 2.0
                 val isConfirmedHighRise = (gsData?.glucose ?: 0.0) > 150.0 && combDelta > 1.5 && accel > 0.4
 
+                unifiedReactivityLearner.nightHeartRateAlert =
+                    runCatching { healthContextRepository.nightHeartRateAlert() }.getOrDefault(false)
                 unifiedReactivityLearner.processIfNeeded(isConfirmedHighRise)
                 var brainFactor = unifiedReactivityLearner.getCombinedFactor()
                 val bgNow = gsData?.glucose ?: 0.0
@@ -1619,30 +1642,9 @@ open class OpenAPSAIMIPlugin  @Inject constructor(
             val f = pack.features
 
 // Construit l?objet attendu par determine_basal
-            val glucoseStatusAimi = GlucoseStatusAIMI(
-                glucose         = gs.glucose,
-                noise           = gs.noise,
-                delta           = gs.delta,
-                shortAvgDelta   = gs.shortAvgDelta,
-                longAvgDelta    = gs.longAvgDelta,
-                date            = gs.date,
-
-                // Champs AIMI disponibles
-                duraISFminutes  = f?.stable5pctMinutes ?: 0.0,
-                deltaPl         = f?.delta5Prev ?: 0.0,
-                deltaPn         = f?.delta5Next ?: 0.0,
-                bgAcceleration  = f?.accel ?: 0.0,
-                corrSqu         = f?.corrR2 ?: 0.0,
-
-                // Champs non expos?s par AimiBgFeatures => valeurs neutres
-                duraISFaverage  = 0.0,
-                parabolaMinutes = 0.0,
-                a0              = 0.0,
-                a1              = 0.0,
-                a2              = 0.0,
-                // Propagate CGM source (G6/G7/One+/…) so AIMI lead stays G6-only
-                sourceSensor    = gs.sourceSensor
-            )
+            // The stable band (duraISFminutes and its real average) comes from the features.
+            // parabolaMinutes and a0-a2 stay 0 on purpose, see `aimiTickGlucoseStatus`.
+            val glucoseStatusAimi = aimiTickGlucoseStatus(gs, f)
             futureActivity = Round.roundTo(futureActivity, 0.0001)
             sensorLagActivity = Round.roundTo(sensorLagActivity, 0.0001)
             historicActivity = Round.roundTo(historicActivity, 0.0001)

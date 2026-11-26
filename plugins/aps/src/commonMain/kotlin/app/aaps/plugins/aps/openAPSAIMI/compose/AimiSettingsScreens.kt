@@ -138,6 +138,7 @@ internal enum class AimiSettingsSectionId {
     EndoTuning,
     T3cMode,
     T3cAutodriveAuthority,
+    T3cTransitionGuard,
     T3cBehaviour,
     T3cCfrdLgsFloor,
     T3cCfrdCobDelay,
@@ -330,6 +331,7 @@ internal object AimiSettingsScreens {
             ),
         ),
         // The field off switch of the causal DIA context (P1b): it must be reachable from the app.
+        // The context shift also needs PK/PD on (P1d).
         AimiSettingsSection(
             id = AimiSettingsSectionId.PkpdExpertDiaGovernor,
             content = AimiSettingsContentId.PkpdExpert,
@@ -456,6 +458,7 @@ internal object AimiSettingsScreens {
         fields(
             AimiSettingsSectionId.EssentialsDoseLimits, AimiSettingsContentId.PreferencesEssentials, AimiSettingsLevel.SIMPLE,
             DoubleKey.ApsMaxBasal, DoubleKey.meal_modes_MaxBasal, DoubleKey.autodriveMaxBasal, DoubleKey.OApsAIMIMaxSMB, DoubleKey.OApsAIMIHighBGMaxSMB, DoubleKey.OApsAIMIMaxMultiplier,
+            IntKey.OApsAIMIManualBoostPercent,
         ),
         fields(
             AimiSettingsSectionId.AiAdvisorKeys, AimiSettingsContentId.PreferencesAiKeys, AimiSettingsLevel.EXPERT,
@@ -481,7 +484,7 @@ internal object AimiSettingsScreens {
         // The SMB limits, on a page that search can open (the Essentials page shows them too).
         fields(
             AimiSettingsSectionId.DoseLimits, AimiSettingsContentId.PreferencesDoseLimits, AimiSettingsLevel.SIMPLE,
-            DoubleKey.OApsAIMIMaxSMB, DoubleKey.OApsAIMIHighBGMaxSMB, DoubleKey.OApsAIMIHighBg,
+            DoubleKey.OApsAIMIMaxSMB, DoubleKey.OApsAIMIHighBGMaxSMB, DoubleKey.OApsAIMIHighBg, IntKey.OApsAIMIManualBoostPercent,
         ),
 
         // ---- Feature card: meals ----
@@ -570,6 +573,7 @@ internal object AimiSettingsScreens {
         ),
         fields(AimiSettingsSectionId.T3cMode, AimiSettingsContentId.PreferencesT3c, AimiSettingsLevel.ADVANCED, BooleanKey.OApsAIMIT3cBrittleMode),
         fields(AimiSettingsSectionId.T3cAutodriveAuthority, AimiSettingsContentId.PreferencesT3c, AimiSettingsLevel.EXPERT, BooleanKey.OApsAIMIT3cAutodriveBasalAuthority),
+        fields(AimiSettingsSectionId.T3cTransitionGuard, AimiSettingsContentId.PreferencesT3c, AimiSettingsLevel.EXPERT, BooleanKey.OApsAIMIT3cTransitionGuard),
         fields(
             AimiSettingsSectionId.T3cBehaviour, AimiSettingsContentId.PreferencesT3c, AimiSettingsLevel.ADVANCED,
             BooleanKey.OApsAIMIT3cHyperBasalFloor, BooleanKey.OApsAIMIT3cCfrdMode, BooleanKey.OApsAIMIT3cCfrdExacerbationMode,
@@ -590,7 +594,7 @@ internal object AimiSettingsScreens {
         // Step S3b: they act with the assistant off too (the tree and the snapshot read the readings).
         fields(
             AimiSettingsSectionId.PhysioDataUse, AimiSettingsContentId.CardPhysio, AimiSettingsLevel.ADVANCED,
-            BooleanKey.AimiPhysioSleepDataEnable, BooleanKey.AimiPhysioHRVDataEnable,
+            BooleanKey.AimiPhysioSleepDataEnable, BooleanKey.AimiPhysioHRVDataEnable, BooleanKey.AimiPhysioNightHrEnable,
         ),
         fields(
             AimiSettingsSectionId.PhysioSources, AimiSettingsContentId.CardPhysio, AimiSettingsLevel.EXPERT,

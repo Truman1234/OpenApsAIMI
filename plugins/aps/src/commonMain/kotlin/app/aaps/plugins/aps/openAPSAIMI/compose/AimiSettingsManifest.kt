@@ -354,6 +354,7 @@ internal object AimiSettingsManifest {
         AimiSettingEntry(BooleanKey.OApsAIMIT3cBrittleMode, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Stability, AimiSettingsWriter.USER),
         AimiSettingEntry(BooleanKey.OApsAIMIT3cAutodriveBasalAuthority, AimiSettingsLevel.EXPERT, AimiBehaviorFamilyId.Autonomy, AimiSettingsWriter.USER),
         AimiSettingEntry(BooleanKey.OApsAIMIT3cHyperBasalFloor, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Stability, AimiSettingsWriter.USER),
+        AimiSettingEntry(BooleanKey.OApsAIMIT3cTransitionGuard, AimiSettingsLevel.EXPERT, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
         AimiSettingEntry(BooleanKey.OApsAIMIT3cCfrdMode, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Physio, AimiSettingsWriter.USER),
         AimiSettingEntry(BooleanKey.OApsAIMIT3cCfrdExacerbationMode, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Physio, AimiSettingsWriter.USER),
         AimiSettingEntry(BooleanKey.OApsAIMIUndeclaredCobEnabled, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.MealCapture, AimiSettingsWriter.USER),
@@ -507,6 +508,8 @@ internal object AimiSettingsManifest {
         // Step S3b: wired (owner decision 2026-11-15). On by default; off keeps the reading out of AIMI.
         AimiSettingEntry(BooleanKey.AimiPhysioSleepDataEnable, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Physio, AimiSettingsWriter.USER),
         AimiSettingEntry(BooleanKey.AimiPhysioHRVDataEnable, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Physio, AimiSettingsWriter.USER),
+        // Owner decision 2026-11-24: on by default. Acts only after a rare elevated night.
+        AimiSettingEntry(BooleanKey.AimiPhysioNightHrEnable, AimiSettingsLevel.ADVANCED, AimiBehaviorFamilyId.Physio, AimiSettingsWriter.USER),
         // Added during the KMP work and never classified until the manifest tests came back. None has a
         // switch on any screen yet, so all three are in REACHABILITY_DEBT.
         // Off by default, newer path, feeds the HRV insulin multiplier: EXPERT.
@@ -568,6 +571,8 @@ internal object AimiSettingsManifest {
         // The shared max basal of the loop. Not an AIMI key, but AIMI shows it (Essentials, dose limits)
         // and the manual Boost writes it, so its writers are declared here like any AIMI ceiling.
         AimiSettingEntry(DoubleKey.ApsMaxBasal, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, setOf(AimiSettingsWriter.USER, AimiSettingsWriter.LOOP)),
+        // Read only when the user starts a manual Boost; set from the Boost panel or here
+        AimiSettingEntry(IntKey.OApsAIMIManualBoostPercent, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, AimiSettingsWriter.USER),
         AimiSettingEntry(DoubleKey.meal_modes_MaxBasal, AimiSettingsLevel.SIMPLE, AimiBehaviorFamilyId.Protection, setOf(AimiSettingsWriter.USER)),
         // The context module's own mode. Its screen is a standalone activity outside the settings tree
         // this manifest models, so it sits in the reachability debt rather than claim a home it does
