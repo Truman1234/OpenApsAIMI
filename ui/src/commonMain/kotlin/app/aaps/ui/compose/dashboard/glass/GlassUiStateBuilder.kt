@@ -62,6 +62,7 @@ internal fun buildGlassUiState(
         loopStatusText = homeStatus?.loopStatusText,
         loopIsRunning = homeStatus?.loopIsRunning ?: defaults.loopIsRunning,
         activeModeText = homeStatus?.activeModeText,
+        tempTargetLine = homeStatus?.tempTargetLine,
         iobText = iobText ?: NO_VALUE,
         isTempTargetActive = homeStatus?.isTempTargetActive ?: false,
         targetText = homeStatus?.targetText ?: NO_VALUE,

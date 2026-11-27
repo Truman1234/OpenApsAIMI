@@ -640,6 +640,7 @@
     <string name="dashboard_adjustment_prediction_unavailable">Prediction: unavailable</string>
     <string name="dashboard_adjustment_scenario_projection" comment="%1$s=predicted glucose of the best scenario, %2$s=predicted glucose of the floor scenario, %3$d=minutes ahead">Scenario %1$s · Floor %2$s (+%3$d min)</string>
     <string name="dashboard_adjustment_iob_activity" comment="%1$s=insulin on board with unit, e.g. 1.20 U, %2$s=autosens percent, e.g. 100">IOB: %1$s | Activity: %2$s%%</string>
+    <string name="dashboard_temp_target_line" comment="%1$s=target or range, e.g. 110 or 100 - 120, %2$s=unit, e.g. mg/dL, %3$s=time left, e.g. 45m">Temp target: %1$s %2$s (%3$s)</string>
     <string name="dashboard_adjustment_mode" comment="%1$s=meal or activity mode, e.g. Lunch, %2$s=time left, e.g. 45 min">Mode: %1$s (%2$s)</string>
     <string name="dashboard_adjustment_safety" comment="%1$s=safety level, e.g. Neutral, %2$s=reasons, e.g. BG 120, stable trend">Safety: %1$s (%2$s)</string>
     <string name="dashboard_adjustment_safety_hypo" comment="%1$s=reasons, e.g. BG 80, falling trend">Hypo risk! %1$s</string>

@@ -72,7 +72,7 @@ import app.aaps.core.ui.compose.NumberInputRow
 import app.aaps.core.ui.compose.rowAction
 import app.aaps.core.ui.compose.stringResource
 import app.aaps.ui.UiStrings
-import app.aaps.ui.compose.dashboard.aimi.AimiActiveModeText
+import app.aaps.ui.compose.dashboard.aimi.DashboardStatusLines
 import com.patrykandpatrick.vico.compose.cartesian.Scroll
 import com.patrykandpatrick.vico.compose.cartesian.Zoom
 import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
@@ -235,6 +235,8 @@ fun GraphsSection(
      * passes it, the history browser must not.
      */
     modeText: String? = null,
+    /** The temp target that runs now, under [modeText]. A CURRENT value too: the history browser must not pass it. */
+    tempTargetLine: String? = null,
 ) {
     val dateUtil = LocalDateUtil.current
     val savedGraphConfig by graphViewModel.graphConfigFlow.collectAsStateWithLifecycle()
@@ -487,7 +489,7 @@ fun GraphsSection(
             .stopsBgFling(bgScrollForwarder)
             .closesInspectPillOnTouch(inspect)
     ) {
-        modeText?.let { AimiActiveModeText(it) }
+        DashboardStatusLines(modeText = modeText, tempTargetLine = tempTargetLine)
         // Treatment Belt Graph - running mode background + therapy events. A hold or a tap shows the pill.
         LeftToRight {
             TreatmentBeltGraphCompose(

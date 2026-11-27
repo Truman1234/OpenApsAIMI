@@ -13,6 +13,7 @@ import app.aaps.core.interfaces.overview.SensitivityOverview
 import app.aaps.core.interfaces.overview.graph.CobGraphData
 import app.aaps.core.interfaces.overview.graph.IobGraphData
 import app.aaps.core.interfaces.overview.graph.OverviewDataCache
+import app.aaps.core.interfaces.profile.ProfileUtil
 import app.aaps.core.interfaces.resources.ResourceHelper
 import app.aaps.core.interfaces.rx.bus.RxBus
 import app.aaps.core.interfaces.utils.DateUtil
@@ -36,6 +37,7 @@ import org.mockito.kotlin.whenever
 internal class ChipsViewModelTest {
 
     @Mock private lateinit var cache: OverviewDataCache
+    @Mock private lateinit var profileUtil: ProfileUtil
     @Mock private lateinit var iobCobCalculator: IobCobCalculator
     @Mock private lateinit var loop: Loop
     @Mock private lateinit var config: Config
@@ -64,7 +66,7 @@ internal class ChipsViewModelTest {
         whenever(pluginStatusBadgeSource.badge).thenReturn(MutableStateFlow(PluginStatusBadge(PluginStatusLevel.IDLE)))
         sut = ChipsViewModel(
             cache, iobCobCalculator, loop, config, persistenceLayer, sensitivityOverview, rh, decimalFormatter,
-            dateUtil, processedDeviceStatusData, aapsLogger, preferences, rxBus, pluginStatusBadgeSource
+            dateUtil, processedDeviceStatusData, aapsLogger, preferences, rxBus, profileUtil, pluginStatusBadgeSource
         )
     }
 

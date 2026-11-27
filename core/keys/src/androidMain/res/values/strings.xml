@@ -33,6 +33,11 @@
 
     <!-- Home graph look -->
     <string name="prefs_vico_chart_appearance_title">Home graph (Vico) appearance</string>
+    <string name="prefs_home_status_lines_title">Home screen lines</string>
+    <string name="pref_title_show_aimi_mode_line">Show the running AIMI mode</string>
+    <string name="pref_summary_show_aimi_mode_line">A line above the glucose graph, for example "Mode: Lunch (45m)". The watch always shows it.</string>
+    <string name="pref_title_show_temp_target_line">Show the running temp target</string>
+    <string name="pref_summary_show_temp_target_line">A line above the glucose graph, for example "Temp target: 110 mg/dL (45m)". The watch always shows it.</string>
     <string name="pref_title_vico_bg_reading_tint">BG reading dot color</string>
     <string name="pref_summary_vico_bg_reading_tint">Tint for discrete CGM dots on the main glucose chart. Range-colored bucketed points are unchanged.</string>
     <string name="pref_title_vico_chart_backdrop">Chart background style</string>

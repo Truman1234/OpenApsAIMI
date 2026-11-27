@@ -59,7 +59,7 @@ import app.aaps.core.ui.compose.navigation.NavigationRequest
 import app.aaps.core.ui.compose.stringResource
 import app.aaps.ui.UiStrings
 import app.aaps.ui.compose.dashboard.DisplayForecast
-import app.aaps.ui.compose.dashboard.aimi.AimiActiveModeText
+import app.aaps.ui.compose.dashboard.aimi.DashboardStatusLines
 import app.aaps.ui.compose.dashboard.glass.DashboardV2ToolAction
 import app.aaps.ui.compose.dashboard.glass.aimiContextNavigationRequest
 import app.aaps.ui.compose.dashboard.glass.GlassHomeViewModel
@@ -375,10 +375,13 @@ fun EssentialDashboardHome(
                 )
             }
 
-            // The AIMI mode that runs now, right above the glucose chart, as on the other homes.
-            state.activeModeText?.let {
-                AimiActiveModeText(text = it, modifier = Modifier.padding(top = AapsTheme.spacing.small))
-            }
+            // The AIMI mode and the temp target that run now, right above the glucose chart, as on the
+            // other homes. Each line can be switched off in Appearance > Home screen lines.
+            DashboardStatusLines(
+                modeText = state.activeModeText,
+                tempTargetLine = state.tempTargetLine,
+                modifier = Modifier.padding(top = AapsTheme.spacing.small),
+            )
 
             Spacer(Modifier.height(AapsTheme.spacing.medium))
             EssentialChart(

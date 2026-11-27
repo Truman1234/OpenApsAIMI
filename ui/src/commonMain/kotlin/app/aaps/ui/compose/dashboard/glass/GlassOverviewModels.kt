@@ -45,6 +45,8 @@ data class GlassUiState(
     val loopIsRunning: Boolean = true,
     /** The AIMI mode that runs now, "Mode: Lunch (45 min)"; null when none runs and the line is hidden. */
     val activeModeText: String? = null,
+    /** The temp target that runs now, "Temp target: 110 mg/dL (45m)"; null when none runs and the line is hidden. */
+    val tempTargetLine: String? = null,
     val iobText: String = "--",
     val isTempTargetActive: Boolean = false,
     val targetText: String = "--",

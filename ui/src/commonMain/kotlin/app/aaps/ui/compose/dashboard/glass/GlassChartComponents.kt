@@ -104,6 +104,7 @@ internal fun BgChartCard(
     formatValue: (Float) -> String,
     isDark: Boolean,
     modeText: String? = null,
+    tempTargetLine: String? = null,
 ) {
     var touchedReading by remember { mutableStateOf<BgReadingPoint?>(null) }
     var selectedTreatment by remember { mutableStateOf<TreatmentPoint?>(null) }
@@ -139,21 +140,29 @@ internal fun BgChartCard(
                     color = if (isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B)
                 )
                 val pt = touchedReading
-                // The AIMI mode that runs now, between the label and the value. Hidden while a finger
-                // is on the chart, because the point text on the right is longer then.
-                if (pt == null && modeText != null) {
-                    Text(
-                        text = modeText,
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TEMP_TARGET_ACCENT,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                // The AIMI mode and the temp target that run now, between the label and the value, one
+                // line each. Hidden while a finger is on the chart, because the point text on the right is
+                // longer then.
+                val statusLines = listOfNotNull(modeText, tempTargetLine)
+                if (pt == null && statusLines.isNotEmpty()) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
                             .weight(1f)
                             .padding(horizontal = 8.dp)
-                    )
+                    ) {
+                        statusLines.forEach { line ->
+                            Text(
+                                text = line,
+                                fontSize = if (statusLines.size > 1) 10.5.sp else 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TEMP_TARGET_ACCENT,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
                 if (pt != null) {
                     val hoursAgo = timeRangeHours * (1f - pt.progress)

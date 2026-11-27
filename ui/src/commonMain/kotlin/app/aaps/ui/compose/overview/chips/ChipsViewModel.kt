@@ -4,6 +4,7 @@ import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.aaps.core.data.model.TE
+import app.aaps.core.data.model.TT
 import app.aaps.core.interfaces.InterfacesStrings
 import app.aaps.core.interfaces.aps.Loop
 import app.aaps.core.interfaces.configuration.Config
@@ -15,18 +16,21 @@ import app.aaps.core.interfaces.overview.PluginStatusBadge
 import app.aaps.core.interfaces.overview.PluginStatusBadgeSource
 import app.aaps.core.interfaces.overview.SensitivityOverview
 import app.aaps.core.interfaces.overview.graph.OverviewDataCache
+import app.aaps.core.interfaces.profile.ProfileUtil
 import app.aaps.core.interfaces.resources.TextResolver
 import app.aaps.core.interfaces.rx.bus.RxBus
 import app.aaps.core.interfaces.rx.events.EventNsClientStatusUpdated
 import app.aaps.core.interfaces.rx.events.EventShowDialog
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.core.interfaces.utils.DecimalFormatter
+import app.aaps.core.keys.BooleanKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.objects.extensions.ApsResultSource
 import app.aaps.core.objects.extensions.displayedIobUnits
 import app.aaps.core.objects.extensions.profileDisplayedIob
 import app.aaps.core.ui.CoreUiStrings
 import app.aaps.core.ui.extensions.displayText
+import app.aaps.ui.compose.dashboard.aimi.activeTempTargetLine
 import app.aaps.ui.compose.dashboard.aimi.aimiActiveModeLine
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedFactory
@@ -60,6 +64,7 @@ class ChipsViewModel(
     private val aapsLogger: AAPSLogger,
     private val preferences: Preferences,
     private val rxBus: RxBus,
+    private val profileUtil: ProfileUtil,
     /**
      * The one plugin that contributes a status chip, when a platform has one.
      *
@@ -84,11 +89,11 @@ class ChipsViewModel(
     }.shareIn(viewModelScope, SharingStarted.WhileSubscribed(5000), replay = 1)
 
     /**
-     * The AIMI mode that runs now ("Mode: Lunch (45 min)"), or null: the same line as the AIMI and Glass
-     * homes (`aimiActiveModeLine`). It counts down every minute and changes at once with a new note.
-     * The notes are only observed while someone collects this, so a test that never reads it needs no stub.
+     * When the status lines above the graph are worked out again: every minute (they count down), and at
+     * once with a new note or temp target. The database is only observed while someone collects a line,
+     * so a test that never reads them needs no stub.
      */
-    val activeModeText: StateFlow<String?> = merge(
+    private val statusLineRefresh = merge(
         flow {
             while (true) {
                 emit(Unit)
@@ -96,7 +101,24 @@ class ChipsViewModel(
             }
         },
         flow { emitAll(persistenceLayer.observeChanges(TE::class)) }.map { },
-    ).map { aimiActiveModeLine(persistenceLayer, rh, dateUtil.now()) }
+        flow { emitAll(persistenceLayer.observeChanges(TT::class)) }.map { },
+    )
+
+    /**
+     * The AIMI mode that runs now ("Mode: Lunch (45 min)"), or null: the same line as the AIMI and Glass
+     * homes (`aimiActiveModeLine`). Null too when Appearance > Home screen lines switches it off; a change
+     * of the switch shows when the home screen is opened again, or within a minute.
+     */
+    val activeModeText: StateFlow<String?> = statusLineRefresh
+        .map { if (preferences.get(BooleanKey.OverviewShowAimiModeLine)) aimiActiveModeLine(persistenceLayer, rh, dateUtil.now()) else null }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = null)
+
+    /** The temp target that runs now ("Temp target: 110 mg/dL (45m)"), or null, with its own switch. */
+    val tempTargetLine: StateFlow<String?> = statusLineRefresh
+        .map {
+            if (preferences.get(BooleanKey.OverviewShowTempTargetLine)) activeTempTargetLine(persistenceLayer, rh, profileUtil, dateUtil.now())
+            else null
+        }
         .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = null)
 
     private val iobRefresh =

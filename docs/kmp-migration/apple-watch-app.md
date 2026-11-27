@@ -284,6 +284,11 @@ MIT code may be used in this AGPL project.
     - The phone's glass dashboard shows the same AIMI mode line (`aimiActiveModeLine`, shared with
       the AIMI dashboard), in the header row of the BG chart between "BG" and the value. It hides
       while a finger is on the chart, because the point text is longer then.
+    - All phone dashboards (Glass, Essential, AIMI, Overview, Dashboard V2) show two lines above the
+      glucose chart: the running AIMI mode and the running temp target (`DashboardStatusLines`,
+      `activeTempTargetLine`). Appearance > Home screen lines has one switch for each
+      (`BooleanKey.OverviewShowAimiModeLine`, `OverviewShowTempTargetLine`, both on by default).
+      The switches are for the phone only. The watch always shows the mode and the temp target.
 5. **Complications** (separate, `apple-watch-complications.md`).
 
 Phases 1 and 2 also help Wear OS (DKA state on Android watches) and can be tested on both machines.

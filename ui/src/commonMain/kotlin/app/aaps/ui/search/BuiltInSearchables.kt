@@ -127,6 +127,16 @@ class BuiltInSearchables(
                 )
             ),
 
+            // The lines above the glucose graph of every home screen (phone only)
+            PreferenceSubScreenDef(
+                key = "home_status_lines",
+                title = KeysStrings.prefs_home_status_lines_title,
+                items = listOf(
+                    BooleanKey.OverviewShowAimiModeLine,
+                    BooleanKey.OverviewShowTempTargetLine
+                )
+            ),
+
             BooleanKey.OverviewShowNotesInDialogs,
             StringKey.GeneralDarkMode,
             StringKey.GeneralDashboardSkin

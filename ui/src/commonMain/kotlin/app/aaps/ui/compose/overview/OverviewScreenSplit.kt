@@ -99,6 +99,7 @@ fun OverviewScreenSplit(
     val iobUiState by chipsViewModel.iobUiState.collectAsStateWithLifecycle()
     val cobUiState by chipsViewModel.cobUiState.collectAsStateWithLifecycle()
     val activeModeText by chipsViewModel.activeModeText.collectAsStateWithLifecycle()
+    val tempTargetLine by chipsViewModel.tempTargetLine.collectAsStateWithLifecycle()
     val statusState by statusViewModel.uiState.collectAsStateWithLifecycle()
 
     var statusExpanded by rememberSaveable { mutableStateOf(true) }
@@ -246,7 +247,8 @@ fun OverviewScreenSplit(
                 GraphsSection(
                     graphViewModel = graphViewModel, isSimpleMode = isSimpleMode, iobText = iobUiState.text, cobText = cobUiState.text,
                     overlaidBarsHeight = overlaidBarsHeight,
-                    modeText = activeModeText
+                    modeText = activeModeText,
+                    tempTargetLine = tempTargetLine
                 )
             }
         }

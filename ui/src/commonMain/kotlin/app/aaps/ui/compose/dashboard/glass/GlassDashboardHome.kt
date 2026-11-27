@@ -326,6 +326,7 @@ internal fun GlassOverviewContent(
                 formatValue = formatBgValue,
                 isDark = isDark,
                 modeText = state.activeModeText,
+                tempTargetLine = state.tempTargetLine,
             )
             // The insulin-only curve goes low within the hour: a labelled possibility under the chart,
             // never an alarm (see DisplayForecast.lowRisk).

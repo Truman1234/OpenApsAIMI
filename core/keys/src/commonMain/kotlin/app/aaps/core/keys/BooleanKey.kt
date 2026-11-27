@@ -63,6 +63,10 @@ enum class BooleanKey(
         showInNsClientMode = false
     ),
     OverviewShowNotesInDialogs(key = "show_notes_entry_dialogs", defaultValue = false, title = KeysStrings.pref_title_show_notes_in_dialogs, defaultedBySM = true),
+    /** The running AIMI mode line above the glucose graph of every home screen. The watch always shows it. */
+    OverviewShowAimiModeLine(key = "show_aimi_mode_line", defaultValue = true, title = KeysStrings.pref_title_show_aimi_mode_line, summary = KeysStrings.pref_summary_show_aimi_mode_line),
+    /** The running temp target line above the glucose graph of every home screen. The watch always shows it. */
+    OverviewShowTempTargetLine(key = "show_temp_target_line", defaultValue = true, title = KeysStrings.pref_title_show_temp_target_line, summary = KeysStrings.pref_summary_show_temp_target_line),
     OverviewUseBolusAdvisor("use_bolus_advisor", true, KeysStrings.pref_title_use_bolus_advisor, KeysStrings.pref_summary_use_bolus_advisor, defaultedBySM = true, sync = SyncSpec(SyncChannel.Cold, SyncDirection.Bidirectional)),
     OverviewUseBolusReminder("use_bolus_reminder", true, KeysStrings.pref_title_use_bolus_reminder, KeysStrings.pref_summary_use_bolus_reminder, defaultedBySM = true, sync = SyncSpec(SyncChannel.Cold, SyncDirection.Bidirectional)),
 

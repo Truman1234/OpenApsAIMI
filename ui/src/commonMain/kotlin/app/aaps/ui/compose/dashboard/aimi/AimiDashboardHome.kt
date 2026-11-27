@@ -131,6 +131,7 @@ fun AimiDashboardHome(
     val iobState by chipsViewModel.iobUiState.collectAsStateWithLifecycle()
     val cobState by chipsViewModel.cobUiState.collectAsStateWithLifecycle()
     val activeModeText by chipsViewModel.activeModeText.collectAsStateWithLifecycle()
+    val tempTargetLine by chipsViewModel.tempTargetLine.collectAsStateWithLifecycle()
     val homeStatus by homeViewModel.status.collectAsStateWithLifecycle()
     val status by dashboardViewModel.status.collectAsStateWithLifecycle()
     val aimiData by aimiDashboardData.collectAsStateWithLifecycle(initialValue = AimiGlassDashboardData())
@@ -250,9 +251,11 @@ fun AimiDashboardHome(
     val graph: @Composable (Modifier, Boolean) -> Unit = { graphModifier, expand ->
         // The AIMI mode that runs now, right above the glucose graph, as on the other homes.
         Column(modifier = graphModifier) {
-            activeModeText?.let {
-                AimiActiveModeText(text = it, modifier = Modifier.padding(bottom = AapsSpacing.extraSmall))
-            }
+            DashboardStatusLines(
+                modeText = activeModeText,
+                tempTargetLine = tempTargetLine,
+                modifier = Modifier.padding(bottom = AapsSpacing.extraSmall),
+            )
             DashboardGraphSection(
                 graphViewModel = graphViewModel,
                 selectedRangeHours = rangeHours,

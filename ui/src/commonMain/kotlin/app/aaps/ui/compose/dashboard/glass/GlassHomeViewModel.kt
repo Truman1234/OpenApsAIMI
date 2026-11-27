@@ -37,6 +37,7 @@ import app.aaps.core.objects.extensions.ApsResultSource
 import app.aaps.core.objects.extensions.isInProgress
 import app.aaps.core.ui.CoreUiStrings
 import app.aaps.core.ui.compose.pump.tickerFlow
+import app.aaps.ui.compose.dashboard.aimi.activeTempTargetLine
 import app.aaps.ui.compose.dashboard.aimi.aimiActiveModeLine
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
@@ -218,7 +219,9 @@ class GlassHomeViewModel(
             effectiveBasalText = effectiveBasalText,
             loopStatusText = rh.gs(loopModeLabel(loopMode)),
             loopIsRunning = !loopMode.pausesLoopExecution(),
-            activeModeText = aimiActiveModeLine(persistenceLayer, rh, now),
+            // Appearance > Home screen lines can hide both lines; the watch always shows them.
+            activeModeText = if (preferences.get(BooleanKey.OverviewShowAimiModeLine)) aimiActiveModeLine(persistenceLayer, rh, now) else null,
+            tempTargetLine = if (preferences.get(BooleanKey.OverviewShowTempTargetLine)) activeTempTargetLine(persistenceLayer, rh, profileUtil, now) else null,
             stepsText = stepsText,
             hrText = hrText,
             tir = tir,
@@ -288,6 +291,8 @@ data class GlassHomeStatus(
     val loopIsRunning: Boolean = true,
     /** The AIMI mode that runs now, "Mode: Lunch (45 min)"; null when none runs. */
     val activeModeText: String? = null,
+    /** The temp target that runs now, "Temp target: 110 mg/dL (45m)"; null when none runs or the line is off. */
+    val tempTargetLine: String? = null,
     val stepsText: String = "--",
     val hrText: String = "--",
     val tir: GlassTir? = null,

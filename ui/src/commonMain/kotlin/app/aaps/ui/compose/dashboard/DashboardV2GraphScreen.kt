@@ -20,7 +20,7 @@ import app.aaps.core.ui.compose.navigation.NavigationRequest
 import app.aaps.core.ui.compose.preference.PreferenceSubScreenDef
 import app.aaps.core.ui.compose.stringResource
 import app.aaps.ui.UiStrings
-import app.aaps.ui.compose.dashboard.aimi.AimiActiveModeText
+import app.aaps.ui.compose.dashboard.aimi.DashboardStatusLines
 import app.aaps.ui.compose.dashboard.glass.aimiContextNavigationRequest
 import app.aaps.ui.compose.overview.chips.ChipsViewModel
 import app.aaps.ui.compose.overview.chips.PluginStatusChip
@@ -60,6 +60,7 @@ fun DashboardV2GraphScreen(
     val sensitivityState by chipsViewModel.sensitivityUiState.collectAsStateWithLifecycle()
     val pluginBadge by chipsViewModel.pluginBadge.collectAsStateWithLifecycle()
     val activeModeText by chipsViewModel.activeModeText.collectAsStateWithLifecycle()
+    val tempTargetLine by chipsViewModel.tempTargetLine.collectAsStateWithLifecycle()
     var selectedRangeHours by remember { mutableIntStateOf(6) }
 
     Column(
@@ -102,12 +103,11 @@ fun DashboardV2GraphScreen(
                 )
             }
             // The AIMI mode that runs now, right above the glucose graph, as on the other homes.
-            activeModeText?.let {
-                AimiActiveModeText(
-                    text = it,
-                    modifier = Modifier.padding(horizontal = AapsTheme.spacing.large, vertical = AapsTheme.spacing.extraSmall),
-                )
-            }
+            DashboardStatusLines(
+                modeText = activeModeText,
+                tempTargetLine = tempTargetLine,
+                modifier = Modifier.padding(horizontal = AapsTheme.spacing.large, vertical = AapsTheme.spacing.extraSmall),
+            )
             DashboardGraphSection(
                 graphViewModel = graphViewModel,
                 selectedRangeHours = selectedRangeHours,
