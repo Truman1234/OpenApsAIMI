@@ -436,9 +436,14 @@ struct BolusProgressView: View {
             if progress.percent < 100 {
                 Button("Stop bolus", role: .destructive) { session.cancelBolus() }
             }
+            // Only hides this screen; the bolus goes on. Without it a lost message would trap the user here.
+            Button("Hide") { session.hideBolusProgress() }
+                .font(.footnote)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.black.opacity(0.9))
+        .background(Color.black)
     }
 }

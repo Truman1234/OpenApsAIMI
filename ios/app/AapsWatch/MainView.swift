@@ -109,6 +109,11 @@ private struct GlucosePage: View {
                             .font(.caption2)
                             .foregroundStyle(.orange)
                     }
+                    if let tt = status.tempTargetText(now: context.date, receivedAt: session.statusReceivedAt) {
+                        Label(tt, systemImage: "target")
+                            .font(.caption2)
+                            .foregroundStyle(.yellow)
+                    }
                     if status.dkaRaised { DkaBanner(status: status) }
                 }
             }

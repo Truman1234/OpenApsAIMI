@@ -86,4 +86,23 @@ class RemoteControlCommandsTest {
         assertEquals(55, item.remainingMinutes(now))
         assertEquals(8, item.progressPercent(now))
     }
+
+    @Test
+    fun aModeStartedBeforeAStopIsOverAtOnce() {
+        // The stop note itself lasts 0 or 1 min; the sport note still has time left until AIMI deletes it.
+        val events = listOf(
+            note("sport 120", startedMinutesAgo = 30, durationMin = 120),
+            note("stop", startedMinutesAgo = 5, durationMin = 1)
+        )
+        assertTrue(RemoteControlCommands.activeModes(events, now).none { it.mode.id == "sport" })
+    }
+
+    @Test
+    fun aModeStartedAfterAStopRuns() {
+        val events = listOf(
+            note("stop", startedMinutesAgo = 10, durationMin = 1),
+            note("sleep 480", startedMinutesAgo = 5, durationMin = 480)
+        )
+        assertEquals(listOf("sleep"), RemoteControlCommands.activeModes(events, now).map { it.mode.id })
+    }
 }

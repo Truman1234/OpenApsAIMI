@@ -35,9 +35,16 @@ final class WatchSession: NSObject, ObservableObject {
     @Published private(set) var bg: SingleBg?
     @Published private(set) var graph: [SingleBg] = []
     @Published private(set) var status: Status?
+    /// When the status came. Its temp target time left is counted from here.
+    @Published private(set) var statusReceivedAt = Date()
     @Published private(set) var preferences: WatchPreferences?
     @Published private(set) var runningModes: RunningModeList?
     @Published private(set) var bolusProgress: BolusProgress?
+    /// When the last bolus progress came. The phone sends progress only while the watch app is
+    /// reachable, so the final 100 % can be lost; the progress screen then closes by itself.
+    private var lastProgressAt = Date.distantPast
+    /// No progress for this long: the bolus is over or its messages are lost.
+    nonisolated private static let progressTimeout: TimeInterval = 20
     @Published var confirm: ConfirmRequest?
     @Published private(set) var reachable = false
     /// When the last command was sent and its answer has not come yet.
@@ -57,6 +64,8 @@ final class WatchSession: NSObject, ObservableObject {
 
     /// Asks the phone for everything again. Done when the app comes to the front.
     func requestData() {
+        // Back from sleep: a progress screen whose messages stopped is closed at once.
+        if bolusProgress != nil, Date().timeIntervalSince(lastProgressAt) >= Self.progressTimeout { bolusProgress = nil }
         send(Command.json("ActionResendData", ["from": "AppleWatch"]), expectsAnswer: false, showError: false)
     }
 
@@ -198,7 +207,10 @@ final class WatchSession: NSObject, ObservableObject {
         case "GraphData":
             if let value = try? decoder.decode(GraphData.self, from: data) { graph = value.entries.sorted { $0.timeStamp < $1.timeStamp } }
         case "Status":
-            if let value = try? decoder.decode(Status.self, from: data) { status = value }
+            if let value = try? decoder.decode(Status.self, from: data) {
+                status = value
+                statusReceivedAt = Date()
+            }
         case "Preferences":
             if let value = try? decoder.decode(WatchPreferences.self, from: data) { preferences = value }
         case "RunningModeList":
@@ -207,7 +219,8 @@ final class WatchSession: NSObject, ObservableObject {
         case "BolusProgress":
             if let value = try? decoder.decode(BolusProgress.self, from: data) {
                 bolusProgress = value.percent >= 100 && value.status.isEmpty ? nil : value
-                if value.percent >= 100 { clearProgressLater() }
+                lastProgressAt = Date()
+                if value.percent >= 100 { clearProgressLater() } else { closeProgressWhenSilent() }
             }
         case "ConfirmAction", "OpenLoopRequest":
             waitingSince = nil
@@ -231,6 +244,22 @@ final class WatchSession: NSObject, ObservableObject {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
             showDone = false
+        }
+    }
+
+    /// Hides the progress screen. The bolus itself goes on; only "Stop bolus" stops it.
+    func hideBolusProgress() {
+        bolusProgress = nil
+    }
+
+    /// Closes the progress screen when no progress came for `progressTimeout` seconds.
+    private func closeProgressWhenSilent() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Self.progressTimeout))
+            if bolusProgress != nil, Date().timeIntervalSince(lastProgressAt) >= Self.progressTimeout {
+                Self.log.info("No bolus progress for \(Self.progressTimeout) s, the progress screen is closed")
+                bolusProgress = nil
+            }
         }
     }
 

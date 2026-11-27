@@ -273,6 +273,14 @@ MIT code may be used in this AGPL project.
       only; a Wear OS watch on a master shows its own success at once, so Android keeps false). An
       accepted open loop request answers the same way. After "Confirm" the watch always shows the
       spinner until "Done" or an error.
+    - A stop note ends every mode that started before it at once (`RemoteControlCommands.activeModes`,
+      and `aimiActiveModeLine` for the dashboards). AIMI deletes those notes only at its next loop run.
+    - The glucose page also shows a running temp target ("TT 110 · 45 min", yellow), counted down from
+      the time left the status carried.
+    - Bolus progress is a LIVE message, so it is lost while the watch app is not reachable, also the
+      final 100 %. The progress screen therefore closes after 20 s without progress, has a "Hide" button
+      and a solid background. On the virtual pump "Stop bolus" does nothing: its `stopBolusDelivering`
+      is empty.
     - The phone's glass dashboard shows the same AIMI mode line (`aimiActiveModeLine`, shared with
       the AIMI dashboard), in the header row of the BG chart between "BG" and the value. It hides
       while a finger is on the chart, because the point text is longer then.

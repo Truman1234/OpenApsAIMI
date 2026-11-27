@@ -574,6 +574,9 @@ internal object AimiDashboardRules {
         "sleep" to UiStrings.dashboard_mode_sleep,
     )
 
+    /** True for a stop note, by the same test as AIMI (`Therapy.findActivestopEvents` in `:plugins:aps`). */
+    fun isStopNote(note: String?): Boolean = note?.contains("stop", ignoreCase = true) == true
+
     /** The mode a note starts, by the same keywords as DEV, first match wins. */
     fun modeForNote(note: String?): TextRef? =
         note?.let { text -> MODE_KEYWORDS.firstOrNull { text.contains(it.first, ignoreCase = true) }?.second }

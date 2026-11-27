@@ -66,6 +66,15 @@ struct Status: Decodable {
     /// True when the DKA guard sees a risk. "NONE" or no value means no risk.
     var dkaRaised: Bool { (dkaRisk ?? "NONE") != "NONE" }
 
+    /// The running temp target with the minutes left, or nil when none runs at `now`.
+    /// `tempTargetDuration` is the time left in ms when the phone sent the status (`receivedAt`);
+    /// level 2 is a real temp target, level 1 only a target the profile adjusted.
+    func tempTargetText(now: Date, receivedAt: Date) -> String? {
+        guard tempTargetLevel == 2, let left = tempTargetDuration, left > 0, !tempTarget.isEmpty else { return nil }
+        let minutes = Int((receivedAt.timeIntervalSince1970 + Double(left) / 1000 - now.timeIntervalSince1970) / 60)
+        return minutes > 0 ? String(localized: "TT \(tempTarget) · \(minutes) min") : nil
+    }
+
     /// The running AIMI mode with the minutes left, or nil when none runs at [now].
     func aimiModeText(now: Date) -> String? {
         guard let aimiMode, let aimiModeEndsAt else { return nil }

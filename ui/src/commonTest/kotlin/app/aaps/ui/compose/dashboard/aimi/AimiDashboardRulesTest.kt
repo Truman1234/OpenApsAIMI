@@ -154,4 +154,12 @@ class AimiDashboardRulesTest {
         // A placeholder with no argument is kept.
         assertEquals("Ends %1\$s", "Ends %1\$s".formatKmp())
     }
+
+    @Test
+    fun aStopNoteIsFoundLikeAimiFindsIt() {
+        assertTrue(AimiDashboardRules.isStopNote("stop"))
+        assertTrue(AimiDashboardRules.isStopNote("AIMI:4242 mode stop 0"))
+        assertFalse(AimiDashboardRules.isStopNote("sport 60"))
+        assertFalse(AimiDashboardRules.isStopNote(null))
+    }
 }

@@ -50,13 +50,21 @@ object RemoteControlCommands {
      * A note in AIMI form is read first. Otherwise the note is matched against the mode keywords.
      * When more than one keyword is in the note, the longest one wins, so `work stress 240` is
      * "Work stress" and not "Stress".
+     *
+     * A mode that started before the newest stop note is over, even while its own time still runs. AIMI
+     * deletes those notes only at its next loop run (`Therapy.clearActiveEventsOnStop` in `:plugins:aps`), and until
+     * then the mode must not look active. The dashboards use the same rule (`aimiActiveModeLine` in `:ui`).
      */
     fun activeModes(events: List<TE>, now: Long): List<ActiveModeItem> {
+        val lastStop = events
+            .filter { it.type == TE.Type.NOTE && it.note?.let(::isStopNote) == true }
+            .maxOfOrNull { it.timestamp }
         val found = mutableListOf<ActiveModeItem>()
         for (event in events) {
             if (event.type != TE.Type.NOTE) continue
             val text = event.note ?: continue
             if (event.timestamp + event.duration <= now) continue
+            if (lastStop != null && event.timestamp < lastStop) continue
             val mode = modeFromAimiCommand(text) ?: modeFromKeyword(text) ?: continue
             found += ActiveModeItem(mode = mode, startedAt = event.timestamp, durationMs = event.duration)
         }
@@ -66,6 +74,9 @@ object RemoteControlCommands {
             .filterNot { it.isExpired(now) }
             .sortedByDescending { it.startedAt }
     }
+
+    private fun isStopNote(text: String): Boolean =
+        (modeFromAimiCommand(text) ?: modeFromKeyword(text))?.id == ModePresets.STOP_ID
 
     private fun modeFromAimiCommand(text: String): ModePreset? {
         val match = aimiCommand.find(text) ?: return null

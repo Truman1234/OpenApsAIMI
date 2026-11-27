@@ -130,6 +130,7 @@ fun AimiDashboardHome(
     val nowMs by graphViewModel.nowTimestamp.collectAsStateWithLifecycle()
     val iobState by chipsViewModel.iobUiState.collectAsStateWithLifecycle()
     val cobState by chipsViewModel.cobUiState.collectAsStateWithLifecycle()
+    val activeModeText by chipsViewModel.activeModeText.collectAsStateWithLifecycle()
     val homeStatus by homeViewModel.status.collectAsStateWithLifecycle()
     val status by dashboardViewModel.status.collectAsStateWithLifecycle()
     val aimiData by aimiDashboardData.collectAsStateWithLifecycle(initialValue = AimiGlassDashboardData())
@@ -247,18 +248,24 @@ fun AimiDashboardHome(
         )
     }
     val graph: @Composable (Modifier, Boolean) -> Unit = { graphModifier, expand ->
-        DashboardGraphSection(
-            graphViewModel = graphViewModel,
-            selectedRangeHours = rangeHours,
-            onSelectRange = { preferences.put(IntNonKey.RangeToDisplay, AimiDashboardGraphRange.clamp(it)) },
-            onNavigate = onNavigate,
-            hideDetailedGraphStatus = !extendedMetrics,
-            expandVertically = expand,
-            // As on DEV: a double tap shows the next range, a long press goes back to 6 h.
-            onDoubleTap = { preferences.put(IntNonKey.RangeToDisplay, AimiDashboardGraphRange.next(rangeHours)) },
-            onLongPress = { preferences.put(IntNonKey.RangeToDisplay, AimiDashboardGraphRange.DEFAULT) },
-            modifier = graphModifier,
-        )
+        // The AIMI mode that runs now, right above the glucose graph, as on the other homes.
+        Column(modifier = graphModifier) {
+            activeModeText?.let {
+                AimiActiveModeText(text = it, modifier = Modifier.padding(bottom = AapsSpacing.extraSmall))
+            }
+            DashboardGraphSection(
+                graphViewModel = graphViewModel,
+                selectedRangeHours = rangeHours,
+                onSelectRange = { preferences.put(IntNonKey.RangeToDisplay, AimiDashboardGraphRange.clamp(it)) },
+                onNavigate = onNavigate,
+                hideDetailedGraphStatus = !extendedMetrics,
+                expandVertically = expand,
+                // As on DEV: a double tap shows the next range, a long press goes back to 6 h.
+                onDoubleTap = { preferences.put(IntNonKey.RangeToDisplay, AimiDashboardGraphRange.next(rangeHours)) },
+                onLongPress = { preferences.put(IntNonKey.RangeToDisplay, AimiDashboardGraphRange.DEFAULT) },
+                modifier = if (expand) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth(),
+            )
+        }
     }
     val notificationList: @Composable (Boolean, Modifier) -> Unit = { compact, listModifier ->
         DashboardNotificationsComposeList(

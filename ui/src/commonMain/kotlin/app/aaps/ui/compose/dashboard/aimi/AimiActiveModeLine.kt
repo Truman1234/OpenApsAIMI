@@ -25,7 +25,11 @@ private const val ACTIVE_MODE_LOOKBACK_MS = 12 * 60 * 60 * 1000L
  */
 internal suspend fun aimiActiveModeLine(persistenceLayer: PersistenceLayer, rh: TextResolver, now: Long): String? {
     val events = persistenceLayer.getTherapyEventDataFromTime(now - ACTIVE_MODE_LOOKBACK_MS, TE.Type.NOTE, false)
+    // A mode that started before the newest stop note is over at once. AIMI deletes those notes only at
+    // its next loop run, up to 5 min later. The watch uses the same rule (`RemoteControlCommands.activeModes`).
+    val lastStop = events.filter { AimiDashboardRules.isStopNote(it.note) }.maxOfOrNull { it.timestamp }
     val (event, mode) = events
+        .filter { lastStop == null || it.timestamp > lastStop }
         .mapNotNull { event ->
             val mode = AimiDashboardRules.modeForNote(event.note) ?: return@mapNotNull null
             if (event.timestamp + event.duration - now <= 0) null else event to mode
