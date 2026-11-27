@@ -6,6 +6,7 @@ import app.aaps.core.data.model.GlucoseUnit
 import app.aaps.core.data.model.RM
 import app.aaps.core.data.model.TB
 import app.aaps.core.data.model.TE
+import app.aaps.core.data.model.TT
 import app.aaps.core.data.model.TrendArrow
 import app.aaps.core.data.pump.defs.PumpDescription
 import app.aaps.core.interfaces.aps.AutosensDataStore
@@ -193,6 +194,7 @@ internal class OverviewViewModelFixture(private val screen: AapsScreenFixture) {
         whenever(persistenceLayer.observeChanges(TE::class)).thenReturn(emptyFlow())
         whenever(persistenceLayer.observeChanges(EB::class)).thenReturn(emptyFlow())
         whenever(persistenceLayer.observeChanges(TB::class)).thenReturn(emptyFlow())
+        whenever(persistenceLayer.observeChanges(TT::class)).thenReturn(emptyFlow())
         whenever(persistenceLayer.databaseClearedFlow).thenReturn(emptyFlow())
         whenever(nsClient.masterOrPairedClientFlow).thenReturn(MutableStateFlow(false))
         whenever(pluginStatusBadgeSource.badge).thenReturn(MutableStateFlow(PluginStatusBadge(PluginStatusLevel.IDLE)))
