@@ -112,7 +112,8 @@ private struct GlucosePage: View {
                     if let tt = status.tempTargetText(now: context.date, receivedAt: session.statusReceivedAt) {
                         Label(tt, systemImage: "target")
                             .font(.caption2)
-                            .foregroundStyle(.yellow)
+                            // Green like the temp target line on the phone dashboards; the mode line above is orange.
+                            .foregroundStyle(.green)
                     }
                     if status.dkaRaised { DkaBanner(status: status) }
                 }

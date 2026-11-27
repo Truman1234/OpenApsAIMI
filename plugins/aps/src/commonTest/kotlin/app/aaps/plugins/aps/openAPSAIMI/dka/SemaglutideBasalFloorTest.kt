@@ -106,9 +106,10 @@ class SemaglutideBasalFloorTest {
         assertEquals(SemaglutideBasalFloor.MAX_DKA_MIN_PERCENT, AimiDkaIntKey.FloorDkaMinPercent.max)
     }
 
+    // A 4 U/h basal keeps 5 % (0.2 U/h) above the pump minimum, so the clamp itself is what shows.
     @Test fun percentBelow5IsClampedTo5() {
-        val r = apply(c = cfg.copy(percent = 2))
-        assertEquals(0.05, r.rateUph, 1e-9)
+        val r = apply(scheduled = 4.0, c = cfg.copy(percent = 2))
+        assertEquals(0.2, r.rateUph, 1e-9)
     }
 
     @Test fun percentAbove50IsClampedTo50() {
@@ -119,10 +120,10 @@ class SemaglutideBasalFloorTest {
     // --- DKA override tests ---
 
     @Test fun dkaActiveWithLowBgAppliesDkaFloor() {
-        // BG = 90 (low), DKA active, dkaMinPercent = 5 → floor = 1.0 * 5% = 0.05
-        val r = apply(bg = 90.0, dkaActive = true)
+        // BG = 90 (low), DKA active, dkaMinPercent = 5 → floor = 4.0 * 5% = 0.2
+        val r = apply(scheduled = 4.0, bg = 90.0, dkaActive = true)
         assertTrue(r.applied)
-        assertEquals(0.05, r.rateUph, 1e-9)
+        assertEquals(0.2, r.rateUph, 1e-9)
         assertTrue(r.note!!.contains("DKA min floor"))
     }
 
@@ -136,9 +137,9 @@ class SemaglutideBasalFloorTest {
 
     @Test fun dkaActiveWithPredictedLowAppliesDkaFloor() {
         // BG ok, eventual BG low, DKA active → DKA floor
-        val r = apply(bg = 150.0, eventual = 80.0, dkaActive = true)
+        val r = apply(scheduled = 4.0, bg = 150.0, eventual = 80.0, dkaActive = true)
         assertTrue(r.applied)
-        assertEquals(0.05, r.rateUph, 1e-9)
+        assertEquals(0.2, r.rateUph, 1e-9)
         assertTrue(r.note!!.contains("eventual"))
     }
 
@@ -150,10 +151,47 @@ class SemaglutideBasalFloorTest {
     }
 
     @Test fun rateAlreadyAboveDkaFloorIsUntouched() {
-        // proposed 0.1 >= dkaFloor 0.05, BG low, DKA active → no change
-        val r = apply(proposed = 0.1, bg = 90.0, dkaActive = true)
+        // proposed 0.2 >= dkaFloor 0.1 (5 % of 1.0, raised to the pump minimum), BG low, DKA active → no change
+        val r = apply(proposed = 0.2, bg = 90.0, dkaActive = true)
         assertFalse(r.applied)
-        assertEquals(0.1, r.rateUph)
+        assertEquals(0.2, r.rateUph)
+    }
+
+    // --- Pump minimum tests ---
+
+    /**
+     * 10 % of 0.8 U/h is 0.08 U/h. The Dana driver sets anything under 0.10 U/h as a zero temp, so
+     * this floor reached the pump as 0 % (seen in Nightscout, 2026-11-25 to 27). It must be raised.
+     */
+    @Test fun aFloorUnderThePumpMinimumIsRaisedToIt() {
+        val r = apply(scheduled = 0.8, c = cfg.copy(percent = 10))
+        assertTrue(r.applied)
+        assertEquals(SemaglutideBasalFloor.MIN_FLOOR_UPH, r.rateUph, 1e-9)
+        assertTrue(r.note!!.contains("10%"), r.note!!)
+        assertTrue(r.note!!.contains("raised"), r.note!!)
+    }
+
+    @Test fun theDkaOverrideIsRaisedToThePumpMinimumToo() {
+        val r = apply(scheduled = 0.8, bg = 90.0, dkaActive = true)
+        assertTrue(r.applied)
+        assertEquals(SemaglutideBasalFloor.MIN_FLOOR_UPH, r.rateUph, 1e-9)
+        assertTrue(r.note!!.contains("raised"), r.note!!)
+    }
+
+    @Test fun aProposalJustUnderThePumpMinimumIsRaised() {
+        val r = apply(proposed = 0.09, scheduled = 0.8, c = cfg.copy(percent = 10))
+        assertTrue(r.applied)
+        assertEquals(SemaglutideBasalFloor.MIN_FLOOR_UPH, r.rateUph, 1e-9)
+    }
+
+    @Test fun aFloorAboveThePumpMinimumSaysNothingAboutIt() {
+        val r = apply()
+        assertFalse(r.note!!.contains("raised"), r.note!!)
+    }
+
+    @Test fun thePumpMinimumNeverGoesOverTheMaxBasal() {
+        val r = apply(scheduled = 0.8, c = cfg.copy(percent = 10), max = 0.05)
+        assertEquals(0.05, r.rateUph, 1e-9)
     }
 
     // --- Hard stop tests ---

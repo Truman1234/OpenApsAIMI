@@ -55,6 +55,16 @@ object SemaglutideBasalFloor {
     const val MIN_HARD_STOP_BG: Int = 50
     const val MAX_HARD_STOP_BG: Int = 90
 
+    /**
+     * The smallest floor rate in U/h. A floor below this is raised to it.
+     *
+     * Pump drivers do not deliver every small temp basal. The Dana driver (`DanaRSPlugin.setTempBasalAbsolute`)
+     * sets a zero temp for anything under 0.10 U/h, so a 10 % floor on a 0.8 U/h basal (0.08 U/h) reached
+     * the pump as 0 % every time: the floor that should protect against ketosis did nothing. Seen in
+     * Nightscout on 2026-11-25 to 27: 180 floor decisions, all delivered as 0 %.
+     */
+    const val MIN_FLOOR_UPH: Double = 0.10
+
     data class Result(val rateUph: Double, val applied: Boolean, val note: String?)
 
     fun apply(
@@ -71,7 +81,7 @@ object SemaglutideBasalFloor {
         // Clamped once and used for both the rate and the note: a stored value outside the key range
         // (an older build allowed up to 100) must not make the note claim a percentage that was not used.
         val percent = cfg.percent.coerceIn(MIN_PERCENT, MAX_PERCENT)
-        val floor = (scheduledBasalUph * percent / 100.0).coerceAtMost(maxBasalUph)
+        val floor = floorRate(scheduledBasalUph * percent / 100.0, maxBasalUph)
         if (proposedRateUph >= floor) return Result(proposedRateUph, false, null)
         if (bgMgdl == null || !bgMgdl.isFinite()) return Result(proposedRateUph, false, "Floor skipped: no current BG")
 
@@ -97,7 +107,7 @@ object SemaglutideBasalFloor {
             // DKA override: apply a small floor even when BG is low, to limit ketosis risk
             if (dkaActive && cfg.dkaMinPercent > 0) {
                 val dkaPercent = cfg.dkaMinPercent.coerceIn(0, MAX_DKA_MIN_PERCENT)
-                val dkaFloor = (scheduledBasalUph * dkaPercent / 100.0).coerceAtMost(maxBasalUph)
+                val dkaFloor = floorRate(scheduledBasalUph * dkaPercent / 100.0, maxBasalUph)
                 if (proposedRateUph < dkaFloor) {
                     val bgDesc = if (bgLow)
                         "BG ${glucoseText(bgMgdl)} low"
@@ -105,7 +115,7 @@ object SemaglutideBasalFloor {
                         "eventual BG ${glucoseText(eventualBgMgdl!!)} low"
                     return Result(
                         dkaFloor, true,
-                        "DKA min floor ($bgDesc): ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(dkaFloor)} U/h ($dkaPercent% of ${aimiFmt2(scheduledBasalUph)})"
+                        "DKA min floor ($bgDesc): ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(dkaFloor)} U/h ($dkaPercent% of ${aimiFmt2(scheduledBasalUph)}${minNote(scheduledBasalUph * dkaPercent / 100.0, dkaFloor)})"
                     )
                 }
             }
@@ -118,7 +128,18 @@ object SemaglutideBasalFloor {
 
         return Result(
             floor, true,
-            "Semaglutide floor: ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(floor)} U/h ($percent% of ${aimiFmt2(scheduledBasalUph)})"
+            "Semaglutide floor: ${aimiFmt2(proposedRateUph)} -> ${aimiFmt2(floor)} U/h ($percent% of ${aimiFmt2(scheduledBasalUph)}${minNote(scheduledBasalUph * percent / 100.0, floor)})"
         )
     }
+
+    /**
+     * The floor rate: never under [MIN_FLOOR_UPH], so the pump really delivers it, and never over the
+     * max basal. A zero percentage (DKA override switched off) stays zero.
+     */
+    private fun floorRate(rateUph: Double, maxBasalUph: Double): Double =
+        if (rateUph <= 0.0) 0.0 else rateUph.coerceAtLeast(MIN_FLOOR_UPH).coerceAtMost(maxBasalUph)
+
+    /** Tells in the note that the percentage was raised to the pump minimum. */
+    private fun minNote(percentRateUph: Double, usedUph: Double): String =
+        if (usedUph > percentRateUph) ", raised to the minimum of ${aimiFmt2(MIN_FLOOR_UPH)}" else ""
 }

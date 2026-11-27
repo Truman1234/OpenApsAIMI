@@ -143,7 +143,11 @@ internal fun BgChartCard(
                 // The AIMI mode and the temp target that run now, between the label and the value, one
                 // line each. Hidden while a finger is on the chart, because the point text on the right is
                 // longer then.
-                val statusLines = listOfNotNull(modeText, tempTargetLine)
+                // Same colours as the other homes (`DashboardStatusLines`): mode orange, temp target green.
+                val statusLines = listOfNotNull(
+                    modeText?.let { it to AapsTheme.generalColors.adjusted },
+                    tempTargetLine?.let { it to AapsTheme.generalColors.inProgress },
+                )
                 if (pt == null && statusLines.isNotEmpty()) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -151,12 +155,12 @@ internal fun BgChartCard(
                             .weight(1f)
                             .padding(horizontal = 8.dp)
                     ) {
-                        statusLines.forEach { line ->
+                        statusLines.forEach { (line, lineColor) ->
                             Text(
                                 text = line,
                                 fontSize = if (statusLines.size > 1) 10.5.sp else 11.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = TEMP_TARGET_ACCENT,
+                                color = lineColor,
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
